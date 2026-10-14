@@ -1,0 +1,50 @@
+# Szkielet – obrazy i komendy do uzupełnienia
+services:
+  postgres:
+    image: postgres:16
+    env_file: .env
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  orthanc:
+    image: orthancteam/orthanc:latest
+    volumes:
+      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - orthanc-db:/var/lib/orthanc/db
+    ports: ["8042:8042", "4242:4242"]
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    env_file: .env
+    depends_on: [postgres]
+    volumes: [./data/mlartifacts:/mlartifacts]
+    ports: ["5000:5000"]
+
+  backend:
+    build: .
+    env_file: .env
+    depends_on: [postgres, redis, orthanc]
+    volumes: [./backend:/app/backend, ./data:/data]
+    ports: ["8000:8000"]
+
+  worker-inference:
+    build: .
+    env_file: .env
+    depends_on: [redis, postgres]
+    volumes: [./backend:/app/backend, ./data:/data]
+    # TODO: celery -Q inference, GPU reservation
+
+  worker-training:
+    build: .
+    env_file: .env
+    depends_on: [redis, postgres, mlflow]
+    volumes: [./backend:/app/backend, ./training:/app/training, ./data:/data]
+    # TODO: celery -Q training --concurrency=1, GPU reservation
+
+volumes:
+  pgdata:
+  orthanc-db:

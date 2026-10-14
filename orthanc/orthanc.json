@@ -1,0 +1,15 @@
+{
+  "Name": "MRI-Breast-Orthanc",
+  "HttpPort": 8042,
+  "DicomPort": 4242,
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": true,
+  "RegisteredUsers": { "orthanc": "orthanc" },
+  "StorageDirectory": "/var/lib/orthanc/db",
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/",
+    "EnableWado": true,
+    "WadoRoot": "/wado"
+  }
+}

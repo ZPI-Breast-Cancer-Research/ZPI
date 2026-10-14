@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Env
+.env
+
+# Node
+node_modules/
+frontend/dist/
+
+# Dane medyczne i artefakty – NIGDY w repo
+data/**
+!data/**/
+!data/**/.gitkeep
+*.dcm
+*.nii
+*.nii.gz
+mlruns/
+mlartifacts/
+
+# IDE
+.idea/
+.vscode/
