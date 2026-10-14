@@ -4,11 +4,21 @@ services:
     image: postgres:16
     env_file: .env
     volumes: [pgdata:/var/lib/postgresql/data]
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_HOST_PORT:-5432}:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7
     ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   orthanc:
     image: orthancteam/orthanc:latest
@@ -19,20 +29,50 @@ services:
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:latest
+    profiles: ["ml"]
     env_file: .env
     depends_on: [postgres]
     volumes: [./data/mlartifacts:/mlartifacts]
     ports: ["5000:5000"]
 
   backend:
-    build: .
+    build: ./backend
     env_file: .env
-    depends_on: [postgres, redis, orthanc]
+    # Dev: auto-reload on code changes (the image default runs gunicorn).
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
+    # Orthanc is an external service reached via ORTHANC_URL – no depends_on on purpose.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes: [./backend:/app/backend, ./data:/data]
-    ports: ["8000:8000"]
+    ports: ["${BACKEND_HOST_PORT:-8000}:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  frontend:
+    build: ./frontend
+    env_file: .env
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes: [./frontend/src:/app/src]
+    ports: ["5173:5173"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5173').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
 
   worker-inference:
     build: .
+    profiles: ["ml"]
     env_file: .env
     depends_on: [redis, postgres]
     volumes: [./backend:/app/backend, ./data:/data]
@@ -40,6 +80,7 @@ services:
 
   worker-training:
     build: .
+    profiles: ["ml"]
     env_file: .env
     depends_on: [redis, postgres, mlflow]
     volumes: [./backend:/app/backend, ./training:/app/training, ./data:/data]
