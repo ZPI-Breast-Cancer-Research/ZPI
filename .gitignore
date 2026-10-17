@@ -14,10 +14,12 @@ __pycache__/
 node_modules/
 frontend/dist/
 
-# Dane medyczne i artefakty – NIGDY w repo
+# Medical data
 data/**
 !data/**/
 !data/**/.gitkeep
+# exception : split definition
+!data/splits/*.csv
 *.dcm
 *.nii
 *.nii.gz
