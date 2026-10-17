@@ -21,7 +21,7 @@ services:
       retries: 10
 
   orthanc:
-    image: orthancteam/orthanc:latest
+    image: orthancteam/orthanc:26.9.1
     volumes:
       - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
       - orthanc-db:/var/lib/orthanc/db

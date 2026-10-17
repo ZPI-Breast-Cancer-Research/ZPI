@@ -283,7 +283,30 @@ The frontend calls the backend directly at `VITE_API_URL`; the backend allows it
 
 ### Orthanc / OHIF
 
-The Orthanc DICOM server and the OHIF viewer are set up in a separate issue. The backend treats Orthanc as an external service reached via `ORTHANC_URL` (from inside the Docker network) and builds viewer links with `ORTHANC_PUBLIC_URL` (as seen from the browser). If both `ORTHANC_USER` and `ORTHANC_PASSWORD` are set, the backend sends them as HTTP basic auth.
+Orthanc runs with the DICOMweb and OHIF plugins enabled (config in `orthanc/orthanc.json`). It is also started by `docker compose up`; to run only the viewer:
+
+```bash
+cp .env.example .env      # if not done yet
+docker compose up -d orthanc
+```
+
+| Service | URL |
+|---|---|
+| Orthanc UI (upload studies) | http://localhost:8042/ui/app/ |
+| OHIF viewer | http://localhost:8042/ohif/ |
+| DICOMweb | http://localhost:8042/dicom-web/studies |
+
+Local credentials: `orthanc` / `orthanc` (development only). DICOM C-STORE is available on port `4242` (AET `ORTHANC`).
+
+#### Run the viewer with sample data
+
+1. Download a breast MRI study, e.g. one patient from [Duke-Breast-Cancer-MRI](https://www.cancerimagingarchive.net/collection/duke-breast-cancer-mri/) (TCIA, use the NBIA Data Retriever).
+2. Open http://localhost:8042/ui/app/, click *Upload* and drop the DICOM folder.
+3. Open http://localhost:8042/ohif/ and select the study.
+
+Never commit DICOM or patient data — everything under `data/` is git-ignored.
+
+The backend treats Orthanc as an external service reached via `ORTHANC_URL` (from inside the Docker network) and builds viewer links with `ORTHANC_PUBLIC_URL` (as seen from the browser). If both `ORTHANC_USER` and `ORTHANC_PASSWORD` are set, the backend sends them as HTTP basic auth.
 
 `/api/health` always returns `200` while the API and database are up, and reports Orthanc as `"ok"`, `"unauthorized"` (credentials rejected) or `"unreachable"`. `/api/studies` returns `503` with an explanatory message when Orthanc is unreachable or rejects the credentials.
 

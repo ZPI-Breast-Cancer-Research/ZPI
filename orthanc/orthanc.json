@@ -11,5 +11,8 @@
     "Root": "/dicom-web/",
     "EnableWado": true,
     "WadoRoot": "/wado"
+  },
+  "Ohif": {
+    "DataSource": "dicom-web"
   }
 }
