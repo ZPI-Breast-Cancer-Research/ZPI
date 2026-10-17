@@ -315,3 +315,36 @@ The backend treats Orthanc as an external service reached via `ORTHANC_URL` (fro
 ```bash
 docker compose run --rm backend python manage.py test
 ```
+## Git workflow
+
+`master` is protected: all changes go through a pull request with at least 1 approval. No direct pushes, no force pushes.
+
+One branch per task, created from an up-to-date `master` and deleted after merge. Branch names follow `<area>/<short-description>`:
+
+| prefix | area |
+|---|---|
+| `seg/` | segmentation (MRI, nnU-Net) |
+| `ext/` | report data extraction |
+| `backend/` | backend & infrastructure |
+| `frontend/` | frontend |
+| `docs/` | documentation |
+
+Example: `seg/nnunet-baseline`. Other names are rejected on push (enforced by repository rulesets).
+
+```bash
+git switch master && git pull
+git switch -c seg/my-task
+# ...work, commit...
+git push -u origin seg/my-task   # then open a PR on GitHub
+```
+
+## Data
+
+Medical data (`.nii`, `.nii.gz`, `.dcm`, everything under `data/`) is **never** committed; see `.gitignore`.
+The only exception is `data/splits/*.csv`: split definitions containing patient IDs only, no image data.
+
+### Frozen test set
+
+`data/splits/frozen_split_official.csv`: official MAMA-MIA split, 1,200 train / 306 test.
+**Do not modify it.** Train and cross-validate on the train cases only; the test set is used once, for final evaluation.
+Background and dataset analysis: `notebook/01_eda_mamamia_segmentation.ipynb`.
