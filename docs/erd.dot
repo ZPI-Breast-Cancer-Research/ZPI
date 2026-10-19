@@ -1,12 +1,12 @@
 digraph model_graph {
   // Dotfile by Django-Extensions graph_models
-  // Created: 2026-10-20 01:04
-  // Cli Options: patients segmentation extraction mlops users --group-models --dot
+  // Created: 2026-10-20 01:09
+  // Cli Options: patients segmentation extraction mlops users --group-models --exclude-models Group,Permission,AbstractUser,AbstractBaseUser,PermissionsMixin --no-inheritance --hide-edge-labels --rankdir LR --dot
 
   fontname = "Roboto"
   fontsize = 8
   splines  = true
-  rankdir = "TB"
+  rankdir = "LR"
   
 
   node [
@@ -446,96 +446,6 @@ digraph model_graph {
     color=olivedrab4
     style="rounded"
   
-    django_contrib_auth_models_AbstractUser [label=<
-      <TABLE BGCOLOR="white" BORDER="1" CELLBORDER="0" CELLSPACING="0">
-      <TR><TD COLSPAN="2" CELLPADDING="5" ALIGN="CENTER" BGCOLOR="#1b563f">
-      <FONT FACE="Roboto" COLOR="white" POINT-SIZE="10"><B>
-      AbstractUser<BR/>&lt;<FONT FACE="Roboto"><I>AbstractBaseUser,PermissionsMixin</I></FONT>&gt;
-      </B></FONT></TD></TR>
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT FACE="Roboto">date_joined</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT FACE="Roboto">DateTimeField</FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT COLOR="#7B7B7B" FACE="Roboto">email</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT COLOR="#7B7B7B" FACE="Roboto">EmailField</FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT COLOR="#7B7B7B" FACE="Roboto">first_name</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT COLOR="#7B7B7B" FACE="Roboto">CharField</FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT FACE="Roboto">is_active</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT FACE="Roboto">BooleanField</FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT FACE="Roboto">is_staff</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT FACE="Roboto">BooleanField</FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT FACE="Roboto"><I>is_superuser</I></FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT FACE="Roboto"><I>BooleanField</I></FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT COLOR="#7B7B7B" FACE="Roboto"><I>last_login</I></FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT COLOR="#7B7B7B" FACE="Roboto"><I>DateTimeField</I></FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT COLOR="#7B7B7B" FACE="Roboto">last_name</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT COLOR="#7B7B7B" FACE="Roboto">CharField</FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT FACE="Roboto"><I>password</I></FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT FACE="Roboto"><I>CharField</I></FONT>
-      </TD></TR>
-    
-    
-    
-      <TR><TD ALIGN="LEFT" BORDER="0">
-      <FONT FACE="Roboto">username</FONT>
-      </TD><TD ALIGN="LEFT">
-      <FONT FACE="Roboto">CharField</FONT>
-      </TD></TR>
-    
-    
-      </TABLE>
-      >]
-  
     users_models_User [label=<
       <TABLE BGCOLOR="white" BORDER="1" CELLBORDER="0" CELLSPACING="0">
       <TR><TD COLSPAN="2" CELLPADDING="5" ALIGN="CENTER" BGCOLOR="#1b563f">
@@ -648,71 +558,32 @@ digraph model_graph {
   // Relations
 
   patients_models_Study -> patients_models_Patient
-  [label=" patient (studies)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
   patients_models_Image -> patients_models_Study
-  [label=" study (images)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
 
   segmentation_models_SegmentationRun -> patients_models_Image
-  [label=" image (segmentation_runs)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
   segmentation_models_SegmentationRun -> mlops_models_ModelVersion
-  [label=" model (+)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
   segmentation_models_SegmentationRun -> users_models_User
-  [label=" accepted_by (accepted_segmentations)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
 
   extraction_models_ExtractionRun -> patients_models_Study
-  [label=" study (extraction_runs)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
   extraction_models_ExtractionRun -> mlops_models_ModelVersion
-  [label=" model (+)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
   extraction_models_ExtractionRun -> users_models_User
-  [label=" accepted_by (accepted_extractions)"] [arrowhead=none, arrowtail=dot, dir=both];
+  [label=" "] [arrowhead=none, arrowtail=dot, dir=both];
 
 
-  django_contrib_auth_base_user_AbstractBaseUser [label=<
-  <TABLE BGCOLOR="white" BORDER="0" CELLBORDER="0" CELLSPACING="0">
-  <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="#1b563f">
-  <FONT FACE="Roboto" POINT-SIZE="12" COLOR="white">AbstractBaseUser</FONT>
-  </TD></TR>
-  </TABLE>
-  >]
-  django_contrib_auth_models_AbstractUser -> django_contrib_auth_base_user_AbstractBaseUser
-  [label=" abstract\ninheritance"] [arrowhead=empty, arrowtail=none, dir=both];
-  django_contrib_auth_models_PermissionsMixin [label=<
-  <TABLE BGCOLOR="white" BORDER="0" CELLBORDER="0" CELLSPACING="0">
-  <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="#1b563f">
-  <FONT FACE="Roboto" POINT-SIZE="12" COLOR="white">PermissionsMixin</FONT>
-  </TD></TR>
-  </TABLE>
-  >]
-  django_contrib_auth_models_AbstractUser -> django_contrib_auth_models_PermissionsMixin
-  [label=" abstract\ninheritance"] [arrowhead=empty, arrowtail=none, dir=both];
-  django_contrib_auth_models_Group [label=<
-  <TABLE BGCOLOR="white" BORDER="0" CELLBORDER="0" CELLSPACING="0">
-  <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="#1b563f">
-  <FONT FACE="Roboto" POINT-SIZE="12" COLOR="white">Group</FONT>
-  </TD></TR>
-  </TABLE>
-  >]
-  users_models_User -> django_contrib_auth_models_Group
-  [label=" groups (user)"] [arrowhead=dot arrowtail=dot, dir=both];
-  django_contrib_auth_models_Permission [label=<
-  <TABLE BGCOLOR="white" BORDER="0" CELLBORDER="0" CELLSPACING="0">
-  <TR><TD COLSPAN="2" CELLPADDING="4" ALIGN="CENTER" BGCOLOR="#1b563f">
-  <FONT FACE="Roboto" POINT-SIZE="12" COLOR="white">Permission</FONT>
-  </TD></TR>
-  </TABLE>
-  >]
-  users_models_User -> django_contrib_auth_models_Permission
-  [label=" user_permissions (user)"] [arrowhead=dot arrowtail=dot, dir=both];
-
-  users_models_User -> django_contrib_auth_models_AbstractUser
-  [label=" abstract\ninheritance"] [arrowhead=empty, arrowtail=none, dir=both];
 
 
 }
