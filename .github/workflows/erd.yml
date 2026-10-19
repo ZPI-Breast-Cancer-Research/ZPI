@@ -1,0 +1,34 @@
+name: ERD
+on:
+  push:
+    paths:
+      - "backend/**/models.py"
+      - "backend/**/models/**"
+      - ".github/workflows/erd.yml"
+permissions:
+  contents: write
+jobs:
+  erd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y graphviz
+      - run: pip install -r backend/requirements.txt
+      - name: Generate ERD
+        working-directory: backend
+        env:
+          SECRET_KEY: ci-only
+          # + inne zmienne wymagane przez settings.py (django-environ)
+        run: |
+          python manage.py graph_models patients segmentation extraction mlops users \
+            --group-models --dot > ../docs/erd.dot
+          dot -Tsvg ../docs/erd.dot -o ../docs/erd.svg
+      - name: Commit if changed
+        run: |
+          git config user.name "erd-bot"
+          git config user.email "erd-bot@users.noreply.github.com"
+          git add docs/erd.dot docs/erd.svg
+          git diff --cached --quiet || (git commit -m "docs: regenerate ERD [skip ci]" && git push)

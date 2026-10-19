@@ -37,6 +37,10 @@ INSTALLED_APPS = [
     "rest_framework",
     "users",
     "patients",
+    "mlops",
+    "segmentation",
+    "extraction",
+    "django_extensions"
 ]
 
 MIDDLEWARE = [
