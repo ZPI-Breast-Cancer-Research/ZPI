@@ -35,7 +35,12 @@ jobs:
           ORTHANC_PASSWORD: "password"
         run: |
           python manage.py graph_models patients segmentation extraction mlops users \
-            --group-models --dot > ../docs/erd.dot
+            --group-models \
+            --exclude-models Group,Permission,AbstractUser,AbstractBaseUser,PermissionsMixin \
+            --no-inheritance \
+            --hide-edge-labels \
+            --rankdir LR \
+            --dot > ../docs/erd.dot
           dot -Tsvg ../docs/erd.dot -o ../docs/erd.svg
       - name: Commit if changed
         run: |
