@@ -20,8 +20,19 @@ jobs:
       - name: Generate ERD
         working-directory: backend
         env:
-          SECRET_KEY: ci-only
-          # + inne zmienne wymagane przez settings.py (django-environ)
+          DJANGO_SECRET_KEY: "ci-only-secret-key"
+          DJANGO_DEBUG: "False"
+          DJANGO_ALLOWED_HOSTS: "localhost"
+          POSTGRES_DB: "ci_db"
+          POSTGRES_USER: "ci_user"
+          POSTGRES_PASSWORD: "ci_password"
+          POSTGRES_HOST: "localhost"
+          POSTGRES_PORT: "5432"
+          CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+          ORTHANC_URL: "http://localhost:8042"
+          ORTHANC_PUBLIC_URL: "http://localhost:8042"
+          ORTHANC_USER: "admin"
+          ORTHANC_PASSWORD: "password"
         run: |
           python manage.py graph_models patients segmentation extraction mlops users \
             --group-models --dot > ../docs/erd.dot
