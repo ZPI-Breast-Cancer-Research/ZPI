@@ -22,6 +22,3 @@ class ExtractionRun(models.Model):
     )
     accepted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Extraction #{self.pk} ({self.status})"

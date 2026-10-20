@@ -199,6 +199,12 @@ The radiologist does not review cases in random order — the system shows first
 
 ---
 
+### Database ERD
+
+The complete entity relationship diagram (ERD), automatically generated from the Django models, is available in [`docs/erd.svg`](docs/erd.svg):
+
+![ERD Diagram](docs/erd.svg)
+
 ## 7. Technology stack
 
 | Layer | Technology |
