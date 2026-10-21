@@ -27,48 +27,7 @@ The project is part of a broader research plan (ZPI + TransMed/ABM): structuring
 
 ## 2. System architecture
 
-```mermaid
-flowchart LR
-    subgraph FE["Frontend — React"]
-        UP["Upload and study list"]
-        RQ["Review queue"]
-        VW["OHIF / Cornerstone3D viewer<br/>mask preview and editing"]
-        EF["Extraction form<br/>field correction"]
-        LO["Lesion overview"]
-    end
-
-    API["Django + DRF<br/>API, auth, logic"]
-    DB[("PostgreSQL<br/>metadata, predictions,<br/>corrections, versions")]
-    ORT[("Orthanc<br/>DICOM / DICOMweb")]
-    FS[("File storage<br/>NIfTI, masks, exports")]
-    RED["Redis<br/>broker"]
-
-    subgraph WK["Celery workers"]
-        INF["Inference queue"]
-        TRN["Training queue"]
-    end
-
-    SEG["nnU-Net v2"]
-    LLM["Bielik-7B<br/>vLLM / LM Studio<br/>+ regex"]
-    MLF["MLflow<br/>Tracking + Model Registry"]
-
-    FE <--> API
-    VW <-->|DICOMweb| ORT
-    API --> DB
-    API --> ORT
-    API --> RED
-    RED --> INF
-    RED --> TRN
-    INF --> SEG
-    INF --> LLM
-    INF --> FS
-    INF --> DB
-    TRN --> SEG
-    TRN --> LLM
-    TRN --> MLF
-    TRN --> FS
-    MLF --> DB
-```
+![System architecture](docs/architecture.svg)
 
 ---
 
