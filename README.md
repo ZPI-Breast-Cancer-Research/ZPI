@@ -28,7 +28,7 @@ The project is part of a broader research plan (ZPI + TransMed/ABM): structuring
 ## 2. System architecture
 
 ![System architecture](docs/architecture.svg)
-### 2.1 Entity-Relationship Diagram ERD
+### 2.1 Entity-Relationship Diagram
 ![database schema](docs/erd.svg)
 ---
 
