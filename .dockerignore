@@ -1,0 +1,10 @@
+.git
+.env
+data
+docs
+notebook
+frontend
+infra
+**/__pycache__
+**/*.py[cod]
+**/.venv

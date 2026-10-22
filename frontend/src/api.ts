@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+export const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 const api = axios.create({ baseURL: API_URL, timeout: 15000 });
 
@@ -38,7 +38,10 @@ export async function fetchStudies(): Promise<Study[]> {
         throw new ApiError(body.detail ?? "Orthanc rejected the credentials.", "orthanc_unauthorized");
       }
       if (!error.response) {
-        throw new ApiError(`Cannot reach the backend API at ${API_URL}.`, "backend_unreachable");
+        throw new ApiError(
+          `Cannot reach the backend API at ${API_URL || window.location.origin}.`,
+          "backend_unreachable",
+        );
       }
       throw new ApiError(body?.detail ?? `Backend returned HTTP ${error.response.status}.`, "unknown");
     }

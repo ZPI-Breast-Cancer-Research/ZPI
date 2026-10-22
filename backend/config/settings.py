@@ -15,6 +15,8 @@ env = environ.Env(
     ORTHANC_PUBLIC_URL=(str, "http://localhost:8042"),
     ORTHANC_USER=(str, ""),
     ORTHANC_PASSWORD=(str, ""),
+    CELERY_BROKER_URL=(str, "redis://localhost:6379/0"),
+    MLFLOW_TRACKING_URI=(str, "http://mlflow:5000"),
 )
 
 # Local runs outside docker: pick up the repo-level .env if present.
@@ -113,3 +115,15 @@ ORTHANC_PUBLIC_URL = env("ORTHANC_PUBLIC_URL").rstrip("/")
 # Optional HTTP basic auth – used only when both are set.
 ORTHANC_USER = env("ORTHANC_USER")
 ORTHANC_PASSWORD = env("ORTHANC_PASSWORD")
+
+MLFLOW_TRACKING_URI = env("MLFLOW_TRACKING_URI").rstrip("/")
+
+CELERY_BROKER_URL = env("CELERY_BROKER_URL")
+CELERY_TASK_ROUTES = {
+    "segmentation.correction_to_dicom_seg": {"queue": "segmentation-convert"},
+    "segmentation.*": {"queue": "segmentation"},
+    "extraction.*": {"queue": "extraction"},
+    "training.*": {"queue": "training"},
+}
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
