@@ -7,6 +7,7 @@ from pathlib import Path
 from .config import Settings
 from .llm import LLMError, get_llm_client
 from .ocr import IMAGE_SUFFIXES, OcrEngine, OcrError, get_ocr_engine
+from .orientation import OrientationDetector, get_orientation_detector
 from .pipeline import extract_from_images, extract_from_text, run_ocr
 from .schema import ExtractionResult
 
@@ -45,17 +46,21 @@ def cmd_ping(args: argparse.Namespace, settings: Settings) -> int:
 
 def cmd_ocr(args: argparse.Namespace, settings: Settings) -> int:
     ocr = _ocr_engine(settings)
+    orientation = _orientation(settings)
     for source, files in _documents(args.input):
         if files[0].suffix.lower() in TEXT_SUFFIXES:
             continue
-        result = run_ocr(files, ocr)
+        result = run_ocr(files, ocr, orientation)
         confidence = result.mean_confidence
+        rotations = ", ".join(f"{page.rotation}°" for page in result.pages if page.rotation)
         print(
             f"===== {source} | {result.engine} {result.engine_version} | "
             f"pewność: {confidence:.2f} | {result.seconds:.1f}s"
             if confidence is not None
             else f"===== {source} | {result.engine} {result.engine_version}"
         )
+        if rotations:
+            print(f"obrócono: {rotations}")
         print(result.text)
     return 0
 
@@ -83,6 +88,7 @@ def cmd_run(args: argparse.Namespace, settings: Settings) -> int:
     client = get_llm_client(settings)
     needs_ocr = any(files[0].suffix.lower() not in TEXT_SUFFIXES for _, files in documents)
     ocr: OcrEngine | None = _ocr_engine(settings) if needs_ocr else None
+    orientation = _orientation(settings) if ocr else None
     out = args.out.open("w", encoding="utf-8") if args.out else sys.stdout
     failures = 0
     started = time.perf_counter()
@@ -102,6 +108,7 @@ def cmd_run(args: argparse.Namespace, settings: Settings) -> int:
                     files,
                     ocr,
                     client,
+                    orientation=orientation,
                     source=source,
                     few_shot=settings.few_shot_examples,
                     structured_output=settings.llm_structured_output,
@@ -146,7 +153,7 @@ def _summary(result: ExtractionResult) -> str:
     assert result.data is not None
     parts = [
         f"{len(result.data.zmiany)} zmian",
-        f"{len(result.data.wezly_chlonne)} węzłów",
+        f"{len(result.data.wezly)} węzłów",
         f"LLM {result.llm_seconds}s",
     ]
     if result.ocr_seconds is not None:
@@ -161,10 +168,17 @@ def _ocr_engine(settings: Settings) -> OcrEngine:
     return get_ocr_engine(settings.ocr_engine, lang=settings.ocr_lang)
 
 
+def _orientation(settings: Settings) -> OrientationDetector | None:
+    if settings.ocr_orientation != "none":
+        print(f"Ładowanie detektora orientacji: {settings.ocr_orientation} ...", file=sys.stderr)
+    return get_orientation_detector(settings.ocr_orientation)
+
+
 def _settings(args: argparse.Namespace) -> Settings:
     settings = Settings.from_env()
     overrides = {
         "ocr_engine": args.ocr,
+        "ocr_orientation": args.orientation,
         "llm_base_url": args.base_url,
         "llm_model": args.model,
         "few_shot_examples": args.few_shot,
@@ -178,6 +192,10 @@ def _settings(args: argparse.Namespace) -> Settings:
 def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--ocr", help="OCR engine (env OCR_ENGINE, default: paddle)")
+    common.add_argument(
+        "--orientation",
+        help="page orientation detector: paddle, none (env OCR_ORIENTATION, default: paddle)",
+    )
     common.add_argument("--base-url", help="local LLM server URL (env LLM_BASE_URL)")
     common.add_argument("--model", help="model id on the server (env LLM_MODEL)")
     common.add_argument("--few-shot", type=int, help="few-shot examples (env EXTRACTION_FEW_SHOT)")

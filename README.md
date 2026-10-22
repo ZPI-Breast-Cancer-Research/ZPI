@@ -49,6 +49,9 @@ The project is part of a broader research plan (ZPI + TransMed/ABM): structuring
 3. The result and a per-field **uncertainty score** are saved.
 4. A form next to the report text — the radiologist accepts or corrects the fields; a per-field diff is stored.
 
+Running the extraction locally (photo of a report → OCR → LLM → JSON, PowerShell): see
+[workers/extraction/README.md – Running the extraction worker](workers/extraction/README.md#running-the-extraction-worker-windows--powershell).
+
 ### 3.3 Lesion overview
 
 An integrated view of a single lesion combining:

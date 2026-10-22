@@ -8,6 +8,7 @@ from config.celery import app
 from .config import Settings
 from .llm import get_llm_client
 from .ocr import OcrEngine, get_ocr_engine
+from .orientation import OrientationDetector, get_orientation_detector
 from .pipeline import extract_from_images, extract_from_text
 
 
@@ -20,6 +21,11 @@ def _settings() -> Settings:
 def _ocr() -> OcrEngine:
     settings = _settings()
     return get_ocr_engine(settings.ocr_engine, lang=settings.ocr_lang)
+
+
+@cache
+def _orientation() -> OrientationDetector | None:
+    return get_orientation_detector(_settings().ocr_orientation)
 
 
 @app.task(name="extraction.run")
@@ -39,5 +45,7 @@ def run(keys: list[str], source: str | None = None) -> dict:
         if paths[0].suffix.lower() == ".txt":
             result = extract_from_text(paths[0].read_text(encoding="utf-8"), llm, **options)
         else:
-            result = extract_from_images(paths, _ocr(), llm, **options)
+            result = extract_from_images(
+                paths, _ocr(), llm, orientation=_orientation(), **options
+            )
     return result.model_dump(mode="json")

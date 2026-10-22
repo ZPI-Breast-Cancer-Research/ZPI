@@ -3,7 +3,9 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "3"
+
+MM_PER_UNIT = {"mm": 1.0, "cm": 10.0}
 
 
 class Modalnosc(StrEnum):
@@ -22,6 +24,7 @@ class KategoriaBiRads(StrEnum):
     K1 = "1"
     K2 = "2"
     K3 = "3"
+    K4 = "4"
     K4A = "4a"
     K4B = "4b"
     K4C = "4c"
@@ -29,11 +32,15 @@ class KategoriaBiRads(StrEnum):
     K6 = "6"
 
 
-class TypZmiany(StrEnum):
-    GUZEK = "guzek"
-    MIKROZWAPNIENIA = "mikrozwapnienia"
-    ASYMETRIA = "asymetria"
-    ZNIEKSZTALCENIE_ARCHITEKTONIKI = "zniekształcenie_architektoniki"
+class Jednostka(StrEnum):
+    MM = "mm"
+    CM = "cm"
+
+
+class Kwalifikator(StrEnum):
+    DOKLADNY = "dokładny"
+    OKOLO = "około"
+    DO = "do"
 
 
 class Ksztalt(StrEnum):
@@ -45,93 +52,174 @@ class Ksztalt(StrEnum):
 class Brzeg(StrEnum):
     OBWIEDZIONY = "obwiedziony"
     NIEOSTRY = "nieostry"
-    SPIKULARNY = "spikularny"
     ZATARTY = "zatarty"
     MIKROPLATOWATY = "mikropłatowaty"
     KATOWY = "kątowy"
+    SPIKULARNY = "spikularny"
 
 
-class WezelChlonny(BaseModel):
-    strona: Strona = Field(description="Strona ciała.", examples=["lewa"])
-    lokalizacja: str = Field(description="Lokalizacja węzła.", examples=["dół pachowy"])
-    wymiary_mm: list[float] = Field(
-        default_factory=list,
-        description="Wymiary w mm, w kolejności z opisu. Pusta lista, gdy nie podano.",
-        examples=[[11, 23]],
+class Echogenicznosc(StrEnum):
+    BEZECHOWA = "bezechowa"
+    HIPOECHOGENICZNA = "hipoechogeniczna"
+    IZOECHOGENICZNA = "izoechogeniczna"
+    HIPERECHOGENICZNA = "hiperechogeniczna"
+    ZLOZONA = "złożona"
+
+
+class Jednorodnosc(StrEnum):
+    JEDNORODNA = "jednorodna"
+    NIEJEDNORODNA = "niejednorodna"
+
+
+class Liczba(StrEnum):
+    POJEDYNCZY = "pojedynczy"
+    MNOGIE = "mnogie"
+
+
+class Miara(BaseModel):
+    wartosc: float
+    jednostka: Jednostka = Field(description="Jednostka dokładnie jak w tekście.")
+
+    def mm(self) -> float:
+        return self.wartosc * MM_PER_UNIT[self.jednostka]
+
+
+class Wymiary(BaseModel):
+    wartosci: list[float] = Field(
+        description="Liczby w kolejności z opisu, bez przeliczania (np. '100x90mm' -> [100, 90])."
     )
-    warstwa_korowa: str | None = Field(
-        default=None,
-        description="Opis warstwy korowej, dosłownie z tekstu.",
-        examples=["nieregularna, odcinkowo poszerzona do 6mm"],
-    )
-    patologiczny: bool | None = Field(
-        default=None,
+    jednostka: Jednostka = Field(description="Jednostka dokładnie jak w tekście.")
+    kwalifikator: Kwalifikator = Field(
         description=(
-            "Czy opis wskazuje węzeł patologiczny/podejrzany. null, gdy opis tego nie mówi."
-        ),
+            "'ok', 'około', 'orientacyjnie' -> około; 'do' -> do; "
+            "w pozostałych przypadkach dokładny."
+        )
     )
-    uwagi: str | None = Field(
-        default=None, examples=["prawdopodobnie ten sam węzeł co w mammografii"]
+
+    def max_mm(self) -> float | None:
+        return max(self.wartosci) * MM_PER_UNIT[self.jednostka] if self.wartosci else None
+
+
+class Skora(BaseModel):
+    stan: str | None = Field(
+        default=None, description="Opis skóry dosłownie z tekstu.", examples=["prawidłowy"]
     )
-    cytat: str = Field(description="Dosłowny fragment opisu, z którego pochodzą dane węzła.")
+    naciek: bool | None = Field(default=None, description="Czy zmiana nacieka skórę.")
+
+
+class Piers(BaseModel):
+    budowa: str | None = Field(
+        default=None, description="Budowa piersi dosłownie z tekstu.", examples=["tłuszczowe"]
+    )
+    obrzek: bool | None = None
+    zwapnienia: bool | None = Field(
+        default=None, description="Zwapnienia inne niż mikrozwapnienia (np. 'zwapnienia')."
+    )
+    mikrozwapnienia: bool | None = None
+    zmiany_ogniskowe: bool | None = Field(
+        default=None, description="Czy w tej piersi opisano jakąkolwiek zmianę ogniskową."
+    )
+    skora: Skora = Field(default_factory=Skora)
+
+
+class Piersi(BaseModel):
+    lewa: Piers = Field(default_factory=Piers)
+    prawa: Piers = Field(default_factory=Piers)
+
+
+class Obserwacja(BaseModel):
+    modalnosc: Modalnosc
+    lokalizacje: list[str] = Field(
+        default_factory=list,
+        description="Każda wymieniona lokalizacja osobno, dosłownie z tekstu.",
+        examples=[["zabrodawkowo", "część centralna", "kw dolne"]],
+    )
+    godzina: str | None = Field(
+        default=None, description="Położenie zegarowe dosłownie z tekstu.", examples=["6"]
+    )
+    odleglosc_od_brodawki: Miara | None = Field(
+        default=None, description="To NIE jest wymiar zmiany."
+    )
+    typ: str | None = Field(
+        default=None,
+        description="Rodzaj zmiany dosłownie z tekstu.",
+        examples=["guzowata", "ognisko hypoechogeniczne", "torbiel prosta"],
+    )
+    wymiary: Wymiary | None = None
+    glebokosc: Miara | None = Field(default=None, description="Głębokość od skóry (USG).")
+    ksztalt: Ksztalt | None = None
+    brzeg: Brzeg | None = None
+    echogenicznosc: Echogenicznosc | None = Field(default=None, description="Tylko USG.")
+    jednorodnosc: Jednorodnosc | None = Field(default=None, description="Tylko USG.")
+    naciek_skory: bool | None = None
+    cytat: str = Field(
+        description="Dosłowny fragment opisu obejmujący wszystkie dane tej obserwacji."
+    )
+
+
+class PolaczenieObserwacji(BaseModel):
+    pewne: bool = Field(
+        description=(
+            "true tylko, gdy opis wprost łączy obserwacje "
+            "(np. 'odpowiada zmianie w mammografii')."
+        )
+    )
+    powod: str | None = Field(
+        default=None, description="Dlaczego to prawdopodobnie ta sama zmiana."
+    )
 
 
 class Zmiana(BaseModel):
-    nr: int = Field(description="Kolejny numer zmiany w tym opisie, od 1.", examples=[1])
-    modalnosc: Modalnosc = Field(description="Badanie, w którym opisano zmianę.")
-    strona: Strona = Field(examples=["lewa"])
-    kwadrant: str | None = Field(
+    id: int = Field(description="Kolejny numer zmiany w tym opisie, od 1.")
+    strona: Strona
+    birads: KategoriaBiRads | None = Field(
+        default=None, description="BI-RADS tej zmiany, jeśli opis podaje go przy zmianie."
+    )
+    obserwacje: list[Obserwacja] = Field(
+        description="Opis tej samej zmiany w poszczególnych badaniach (MMG, USG)."
+    )
+    polaczenie_obserwacji: PolaczenieObserwacji | None = Field(
+        default=None, description="Tylko gdy obserwacji jest więcej niż jedna."
+    )
+
+
+class Wezel(BaseModel):
+    modalnosc: Modalnosc
+    strona: Strona
+    okolica: str = Field(description="Okolica dosłownie z tekstu.", examples=["dół pachowy"])
+    liczba: Liczba | None = None
+    wymiary: Wymiary | None = None
+    patologiczne: bool | None = Field(
         default=None,
-        description="Kwadrant lub inna lokalizacja słowna, dosłownie z tekstu.",
-        examples=["dolno-zewnętrzny", "na granicy kwadrantów górnych"],
+        description=(
+            "true – opis wskazuje patologię; false – 'bez cech patologii'; null – brak oceny."
+        ),
     )
-    polozenie_zegarowe: str | None = Field(default=None, examples=["9:00"])
-    odleglosc_od_brodawki_mm: float | None = Field(
+    uwagi: str | None = Field(
+        default=None, description="Inne cechy dosłownie z tekstu.", examples=["o pogrubiałej korze"]
+    )
+    cytat: str
+
+
+class Wniosek(BaseModel):
+    birads: KategoriaBiRads | None = None
+    tekst: str | None = Field(default=None, description="Treść wniosku dosłownie z tekstu.")
+    zalecenie: str | None = Field(
         default=None,
-        description="Odległość zmiany od brodawki w mm. To NIE jest wymiar zmiany.",
-        examples=[30],
+        description="Zalecenie dosłownie, bez rozwijania skrótów.",
+        examples=["do BMU"],
     )
-    typ_zmiany: TypZmiany
-    wymiary_mm: list[float] = Field(
-        default_factory=list,
-        description="Wymiary zmiany w mm, w kolejności z opisu (np. '24x16mm' -> [24, 16]).",
-        examples=[[24, 16]],
-    )
-    glebokosc_mm: float | None = Field(
-        default=None, description="Głębokość od skóry w mm (USG, np. 'gł 0mm').", examples=[0]
-    )
-    ksztalt: Ksztalt | None = None
-    brzeg: Brzeg | None = None
-    powiazana_ze_zmiana: int | None = Field(
-        default=None,
-        description="nr innej zmiany z tego opisu, która jest tą samą zmianą lub się z nią łączy.",
-    )
-    kategoria_birads: KategoriaBiRads | None = None
-    zalecenie_dot_zmiany: str | None = Field(default=None, examples=["TRUCUT + foto próbki"])
-    cytat: str = Field(description="Dosłowny fragment opisu, z którego pochodzą dane zmiany.")
 
 
 class EkstrakcjaBadania(BaseModel):
-    typ_badania: list[Modalnosc] = Field(
-        description="Badania opisane w dokumencie.", examples=[["mammografia", "usg"]]
-    )
-    gestosc_piersi: str | None = Field(
-        default=None,
-        description="Budowa/gęstość piersi dosłownie z opisu, bez normalizacji do A-D.",
-        examples=["gruczołowo-tłuszczowe"],
-    )
-    zarys_skory: str | None = Field(default=None, examples=["prawidłowy"])
+    modalnosci: list[Modalnosc] = Field(description="Badania opisane w dokumencie.")
+    piersi: Piersi = Field(default_factory=Piersi)
     zmiany: list[Zmiana] = Field(
         default_factory=list,
-        description=(
-            "Tylko zmiany stwierdzone w opisie; pomiń te, których istnieniu opis zaprzecza."
-        ),
+        description="Tylko zmiany stwierdzone w opisie; zaprzeczenia nie tworzą zmian.",
     )
-    wezly_chlonne: list[WezelChlonny] = Field(default_factory=list)
-    ogolna_kategoria_birads: KategoriaBiRads | None = None
-    zalecenie_ogolne: str | None = Field(
-        default=None, examples=["TRUCUT + foto próbki (zmiana lewa), SBM (prawa)"]
-    )
+    wezly: list[Wezel] = Field(default_factory=list)
+    wniosek: Wniosek = Field(default_factory=Wniosek)
 
 
 class Provenance(BaseModel):
@@ -139,6 +227,8 @@ class Provenance(BaseModel):
     ocr_engine: str | None = None
     ocr_engine_version: str | None = None
     ocr_mean_confidence: float | None = None
+    orientation_detector: str | None = None
+    page_rotations: list[int | None] = Field(default_factory=list)
     llm_provider: str
     llm_model: str
     prompt_version: str

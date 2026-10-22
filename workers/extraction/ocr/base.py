@@ -20,6 +20,7 @@ class OcrLine:
 class OcrPage:
     source: str
     lines: list[OcrLine] = field(default_factory=list)
+    rotation: int | None = None
 
     @property
     def text(self) -> str:
@@ -32,6 +33,7 @@ class OcrResult:
     engine_version: str
     pages: list[OcrPage]
     seconds: float
+    orientation: str | None = None
 
     @property
     def text(self) -> str:
