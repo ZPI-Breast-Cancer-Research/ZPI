@@ -7,7 +7,7 @@ JPG → OCR → normalize → prompt → local LLM → parse + validate → chec
 ```
 
 Pure Python with no Django imports, so the module can be developed and run on its own (CLI,
-notebooks) and later called from a Celery task. It depends only on its own `requirements*.txt`
+notebooks); `tasks.py` is the only file that needs Django/Celery. It depends only on its own `requirements*.txt`
 and does not change the backend's dependencies.
 
 **Data never leaves the machine.** The LLM client sends requests only to hosts on
@@ -20,10 +20,9 @@ report text.
 Python 3.12 (PaddlePaddle has no wheels for the newest Python versions yet).
 
 ```bash
-cd backend
 python -m venv .venv && .venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
-pip install -r inference/extraction/requirements-paddle.txt
-# without OCR (text input only): pip install -r inference/extraction/requirements.txt
+pip install -r workers/extraction/requirements-paddle.txt
+# without OCR (text input only): pip install -r workers/extraction/requirements.txt
 ```
 
 LM Studio:
@@ -36,14 +35,14 @@ LM Studio:
 
 ## Usage
 
-Run from `backend/`:
+Run from the repo root:
 
 ```bash
-python -m inference.extraction models                     # models available on the server
-python -m inference.extraction ping                       # the server answers
-python -m inference.extraction ocr data/reports/skan.jpg  # OCR only: print the text
-python -m inference.extraction extract opis.txt           # LLM only: from a text file
-python -m inference.extraction run ../data/reports --out ../data/exports/ext.jsonl
+python -m workers.extraction models                     # models available on the server
+python -m workers.extraction ping                       # the server answers
+python -m workers.extraction ocr data/reports/skan.jpg  # OCR only: print the text
+python -m workers.extraction extract opis.txt           # LLM only: from a text file
+python -m workers.extraction run data/reports --out data/exports/ext.jsonl
 ```
 
 `run` input: a single file, or a directory where every `.jpg`/`.png`/`.txt` file is one document
@@ -97,6 +96,7 @@ model, prompt version, schema version), so runs with different components can be
 | `parsing.py` | JSON extraction from the answer + schema validation (one retry with feedback) |
 | `checks.py` | warnings: quote not found in the report, broken links between lesions |
 | `__main__.py` | CLI |
+| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path) |
 
 Changing `prompts/` or `prompting.py`: bump `PROMPT_VERSION`. Changing `schema.py`: bump
 `SCHEMA_VERSION` and update `prompts/few_shot/` (examples are validated against the schema at

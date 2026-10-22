@@ -188,7 +188,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     parser = argparse.ArgumentParser(
-        prog="python -m inference.extraction",
+        prog="python -m workers.extraction",
         description="Extract structured data from mammography / USG reports.",
     )
     sub = parser.add_subparsers(required=True)

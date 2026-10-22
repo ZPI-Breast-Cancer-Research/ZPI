@@ -74,7 +74,7 @@ flowchart LR
     T --> F["Retraining / fine-tuning<br/>logged to MLflow"]
     F --> E["Evaluation on the<br/>frozen test set"]
     E --> G{"Better than<br/>production?"}
-    G -->|yes| S["Staging →<br/>approval → Production"]
+    G -->|yes| S["@challenger →<br/>approval → @champion"]
     G -->|no| X["Rejected,<br/>model unchanged"]
     S --> P
 ```
@@ -98,19 +98,27 @@ The radiologist does not review cases in random order — the system shows first
 **Extraction** — two stages:
 - *From the start:* corrections feed a pool of few-shot examples; the most similar reports (embeddings) are selected for the prompt. The prompt + example set is versioned.
 - *With a few hundred corrections:* LoRA/QLoRA fine-tuning of Bielik; adapters as subsequent model versions.
+- The extraction model is not managed by MLflow aliases (for now): the LLM server loads the GGUF file from MinIO at start, so a new model = replace `LLM_MODEL_FILE` in the `models` bucket and restart `llm-server`.
 - Metrics: per-field precision / recall / F1 on the frozen test set.
 
 **Quality gate rules**
 - The test set is frozen and never used for training.
-- A new version goes to `Staging` only if it improves the main metric without significantly degrading the others.
-- Promotion to `Production` requires human approval (no automatic model replacement in a medical environment).
+- A new version gets the `@challenger` alias only if it improves the main metric without significantly degrading the others (set by the training worker).
+- Moving `@champion` to it requires human approval in the app (no automatic model replacement in a medical environment); the API sets the alias in MLflow.
 
 ### 4.4 What we log in MLflow
 
 - training parameters / prompt configuration, data version (list of case IDs + hash),
 - test set metrics, training time,
 - artifacts: weights / LoRA adapter, prompt, few-shot pool, sample predictions,
-- Model Registry stage: `None` → `Staging` → `Production` → `Archived`.
+- Model Registry aliases (stages are deprecated since MLflow 2.9):
+
+| Alias | Meaning | Set by |
+|---|---|---|
+| `@challenger` | passed the quality gate, waiting for approval | training worker |
+| `@champion` | production segmentation model – the segmentation worker loads `models:/<name>@champion` at the start of each task | Django API, after human approval |
+
+Activating a version moves the alias; the previous champion stays in the registry as a plain version, so a rollback is moving the alias back.
 
 ---
 
@@ -127,7 +135,7 @@ The radiologist does not review cases in random order — the system shows first
 - DRF exposes the REST API for the frontend.
 
 ### Asynchronous processing — Celery
-- Separate `inference` and `training` queues. With a single GPU, training tasks do not run in parallel with inference; with several GPUs, each queue has a dedicated card (`CUDA_VISIBLE_DEVICES`).
+- Separate `segmentation`, `extraction` and `training` queues, one worker per queue. Converting a corrected mask to DICOM SEG is a short CPU task with its own `segmentation-convert` queue, served by a second process of the segmentation worker (`worker-segmentation-convert`), so it does not wait behind GPU inference. With a single GPU, training tasks do not run in parallel with segmentation; with several GPUs, each queue has a dedicated card (`CUDA_VISIBLE_DEVICES`).
 - The frontend receives a `task_id` and polls for the status (polling) or receives a notification (WebSocket).
 
 ### Models
@@ -136,8 +144,8 @@ The radiologist does not review cases in random order — the system shows first
 - MONAI as an alternative library if needed.
 
 ### MLflow
-- Tracking Server with a PostgreSQL backend and artifacts in file storage.
-- Model Registry as the source of truth about which model version is in production.
+- Tracking Server with the main PostgreSQL database as the backend and artifacts in MinIO (`s3://mlflow`).
+- Model Registry as the source of truth about which model version is in production (the `@champion` alias).
 
 ### Storage
 - **Orthanc** — DICOM server (PACS) with DICOMweb; image source for the viewer.
@@ -150,7 +158,7 @@ The radiologist does not review cases in random order — the system shows first
 
 | Entity | Key fields |
 |---|---|
-| `ModelVersion` | module (seg / ext), name, `mlflow_run_id`, stage, test metrics |
+| `ModelVersion` | module (seg / ext), name, `mlflow_run_id`, MLflow version, alias (`challenger` / `champion` / none), test metrics, approved by / at |
 | `Prediction` | case, `model_version`, result (mask path / JSON), `uncertainty`, status: `pending_review` / `accepted` / `corrected` |
 | `Correction` | `prediction`, corrected mask / JSON, diff, author, date, editing time |
 | `DatasetSplit` | case, split: `train` / `test` (test frozen) |
@@ -178,32 +186,49 @@ The radiologist does not review cases in random order — the system shows first
 
 ## 8. Repository structure
 
+One folder per container of the architecture diagram. The API image has no ML dependencies;
+each worker has its own image and requirements.
+
 ```
 mri-breast-analysis/
-├── backend/
-│   ├── config/              # settings, urls, celery.py
-│   ├── patients/            # patients, studies, series, reports
-│   ├── segmentation/        # mask predictions and corrections, metrics
-│   ├── extraction/          # report field predictions and corrections
+├── backend/                 # Django API – no ML dependencies
+│   ├── common/              # plain Python shared with the workers (no Django): storage.py (Minio)
+│   ├── config/              # settings, urls, celery.py (shared Celery app, queue routing)
+│   ├── users/
+│   ├── patients/            # studies, reports, Orthanc client
+│   ├── segmentation/        # DB models + API: mask predictions and corrections
+│   ├── extraction/          # DB models + API: report field predictions and corrections
 │   ├── review/              # review queue, uncertainty score
-│   ├── mlops/               # ModelVersion, TrainingRun, MLflow integration
-│   ├── inference/           # nnU-Net and Bielik wrappers, DICOM→NIfTI conversion
+│   ├── mlops/               # ModelVersion, TrainingRun, champion alias
 │   ├── requirements.txt
 │   └── manage.py
-├── training/
-│   ├── segmentation/        # export to nnU-Net format, fine-tuning, evaluation
-│   └── extraction/          # few-shot pool, LoRA, per-field F1 evaluation
+├── workers/                 # Celery workers, one image each (build context: repo root)
+│   ├── segmentation/        # queue "segmentation": inference (nnU-Net → mask, DICOM SEG),
+│   │                        #   corrected mask → DICOM SEG for the viewer (queue "segmentation-convert")
+│   ├── extraction/          # queue "extraction": scan from Minio → OCR → local LLM → JSON
+│   └── training/            # queue "training": fine-tuning on corrections, new model version
+├── infra/                   # configuration of third-party services
+│   ├── gateway/             # nginx: UI, /api, /dicom-web (access checked by Django)
+│   ├── llm-server/          # llama.cpp server, GGUF fetched from Minio
+│   ├── minio/               # buckets: studies, masks, reports, models, mlflow
+│   ├── mlflow/              # MLflow image with Postgres + S3 drivers
+│   └── orthanc/orthanc.json
 ├── frontend/
 │   ├── src/
 │   │   ├── components/      # upload, study list, queue, extraction form
 │   │   ├── viewer/          # OHIF/Cornerstone3D, mask editing
 │   │   └── lesion-overview/ # lesion overview
 │   └── package.json
-├── orthanc/orthanc.json
-├── docker-compose.yml       # Django, Celery, Redis, Orthanc, Postgres, MLflow
-├── docs/                    # requirements, architecture, ZPI documentation
+├── notebook/                # EDA
+├── docker-compose.yml       # one service per box of docs/architecture.svg
+├── docs/                    # architecture diagram, ZPI documentation
 └── README.md
 ```
+
+Workers write results to Postgres through the Django models: each worker image contains
+`backend/` and Celery sets up Django on start. The API never imports worker code – it sends
+tasks by name (`celery_app.send_task("extraction.run", ...)`) and `CELERY_TASK_ROUTES` picks
+the queue.
 
 ---
 
@@ -221,7 +246,12 @@ cp .env.example .env      # adjust values if needed (ports, secrets)
 docker compose up --build
 ```
 
-This starts `postgres`, `redis`, `backend` (Django + DRF) and `frontend` (React + Vite). The backend applies database migrations on start. ML services (`mlflow`, Celery workers) are in the `ml` compose profile and are not started by default.
+This starts `postgres`, `redis`, `minio`, `orthanc`, `mlflow`, `backend` (Django + DRF), `frontend` (React + Vite) and `gateway` (nginx). The backend applies database migrations on start; `/api/health` reports Orthanc and MLflow without requiring them. The Celery workers are in the `ml` compose profile, the local LLM server (`llm-server`) in the `llm` profile; neither is started by default:
+
+```bash
+docker compose --profile ml up --build               # + workers (LLM: LM Studio on the host)
+docker compose --profile ml --profile llm up --build # + llama.cpp server with the GGUF from Minio
+```
 
 To create an admin account:
 
@@ -229,20 +259,25 @@ To create an admin account:
 docker compose exec backend python manage.py createsuperuser
 ```
 
+Open the app through the gateway – it serves the UI, the API and the viewer on one origin:
+
 | Service | URL |
 |---|---|
-| Frontend (study list) | http://localhost:5173 |
-| Backend API – health | http://localhost:8000/api/health |
-| Backend API – studies | http://localhost:8000/api/studies |
+| **App (study list)** | **http://localhost:8080** |
+| Backend API – health | http://localhost:8080/api/health |
+| Backend API – studies | http://localhost:8080/api/studies |
+| OHIF viewer | http://localhost:8080/ohif/ |
 | Django admin | http://localhost:8000/admin/ |
+| MLflow UI | http://localhost:5000 |
+| Minio console | http://localhost:9001 |
 
-If ports `5432` or `8000` are already taken on your machine, change `POSTGRES_HOST_PORT` / `BACKEND_HOST_PORT` in `.env` (and keep `VITE_API_URL` in sync with the backend port).
+If ports `5432`, `8000` or `8080` are already taken on your machine, change `POSTGRES_HOST_PORT` / `BACKEND_HOST_PORT` / `GATEWAY_HOST_PORT` in `.env` (and keep `ORTHANC_PUBLIC_URL` in sync with the gateway port).
 
-The frontend calls the backend directly at `VITE_API_URL`; the backend allows it through CORS (`CORS_ALLOWED_ORIGINS`).
+The UI calls `/api` on its own origin (`VITE_API_URL` empty). Requests to `/ohif` and `/dicom-web` are allowed by Django (`/api/auth/orthanc`, nginx `auth_request`) and the gateway logs in to Orthanc itself (`ORTHANC_GATEWAY_AUTH`), so the browser never gets the Orthanc credentials. The direct ports (`5173`, `8000`, `8042`) are for development only.
 
 ### Orthanc / OHIF
 
-Orthanc runs with the DICOMweb and OHIF plugins enabled (config in `orthanc/orthanc.json`). It is also started by `docker compose up`; to run only the viewer:
+Orthanc runs with the DICOMweb and OHIF plugins enabled (config in `infra/orthanc/orthanc.json`). It is also started by `docker compose up`; to run only the viewer:
 
 ```bash
 cp .env.example .env      # if not done yet
@@ -251,9 +286,9 @@ docker compose up -d orthanc
 
 | Service | URL |
 |---|---|
-| Orthanc UI (upload studies) | http://localhost:8042/ui/app/ |
-| OHIF viewer | http://localhost:8042/ohif/ |
-| DICOMweb | http://localhost:8042/dicom-web/studies |
+| Orthanc UI (upload studies, direct – dev only) | http://localhost:8042/ui/app/ |
+| OHIF viewer (through the gateway) | http://localhost:8080/ohif/ |
+| DICOMweb (through the gateway) | http://localhost:8080/dicom-web/studies |
 
 Local credentials: `orthanc` / `orthanc` (development only). DICOM C-STORE is available on port `4242` (AET `ORTHANC`).
 
@@ -261,7 +296,7 @@ Local credentials: `orthanc` / `orthanc` (development only). DICOM C-STORE is av
 
 1. Download a breast MRI study, e.g. one patient from [Duke-Breast-Cancer-MRI](https://www.cancerimagingarchive.net/collection/duke-breast-cancer-mri/) (TCIA, use the NBIA Data Retriever).
 2. Open http://localhost:8042/ui/app/, click *Upload* and drop the DICOM folder.
-3. Open http://localhost:8042/ohif/ and select the study.
+3. Open http://localhost:8080/ohif/ (or click the study in the app) and select the study.
 
 Never commit DICOM or patient data — everything under `data/` is git-ignored.
 

@@ -1,0 +1,8 @@
+torch>=2.3
+nnunetv2>=2.5
+SimpleITK>=2.3
+pydicom>=2.4
+nibabel>=5.2
+dicom2nifti>=2.4
+mlflow-skinny>=2.16
+highdicom>=0.22

@@ -1,0 +1,41 @@
+server {
+    listen 80;
+    client_max_body_size 2g;
+
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /ohif/ {
+        auth_request /_auth/orthanc;
+        proxy_pass http://orthanc:8042/ohif/;
+        proxy_set_header Authorization "Basic ${ORTHANC_GATEWAY_AUTH}";
+        proxy_hide_header WWW-Authenticate;
+    }
+
+    location /dicom-web/ {
+        auth_request /_auth/orthanc;
+        proxy_pass http://orthanc:8042/dicom-web/;
+        proxy_set_header Authorization "Basic ${ORTHANC_GATEWAY_AUTH}";
+        proxy_hide_header WWW-Authenticate;
+    }
+
+    location = /_auth/orthanc {
+        internal;
+        proxy_pass http://backend:8000/api/auth/orthanc;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Original-URI $request_uri;
+    }
+
+    location / {
+        proxy_pass http://frontend:5173;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

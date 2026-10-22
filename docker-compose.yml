@@ -1,4 +1,3 @@
-# Szkielet – obrazy i komendy do uzupełnienia
 services:
   postgres:
     image: postgres:16
@@ -20,20 +19,33 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    env_file: .env
+    command: server /data --console-address ":9001"
+    volumes: [minio-data:/data]
+    ports: ["9000:9000", "9001:9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    env_file: .env
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes: [./infra/minio/init.sh:/init.sh:ro]
+    entrypoint: ["sh", "/init.sh"]
+
   orthanc:
     image: orthancteam/orthanc:26.9.1
     volumes:
-      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./infra/orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
       - orthanc-db:/var/lib/orthanc/db
     ports: ["8042:8042", "4242:4242"]
-
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    profiles: ["ml"]
-    env_file: .env
-    depends_on: [postgres]
-    volumes: [./data/mlartifacts:/mlartifacts]
-    ports: ["5000:5000"]
 
   backend:
     build: ./backend
@@ -70,22 +82,93 @@ services:
       retries: 10
       start_period: 20s
 
-  worker-inference:
-    build: .
+  gateway:
+    image: nginx:1.27-alpine
+    environment:
+      ORTHANC_GATEWAY_AUTH: ${ORTHANC_GATEWAY_AUTH}
+    depends_on: [backend, frontend, orthanc]
+    volumes: [./infra/gateway/default.conf.template:/etc/nginx/templates/default.conf.template:ro]
+    ports: ["${GATEWAY_HOST_PORT:-8080}:80"]
+
+  mlflow:
+    build: ./infra/mlflow
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        mlflow server --host 0.0.0.0 --port 5000
+        --backend-store-uri postgresql://$${POSTGRES_USER}:$${POSTGRES_PASSWORD}@postgres:5432/$${POSTGRES_DB}
+        --artifacts-destination s3://mlflow --serve-artifacts
+    ports: ["5000:5000"]
+
+  worker-segmentation:
+    build: {context: ., dockerfile: workers/segmentation/Dockerfile}
     profiles: ["ml"]
     env_file: .env
-    depends_on: [redis, postgres]
-    volumes: [./backend:/app/backend, ./data:/data]
-    # TODO: celery -Q inference, GPU reservation
+    depends_on: [redis, postgres, minio, orthanc, mlflow]
+    volumes: [./backend:/app/backend, ./workers:/app/workers, ./data:/data]
+    # TODO: GPU reservation
+
+  worker-segmentation-convert:
+    build: {context: ., dockerfile: workers/segmentation/Dockerfile}
+    profiles: ["ml"]
+    env_file: .env
+    depends_on: [redis, postgres, minio, orthanc]
+    volumes: [./backend:/app/backend, ./workers:/app/workers]
+    command: ["celery", "-A", "config", "worker", "-Q", "segmentation-convert",
+              "-I", "workers.segmentation.tasks", "--concurrency=2", "--loglevel=info"]
+
+  worker-extraction:
+    build: {context: ., dockerfile: workers/extraction/Dockerfile}
+    profiles: ["ml"]
+    env_file: .env
+    depends_on: [redis, postgres, minio]
+    volumes: [./backend:/app/backend, ./workers:/app/workers]
+    networks: [default, llm]
 
   worker-training:
-    build: .
+    build: {context: ., dockerfile: workers/training/Dockerfile}
     profiles: ["ml"]
     env_file: .env
-    depends_on: [redis, postgres, mlflow]
-    volumes: [./backend:/app/backend, ./training:/app/training, ./data:/data]
-    # TODO: celery -Q training --concurrency=1, GPU reservation
+    depends_on: [redis, postgres, minio, mlflow]
+    volumes: [./backend:/app/backend, ./workers:/app/workers, ./data:/data]
+    # TODO: GPU reservation
+
+  llm-model:
+    image: minio/mc:latest
+    profiles: ["llm"]
+    env_file: .env
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    volumes: [./infra/llm-server/fetch-model.sh:/fetch-model.sh:ro, llm-models:/models]
+    entrypoint: ["sh", "/fetch-model.sh"]
+
+  llm-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    profiles: ["llm"]
+    depends_on:
+      llm-model:
+        condition: service_completed_successfully
+    command: -m /models/${LLM_MODEL_FILE} --host 0.0.0.0 --port 8080 -c 8192 -ngl 99
+    volumes: [llm-models:/models:ro]
+    networks: [llm]
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+
+networks:
+  llm:
+    internal: true
 
 volumes:
   pgdata:
   orthanc-db:
+  minio-data:
+  llm-models:
