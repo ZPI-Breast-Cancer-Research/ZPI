@@ -1,3 +1,4 @@
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -5,7 +6,8 @@ from pathlib import Path
 from .checks import check_extraction
 from .llm.base import LLMClient, LLMError, Message
 from .normalize import normalize_text
-from .ocr.base import OcrEngine, OcrResult
+from .ocr.base import OcrEngine, OcrPage, OcrResult
+from .orientation import OrientationDetector, upright_copy
 from .parsing import ParseError, parse_response
 from .prompting import PROMPT_VERSION, build_messages
 from .schema import EkstrakcjaBadania, ExtractionResult, Provenance
@@ -13,15 +15,31 @@ from .schema import EkstrakcjaBadania, ExtractionResult, Provenance
 MAX_ATTEMPTS = 2
 
 
-def run_ocr(images: list[Path], ocr: OcrEngine) -> OcrResult:
+def run_ocr(
+    images: list[Path], ocr: OcrEngine, orientation: OrientationDetector | None = None
+) -> OcrResult:
     started = time.perf_counter()
-    pages = [ocr.read_page(image) for image in images]
+    with tempfile.TemporaryDirectory() as tmp:
+        pages = [_read_upright(image, ocr, orientation, Path(tmp)) for image in images]
     return OcrResult(
         engine=ocr.name,
         engine_version=ocr.version,
         pages=pages,
         seconds=time.perf_counter() - started,
+        orientation=orientation.name if orientation else None,
     )
+
+
+def _read_upright(
+    image: Path, ocr: OcrEngine, orientation: OrientationDetector | None, tmp: Path
+) -> OcrPage:
+    if orientation is None:
+        return ocr.read_page(image)
+    angle = orientation.correction_angle(image)
+    page = ocr.read_page(upright_copy(image, tmp, angle))
+    page.source = image.name
+    page.rotation = angle
+    return page
 
 
 def extract_from_images(
@@ -29,13 +47,14 @@ def extract_from_images(
     ocr: OcrEngine,
     llm: LLMClient,
     *,
+    orientation: OrientationDetector | None = None,
     source: str | None = None,
     few_shot: int = 1,
     structured_output: bool = True,
 ) -> ExtractionResult:
     source = source or images[0].name
     try:
-        ocr_result = run_ocr(images, ocr)
+        ocr_result = run_ocr(images, ocr, orientation)
     except Exception as exc:
         return _error_result(source, f"OCR: {exc}", text="", llm=llm)
 
@@ -49,6 +68,8 @@ def extract_from_images(
     result.provenance.ocr_engine = ocr_result.engine
     result.provenance.ocr_engine_version = ocr_result.engine_version
     result.provenance.ocr_mean_confidence = ocr_result.mean_confidence
+    result.provenance.orientation_detector = ocr_result.orientation
+    result.provenance.page_rotations = [page.rotation for page in ocr_result.pages]
     result.ocr_seconds = round(ocr_result.seconds, 2)
     return result
 

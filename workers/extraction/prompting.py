@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from .llm.base import Message
 from .schema import EkstrakcjaBadania
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v5"
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 

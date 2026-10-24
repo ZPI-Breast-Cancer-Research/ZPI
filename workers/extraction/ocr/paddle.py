@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,9 @@ class PaddleOcrEngine:
         *,
         unwarp: bool = False,
         detect_orientation: bool = False,
+        enable_mkldnn: bool = False,
     ):
+        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         try:
             import paddleocr
         except ImportError as exc:
@@ -28,9 +31,12 @@ class PaddleOcrEngine:
                 use_doc_orientation_classify=detect_orientation,
                 use_doc_unwarping=unwarp,
                 use_textline_orientation=detect_orientation,
+                enable_mkldnn=enable_mkldnn,
             )
         except (TypeError, ValueError):
-            self._ocr = paddleocr.PaddleOCR(lang=lang, use_angle_cls=detect_orientation)
+            self._ocr = paddleocr.PaddleOCR(
+                lang=lang, use_angle_cls=detect_orientation, enable_mkldnn=enable_mkldnn
+            )
         self._v3 = hasattr(self._ocr, "predict")
 
     def read_page(self, image: Path) -> OcrPage:

@@ -22,6 +22,7 @@ def _env_bool(name: str, default: bool) -> bool:
 class Settings:
     ocr_engine: str = "paddle"
     ocr_lang: str = "pl"
+    ocr_orientation: str = "paddle"
 
     llm_provider: str = "local_http"
     llm_base_url: str = "http://localhost:1234/v1"
@@ -37,6 +38,7 @@ class Settings:
         return cls(
             ocr_engine=os.environ.get("OCR_ENGINE", defaults.ocr_engine),
             ocr_lang=os.environ.get("OCR_LANG", defaults.ocr_lang),
+            ocr_orientation=os.environ.get("OCR_ORIENTATION", defaults.ocr_orientation),
             llm_provider=os.environ.get("LLM_PROVIDER", defaults.llm_provider),
             llm_base_url=os.environ.get("LLM_BASE_URL", defaults.llm_base_url),
             llm_model=os.environ.get("LLM_MODEL", defaults.llm_model),

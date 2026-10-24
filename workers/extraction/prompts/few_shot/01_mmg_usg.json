@@ -1,0 +1,95 @@
+{
+  "_comment": "Synthetic example written for the prompt. Not a real patient report.",
+  "report": "Opis badania:\n+ usg\nPiersi o przewadze utkania gruczołowego.\nW piersi lewej przy granicy kw górnych zmiana ogniskowa o zatartych zarysach wlk ok 20mm.\nPoj łagodne zwapnienia w obu piersiach.\nMikrozwapnień nie stwierdza się.\nZarys skóry piersi prawidłowy.\nDoły pachowe bez cech patologii.\n\nW badaniu usg w piersi lewej na godz 12 - 5cm od brodawki owalna, hypoechogeniczna, niejednorodna zmiana ogniskowa o wym 18x11mm, gł 9mm.\nW piersi prawej zmian ogniskowych nie stwierdza się.\nDoły pachowe bez cech patologii.\n\nR. Zmiana w piersi lewej podejrzana - BIRADS 4 - do BG.",
+  "output": {
+    "modalnosci": ["mammografia", "usg"],
+    "piersi": {
+      "lewa": {
+        "budowa": "o przewadze utkania gruczołowego",
+        "obrzek": null,
+        "zwapnienia": true,
+        "mikrozwapnienia": false,
+        "zmiany_ogniskowe": true,
+        "skora": {"stan": "prawidłowy", "naciek": null}
+      },
+      "prawa": {
+        "budowa": "o przewadze utkania gruczołowego",
+        "obrzek": null,
+        "zwapnienia": true,
+        "mikrozwapnienia": false,
+        "zmiany_ogniskowe": false,
+        "skora": {"stan": "prawidłowy", "naciek": null}
+      }
+    },
+    "zmiany": [
+      {
+        "id": 1,
+        "strona": "lewa",
+        "birads": null,
+        "obserwacje": [
+          {
+            "modalnosc": "mammografia",
+            "lokalizacje": ["przy granicy kw górnych"],
+            "godzina": null,
+            "odleglosc_od_brodawki": null,
+            "typ": "zmiana ogniskowa",
+            "wymiary": {"wartosci": [20], "jednostka": "mm", "kwalifikator": "około"},
+            "glebokosc": null,
+            "ksztalt": null,
+            "brzeg": "zatarty",
+            "echogenicznosc": null,
+            "jednorodnosc": null,
+            "naciek_skory": null,
+            "cytat": "W piersi lewej przy granicy kw górnych zmiana ogniskowa o zatartych zarysach wlk ok 20mm."
+          },
+          {
+            "modalnosc": "usg",
+            "lokalizacje": [],
+            "godzina": "12",
+            "odleglosc_od_brodawki": {"wartosc": 5, "jednostka": "cm"},
+            "typ": "zmiana ogniskowa",
+            "wymiary": {"wartosci": [18, 11], "jednostka": "mm", "kwalifikator": "dokładny"},
+            "glebokosc": {"wartosc": 9, "jednostka": "mm"},
+            "ksztalt": "owalny",
+            "brzeg": null,
+            "echogenicznosc": "hipoechogeniczna",
+            "jednorodnosc": "niejednorodna",
+            "naciek_skory": null,
+            "cytat": "W badaniu usg w piersi lewej na godz 12 - 5cm od brodawki owalna, hypoechogeniczna, niejednorodna zmiana ogniskowa o wym 18x11mm, gł 9mm."
+          }
+        ],
+        "polaczenie_obserwacji": {
+          "pewne": false,
+          "powod": "ta sama pierś, okolica kwadrantów górnych, zbliżony wymiar"
+        }
+      }
+    ],
+    "wezly": [
+      {
+        "modalnosc": "mammografia",
+        "strona": "obustronnie",
+        "okolica": "dół pachowy",
+        "liczba": null,
+        "wymiary": null,
+        "patologiczne": false,
+        "uwagi": null,
+        "cytat": "Doły pachowe bez cech patologii."
+      },
+      {
+        "modalnosc": "usg",
+        "strona": "obustronnie",
+        "okolica": "dół pachowy",
+        "liczba": null,
+        "wymiary": null,
+        "patologiczne": false,
+        "uwagi": null,
+        "cytat": "Doły pachowe bez cech patologii."
+      }
+    ],
+    "wniosek": {
+      "birads": "4",
+      "tekst": "Zmiana w piersi lewej podejrzana",
+      "zalecenie": "do BG"
+    }
+  }
+}
