@@ -266,7 +266,7 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
                   {t("models.version")} {v.version}
                 </td>
                 <td>
-                  <span className={STATUS_CLASS[v.status]}>{t(`models.status.${v.status}`)}</span> {v.alias && <span className="alias">{v.alias}</span>}
+                  <span className={STATUS_CLASS[v.status]}>{t(`models.status.${v.status}`)}</span>
                 </td>
                 <td>{period(v)}</td>
                 <td className="cell-right">{formatMetric(v.dice)}</td>

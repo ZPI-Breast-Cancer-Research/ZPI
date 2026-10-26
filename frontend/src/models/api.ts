@@ -5,7 +5,6 @@ export type VersionStatus = "candidate" | "production" | "archived" | "rejected"
 export interface ModelVersion {
   version: string;
   status: VersionStatus;
-  alias: "@candidate" | "@production" | null;
   from: string | null;
   to: string | null;
   dice: number | null;
@@ -58,13 +57,13 @@ export async function fetchSegmentation(): Promise<SegmentationOverview> {
   const training = scenario === "training";
 
   const versions: ModelVersion[] = [
-    { version: "7", status: "production", alias: "@production", from: "2026-10-05", to: null, dice: null, hd95: null, diceMamaMia: null, decision: "promoted", decidedBy: "Użytkownik", canRestore: false },
-    { version: "6", status: "archived", alias: null, from: "2026-09-01", to: "2026-10-05", dice: null, hd95: null, diceMamaMia: null, decision: "replaced", decidedBy: null, canRestore: true },
-    { version: "5", status: "rejected", alias: null, from: null, to: null, dice: null, hd95: null, diceMamaMia: null, decision: "rejected_gate", decidedBy: null, canRestore: false },
-    { version: "bazowa", status: "archived", alias: null, from: "2026-06-15", to: "2026-09-01", dice: null, hd95: null, diceMamaMia: null, decision: "baseline", decidedBy: null, canRestore: true },
+    { version: "7", status: "production", from: "2026-10-05", to: null, dice: null, hd95: null, diceMamaMia: null, decision: "promoted", decidedBy: "Użytkownik", canRestore: false },
+    { version: "6", status: "archived", from: "2026-09-01", to: "2026-10-05", dice: null, hd95: null, diceMamaMia: null, decision: "replaced", decidedBy: null, canRestore: true },
+    { version: "5", status: "rejected", from: null, to: null, dice: null, hd95: null, diceMamaMia: null, decision: "rejected_gate", decidedBy: null, canRestore: false },
+    { version: "bazowa", status: "archived", from: "2026-06-15", to: "2026-09-01", dice: null, hd95: null, diceMamaMia: null, decision: "baseline", decidedBy: null, canRestore: true },
   ];
   if (candidate) {
-    versions.unshift({ version: "8", status: "candidate", alias: "@candidate", from: null, to: null, dice: null, hd95: null, diceMamaMia: null, decision: "pending", decidedBy: null, canRestore: false });
+    versions.unshift({ version: "8", status: "candidate", from: null, to: null, dice: null, hd95: null, diceMamaMia: null, decision: "pending", decidedBy: null, canRestore: false });
   }
 
   return mockDelay({
