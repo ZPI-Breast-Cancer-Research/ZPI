@@ -1,16 +1,20 @@
 import { Link, NavLink } from "react-router-dom";
 
 import logo from "../../assets/logo.png";
+import { useAuth } from "../../auth/AuthProvider";
 import { t, type MessageKey } from "../../i18n";
 
-const MODULES: { to: string; label: MessageKey }[] = [
+const MODULES: { to: string; label: MessageKey; adminOnly?: boolean }[] = [
   { to: "/pulpit", label: "nav.dashboard" },
   { to: "/badania", label: "nav.studies" },
   { to: "/weryfikacja", label: "nav.review" },
-  { to: "/modele", label: "nav.models" },
+  { to: "/modele", label: "nav.models", adminOnly: true },
 ];
 
 export default function TopBar() {
+  const { user } = useAuth();
+  const initial = user?.name.charAt(0).toUpperCase() ?? "";
+
   return (
     <header className="topbar">
       <NavLink to="/pulpit" className="topbar__brand">
@@ -19,7 +23,7 @@ export default function TopBar() {
       </NavLink>
 
       <nav className="topbar__nav" aria-label={t("nav.modules")}>
-        {MODULES.map((module) => (
+        {MODULES.filter((module) => !module.adminOnly || user?.role === "admin").map((module) => (
           <NavLink key={module.to} to={module.to}>
             {t(module.label)}
           </NavLink>
@@ -38,9 +42,9 @@ export default function TopBar() {
         <NavLink to="/ustawienia">{t("nav.settings")}</NavLink>
         <Link to="/ustawienia" aria-label={t("nav.account")}>
           <span className="topbar__avatar" aria-hidden="true">
-            U
+            {initial}
           </span>
-          {t("nav.user")}
+          {user?.name}
         </Link>
       </div>
     </header>

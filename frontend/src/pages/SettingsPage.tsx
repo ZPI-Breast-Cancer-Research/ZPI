@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 
+import { useAuth } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
@@ -26,6 +28,7 @@ const SECTIONS = [
 
 function ProfileSection({ profile }: { profile: Profile }) {
   const toast = useToast();
+  const { user } = useAuth();
   const [form, setForm] = useState(profile);
   const save = useMutation({ mutationFn: saveProfile, onSuccess: () => toast(t("settings.profileSaved")) });
 
@@ -51,7 +54,7 @@ function ProfileSection({ profile }: { profile: Profile }) {
           <div>
             <label className="field">
               <span>{t("settings.role")}</span>
-              <input className="input" value={t(`role.${form.role}`)} readOnly />
+              <input className="input" value={user ? t(`role.${user.role}`) : ""} readOnly />
             </label>
             <label className="field">
               <span>{t("settings.pwz")}</span>
@@ -237,13 +240,16 @@ function UsersSection() {
 export default function SettingsPage() {
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const [active, setActive] = useState("profil");
+  const auth = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const target = document.getElementById(active);
     target?.scrollIntoView({ block: "start" });
   }, [active]);
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = auth.user?.role === "admin";
+  const signOut = () => auth.signOut().then(() => navigate("/logowanie", { replace: true }));
 
   return (
     <Page title={t("nav.settings")}>
@@ -264,7 +270,7 @@ export default function SettingsPage() {
             </>
           )}
           <div className="settings__logout">
-            <button type="button" className="btn">
+            <button type="button" className="btn" onClick={signOut}>
               {t("settings.logout")}
             </button>
           </div>

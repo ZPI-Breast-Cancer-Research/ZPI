@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { EmptyState } from "../components/State";
 import WarningIcon from "../components/WarningIcon";
 import { formatDate, formatDecimal } from "../format";
 import { t, type MessageKey } from "../i18n";
@@ -99,7 +100,7 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
       </div>
 
       {visible.length === 0 ? (
-        <p className="state">{t("studies.noMatch")}</p>
+        <EmptyState title={t("studies.noMatch")} />
       ) : (
         <table className="table">
           <thead>

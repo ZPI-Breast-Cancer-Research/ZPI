@@ -1,4 +1,5 @@
 import Panel from "../components/layout/Panel";
+import { EmptyState } from "../components/State";
 import WarningIcon from "../components/WarningIcon";
 import { t } from "../i18n";
 import type { DetectedStudy } from "./files";
@@ -17,7 +18,7 @@ export function ImportTable({ studies }: { studies: DetectedStudy[] }) {
   return (
     <Panel title={t("studies.import.table")} aux={t("studies.import.tableHint")}>
       {studies.length === 0 ? (
-        <p className="state">{t("studies.import.nothing")}</p>
+        <EmptyState title={t("studies.import.nothing")} />
       ) : (
         <table className="table">
           <thead>

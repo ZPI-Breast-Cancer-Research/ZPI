@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 
 import Page from "../components/layout/Page";
+import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
 import { fetchCase, fetchQueue } from "../review/api";
 import CaseReview from "../review/CaseReview";
@@ -17,10 +18,15 @@ export default function ReviewPage() {
     if (first) return <Navigate to={`/weryfikacja/${first.studyId}`} replace />;
     return (
       <Page title={t("nav.review")}>
-        <div className="state">
-          <h3>{t("review.queueEmpty")}</h3>
-          <p>{t("review.queueEmptyBody")}</p>
-        </div>
+        <EmptyState
+          title={t("review.queueEmpty")}
+          body={t("review.queueEmptyBody")}
+          action={
+            <Link className="btn" to="/badania">
+              {t("review.goToStudies")}
+            </Link>
+          }
+        />
       </Page>
     );
   }
@@ -28,12 +34,7 @@ export default function ReviewPage() {
   if (current.error || queue.error) {
     return (
       <Page title={t("nav.review")}>
-        <div className="state state--error" role="alert">
-          <h3>{t("review.error")}</h3>
-          <button className="btn" onClick={() => (current.refetch(), queue.refetch())}>
-            {t("studies.retry")}
-          </button>
-        </div>
+        <ErrorState title={t("review.error")} body={(current.error ?? queue.error)?.message} onRetry={() => (current.refetch(), queue.refetch())} />
       </Page>
     );
   }
@@ -41,7 +42,7 @@ export default function ReviewPage() {
   if (!current.data || !queue.data) {
     return (
       <Page title={t("nav.review")}>
-        <p className="state">{t("review.loading")}</p>
+        <LoadingState label={t("review.loading")} />
       </Page>
     );
   }

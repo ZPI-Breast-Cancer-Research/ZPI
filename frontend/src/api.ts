@@ -56,3 +56,14 @@ export async function fetchStudies(): Promise<Study[]> {
     throw new ApiError("Unexpected error while loading studies.", "unknown");
   }
 }
+
+export type PacsStatus = "ok" | "unauthorized" | "unreachable" | "unknown";
+
+export async function fetchPacsStatus(): Promise<PacsStatus> {
+  try {
+    const { data } = await api.get<{ orthanc?: PacsStatus }>("/api/health", { validateStatus: () => true });
+    return data?.orthanc ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}

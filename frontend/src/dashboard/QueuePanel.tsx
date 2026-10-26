@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 
 import Panel from "../components/layout/Panel";
+import { EmptyState } from "../components/State";
 import { formatDate, formatDecimal } from "../format";
 import { t } from "../i18n";
 import type { QueueItem } from "./api";
@@ -12,10 +13,15 @@ export default function QueuePanel({ items }: { items: QueueItem[] }) {
   return (
     <Panel title={t("dashboard.queue")} aux={t("dashboard.queue.hint")}>
       {items.length === 0 ? (
-        <div className="state">
-          <h3>{t("dashboard.queue.empty.title")}</h3>
-          <p>{t("dashboard.queue.empty.body")}</p>
-        </div>
+        <EmptyState
+          title={t("dashboard.queue.empty.title")}
+          body={t("dashboard.queue.empty.body")}
+          action={
+            <Link className="btn" to="/badania">
+              {t("review.goToStudies")}
+            </Link>
+          }
+        />
       ) : (
         <table className="table">
           <thead>

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import Page from "../components/layout/Page";
+import { ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
 import ExtractionView from "../models/ExtractionView";
 import SegmentationView, { useModelActions } from "../models/SegmentationView";
@@ -85,14 +86,9 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
       actions={buttons}
     >
       {query.isPending ? (
-        <p className="state">{t("models.loading")}</p>
+        <LoadingState label={t("models.loading")} />
       ) : query.error ? (
-        <div className="state state--error" role="alert">
-          <h3>{t("models.error")}</h3>
-          <button className="btn" onClick={() => query.refetch()}>
-            {t("studies.retry")}
-          </button>
-        </div>
+        <ErrorState title={t("models.error")} body={query.error.message} onRetry={() => query.refetch()} retrying={query.isFetching} />
       ) : module === "segmentation" && seg ? (
         <SegmentationView data={seg} rejecting={rejecting} onCancelReject={() => setRejecting(false)} />
       ) : extraction.data ? (

@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api";
 import Page from "../components/layout/Page";
+import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n";
@@ -119,20 +120,11 @@ export default function StudiesPage() {
       <div className="studies">
         <Panel title={t("studies.list")}>
           {studies.isPending ? (
-            <p className="state">{t("studies.loading")}</p>
+            <LoadingState label={t("studies.loading")} />
           ) : studies.error ? (
-            <div className="state state--error" role="alert">
-              <h3>{errorTitle(studies.error)}</h3>
-              <p>{studies.error.message}</p>
-              <button className="btn" onClick={() => studies.refetch()} disabled={studies.isFetching}>
-                {studies.isFetching ? t("studies.retrying") : t("studies.retry")}
-              </button>
-            </div>
+            <ErrorState title={errorTitle(studies.error)} body={studies.error.message} onRetry={() => studies.refetch()} retrying={studies.isFetching} />
           ) : rows.length === 0 ? (
-            <div className="state">
-              <h3>{t("studies.empty.title")}</h3>
-              <p>{t("studies.empty.body")}</p>
-            </div>
+            <EmptyState title={t("studies.empty.title")} body={t("studies.empty.body")} />
           ) : (
             <StudiesTable
               rows={rows}

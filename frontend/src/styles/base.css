@@ -403,6 +403,72 @@ textarea {
   margin-top: 14px;
 }
 
-.state--error h3 {
+.state__icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 10px;
+  color: var(--color-ink-muted);
+}
+
+.state--loading p {
+  margin-bottom: 14px;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.skeleton span {
+  height: 10px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #16233a 0%, #1e2d48 50%, #16233a 100%);
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+.skeleton span:nth-child(odd) {
+  width: 72%;
+}
+
+@keyframes skeleton {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton span {
+    animation: none;
+  }
+}
+
+.state-alert {
+  max-width: 640px;
+  margin: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(240, 144, 127, 0.45);
+  border-radius: 4px;
+  background: #24161a;
+}
+
+.state-alert b {
   color: var(--color-warning);
+  font-weight: 600;
+}
+
+.state-alert p {
+  margin-top: 3px;
+  color: var(--color-ink-muted);
+  font-size: 13.5px;
+}
+
+.state-alert__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
 }

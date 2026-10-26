@@ -4,6 +4,7 @@ import { Link, useLocation, useParams } from "react-router-dom";
 
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
+import { ErrorState, LoadingState } from "../components/State";
 import { formatDate, formatDuration, formatMetric } from "../format";
 import { t } from "../i18n";
 import { fetchOverview } from "../lesion-overview/api";
@@ -21,19 +22,14 @@ export default function LesionOverviewPage() {
   if (error) {
     return (
       <Page title={t("overview.title")}>
-        <div className="state state--error" role="alert">
-          <h3>{t("review.error")}</h3>
-          <button className="btn" onClick={() => refetch()}>
-            {t("studies.retry")}
-          </button>
-        </div>
+        <ErrorState title={t("review.error")} body={error.message} onRetry={() => refetch()} />
       </Page>
     );
   }
   if (!data) {
     return (
       <Page title={t("overview.title")}>
-        <p className="state">{t("overview.loading")}</p>
+        <LoadingState label={t("overview.loading")} />
       </Page>
     );
   }

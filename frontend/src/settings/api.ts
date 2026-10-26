@@ -1,12 +1,11 @@
+import type { Role } from "../auth/api";
 import { mockDelay } from "../mock";
 
-export type Role = "radiologist" | "researcher" | "admin";
 export type Series = "post" | "sub" | "pre";
 
 export interface Profile {
   name: string;
   email: string;
-  role: Role;
   pwz: string;
   language: "pl" | "en";
   defaultSeries: Series;
@@ -23,7 +22,7 @@ export interface UserRow {
 
 // TODO: no profile/users endpoints in the backend yet
 export async function fetchProfile(): Promise<Profile> {
-  return mockDelay({ name: "", email: "", role: "admin", pwz: "", language: "pl", defaultSeries: "post" });
+  return mockDelay({ name: "", email: "", pwz: "", language: "pl", defaultSeries: "post" });
 }
 
 export async function fetchUsers(): Promise<UserRow[]> {
