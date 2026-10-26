@@ -1,0 +1,52 @@
+/* from docs/design/mockups */
+:root {
+  /* surfaces */
+  --color-bar: #1a2740;
+  --color-banner: #152036;
+  --color-ground: #0f1a2d;
+  --color-side: #0a1222;
+  --color-field: #0b1424;
+  --color-strip: #2c384b;
+  --color-strip-border: #222c3c;
+  --color-hover: #15223a;
+  --color-selected: #1c2c49;
+  --color-image: #000;
+
+  /* lines */
+  --color-line: #18243a;
+  --color-rule: #22314b;
+  --color-rule-strong: #34465f;
+
+  /* text */
+  --color-ink: #e8ecf1;
+  --color-ink-muted: #b0bac8;
+  --color-ink-faint: #808b9e;
+  --color-bar-ink: #c9d2df;
+  --color-strip-aux: #d3d9e2;
+
+  /* accents and states */
+  --color-primary: #ec6f98;
+  --color-primary-hover: #f283a8;
+  --color-primary-ink: #2a0e1a;
+  --color-corrected: #f390b2;
+  --color-confirmed: #a9cdb9;
+  --color-running: #afc0da;
+  --color-warning: #f0907f;
+
+  /* type */
+  --font-sans: "Public Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Source Code Pro", ui-monospace, Menlo, monospace;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-strip: 15.5px;
+  --text-title: 17px;
+
+  /* layout */
+  --bar-height: 48px;
+  --banner-height: 52px;
+  --strip-height: 42px;
+  --radius: 3px;
+  --app-min-width: 1280px;
+
+  color-scheme: dark;
+}
