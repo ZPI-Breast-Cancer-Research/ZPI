@@ -27,8 +27,16 @@ export class ApiError extends Error {
 export async function fetchStudies(): Promise<Study[]> {
   try {
     const { data } = await api.get<Study[]>("/api/studies");
+    // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
+    if (!Array.isArray(data)) {
+      throw new ApiError(
+        `The backend API at ${API_URL || window.location.origin} did not return a study list.`,
+        "backend_unreachable",
+      );
+    }
     return data;
   } catch (error) {
+    if (error instanceof ApiError) throw error;
     if (axios.isAxiosError(error)) {
       const body = error.response?.data as { code?: string; detail?: string } | undefined;
       if (body?.code === "orthanc_unavailable") {
@@ -46,5 +54,16 @@ export async function fetchStudies(): Promise<Study[]> {
       throw new ApiError(body?.detail ?? `Backend returned HTTP ${error.response.status}.`, "unknown");
     }
     throw new ApiError("Unexpected error while loading studies.", "unknown");
+  }
+}
+
+export type PacsStatus = "ok" | "unauthorized" | "unreachable" | "unknown";
+
+export async function fetchPacsStatus(): Promise<PacsStatus> {
+  try {
+    const { data } = await api.get<{ orthanc?: PacsStatus }>("/api/health", { validateStatus: () => true });
+    return data?.orthanc ?? "unknown";
+  } catch {
+    return "unknown";
   }
 }

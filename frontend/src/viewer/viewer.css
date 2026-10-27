@@ -1,0 +1,147 @@
+.viewer {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 0 2px;
+  flex: 1;
+  min-height: 0;
+  background: var(--color-image);
+}
+
+.viewer__planes {
+  position: relative;
+  margin: 4px 0 8px;
+}
+
+.viewer__plane {
+  position: absolute;
+  left: 12px;
+  right: 8px;
+  height: 7px;
+  padding: 0;
+  background: none;
+  border: 1px solid rgba(196, 200, 206, 0.28);
+  transform: skewX(-42deg);
+  cursor: pointer;
+}
+
+.viewer__plane:hover {
+  border-color: #c4c8ce;
+}
+
+.viewer__plane--lesion {
+  border-color: rgba(236, 111, 152, 0.65);
+}
+
+.viewer__plane--current {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.viewer__well {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.viewer__well--side {
+  border-left: 1px solid #121a28;
+}
+
+.viewer__well canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.viewer__overlay--paint {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.viewer__dc {
+  position: absolute;
+  color: #cdd3dc;
+  font: 400 12.5px / 1.5 var(--font-mono);
+  pointer-events: none;
+  text-shadow: 0 1px 2px #000;
+}
+
+.viewer__dc--tl {
+  left: 12px;
+  top: 10px;
+}
+
+.viewer__dc--tr {
+  right: 14px;
+  top: 10px;
+  text-align: right;
+}
+
+.viewer__dc--bl {
+  left: 12px;
+  bottom: 10px;
+}
+
+.viewer__mask-note {
+  color: var(--color-corrected);
+}
+
+.viewer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--color-field);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.viewer-toolbar__group {
+  display: flex;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.viewer-toolbar__group button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  background: none;
+  border: 0;
+  color: var(--color-ink-muted);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.viewer-toolbar__group button + button {
+  border-left: 1px solid var(--color-rule-strong);
+}
+
+.viewer-toolbar__group button:hover {
+  background: #111a2b;
+  color: var(--color-ink);
+}
+
+.viewer-toolbar__group button[aria-pressed="true"] {
+  background: var(--color-ink);
+  color: var(--color-side);
+}
+
+.viewer-toolbar__group svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.viewer-toolbar .segmented {
+  margin-left: auto;
+}

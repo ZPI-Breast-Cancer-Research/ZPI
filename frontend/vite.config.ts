@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 // on one origin, so no dev proxy is configured here.
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? "dev") },
   server: {
     host: "0.0.0.0",
     port: 5173,
