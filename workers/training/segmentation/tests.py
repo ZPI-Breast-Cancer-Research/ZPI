@@ -1,9 +1,11 @@
 import csv
+import json
 from pathlib import Path
 
 import pytest
 
 from workers.segmentation.channels import CHANNELS
+from workers.training.segmentation import build_nnunet_dataset as nnunet
 from workers.training.segmentation.dataset import (
     MAMAMIA_PHASES,
     MANIFEST_COLUMNS,
@@ -137,3 +139,92 @@ def test_main_exit_code(tmp_path):
 
     make_case(tmp_path, "B_2")
     assert main(args) == 1
+
+
+def make_manifest(root: Path, splits: dict[str, str]) -> Path:
+    for case_id in splits:
+        make_case(root, case_id)
+    records, _ = build_manifest(root, splits)
+    manifest = root / "manifest.csv"
+    write_manifest(records, manifest)
+    return manifest
+
+
+def test_build_nnunet_dataset_layout(tmp_path):
+    source = tmp_path / "mamamia"
+    manifest = make_manifest(source, {"A_1": "train", "B_2": "test"})
+
+    dataset_dir, counts = nnunet.build_nnunet_dataset(source, manifest, tmp_path / "raw")
+
+    assert dataset_dir == tmp_path / "raw" / "Dataset501_DCE3"
+    assert counts == {"train": 1, "test": 1}
+    assert sorted(p.name for p in (dataset_dir / "imagesTr").iterdir()) == [
+        "A_1_0000.nii.gz",
+        "A_1_0001.nii.gz",
+        "A_1_0002.nii.gz",
+    ]
+    assert [p.name for p in (dataset_dir / "labelsTr").iterdir()] == ["A_1.nii.gz"]
+    assert len(list((dataset_dir / "imagesTs").iterdir())) == 3
+    assert [p.name for p in (dataset_dir / "labelsTs").iterdir()] == ["B_2.nii.gz"]
+    link = dataset_dir / "imagesTr" / "A_1_0001.nii.gz"
+    assert link.resolve() == (source / "images" / "A_1" / "A_1_0001.nii.gz").resolve()
+
+
+def test_dataset_json(tmp_path):
+    source = tmp_path / "mamamia"
+    manifest = make_manifest(source, {"A_1": "train", "B_2": "train", "C_3": "test"})
+
+    dataset_dir, _ = nnunet.build_nnunet_dataset(source, manifest, tmp_path / "raw")
+
+    assert json.loads((dataset_dir / "dataset.json").read_text(encoding="utf-8")) == {
+        "channel_names": {"0": "pre", "1": "post1", "2": "post2"},
+        "labels": {"background": 0, "tumor": 1},
+        "numTraining": 2,
+        "file_ending": ".nii.gz",
+    }
+
+
+def test_relative_source_root_gives_working_links(tmp_path, monkeypatch):
+    manifest = make_manifest(tmp_path / "mamamia", {"A_1": "train"})
+    monkeypatch.chdir(tmp_path)
+
+    dataset_dir, _ = nnunet.build_nnunet_dataset(Path("mamamia"), manifest, Path("raw"))
+
+    links = list((dataset_dir / "imagesTr").iterdir())
+    assert links and all(link.exists() for link in links)
+
+
+def test_copy_creates_regular_files(tmp_path):
+    source = tmp_path / "mamamia"
+    manifest = make_manifest(source, {"A_1": "train"})
+
+    dataset_dir, _ = nnunet.build_nnunet_dataset(source, manifest, tmp_path / "raw", copy=True)
+
+    files = list((dataset_dir / "imagesTr").iterdir())
+    assert files and not any(f.is_symlink() for f in files)
+
+
+def test_existing_dataset_needs_overwrite(tmp_path):
+    source = tmp_path / "mamamia"
+    manifest = make_manifest(source, {"A_1": "train"})
+    args = ["--root", str(source), "--manifest", str(manifest), "--out", str(tmp_path / "raw")]
+    assert nnunet.main(args) == 0
+    stale = tmp_path / "raw" / "Dataset501_DCE3" / "imagesTr" / "OLD_0000.nii.gz"
+    stale.touch()
+
+    assert nnunet.main(args) == 1
+    assert stale.exists()
+
+    assert nnunet.main([*args, "--overwrite"]) == 0
+    assert not stale.exists()
+    assert source.joinpath("images", "A_1", "A_1_0000.nii.gz").exists()
+
+
+def test_unknown_split_is_rejected_before_writing(tmp_path):
+    source = tmp_path / "mamamia"
+    manifest = make_manifest(source, {"A_1": "train"})
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace(",train,", ",tset,"))
+
+    with pytest.raises(ValueError, match="tset"):
+        nnunet.build_nnunet_dataset(source, manifest, tmp_path / "raw")
+    assert not (tmp_path / "raw").exists()
