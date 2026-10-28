@@ -65,6 +65,10 @@ dev = [
     "mypy>=1.11",
     "django-stubs>=5.0",
     "pre-commit>=3.8",
+    # notebooks (notebook/*.ipynb)
+    "jupyter>=1.0",
+    "matplotlib>=3.8",
+    "pandas>=2.1",
 ]
 
 [build-system]

@@ -10,7 +10,7 @@ from .ocr.base import OcrEngine, OcrPage, OcrResult
 from .orientation import OrientationDetector, upright_copy
 from .parsing import ParseError, parse_response
 from .prompting import PROMPT_VERSION, build_messages
-from .schema import EkstrakcjaBadania, ExtractionResult, Provenance
+from .schema import ExtractionResult, Provenance, llm_json_schema
 
 MAX_ATTEMPTS = 2
 
@@ -35,8 +35,12 @@ def _read_upright(
 ) -> OcrPage:
     if orientation is None:
         return ocr.read_page(image)
-    angle = orientation.correction_angle(image)
-    page = ocr.read_page(upright_copy(image, tmp, angle))
+    # Detect on the EXIF-applied copy so detection and rotation see the same pixels.
+    upright = upright_copy(image, tmp)
+    angle = orientation.correction_angle(upright)
+    if angle:
+        upright = upright_copy(image, tmp, angle)
+    page = ocr.read_page(upright)
     page.source = image.name
     page.rotation = angle
     return page
@@ -87,7 +91,7 @@ def extract_from_text(
         return _error_result(source, "Empty report text (did OCR read nothing?)", text, llm)
 
     messages = build_messages(text, few_shot=few_shot)
-    schema = EkstrakcjaBadania.model_json_schema() if structured_output else None
+    schema = llm_json_schema() if structured_output else None
     llm_seconds = 0.0
     last_error = ""
 

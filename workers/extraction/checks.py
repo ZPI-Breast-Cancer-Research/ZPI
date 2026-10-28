@@ -21,8 +21,8 @@ STEMS = {
     Brzeg.KATOWY: ("katow",),
     Brzeg.SPIKULARNY: ("spikul", "promienist"),
     Echogenicznosc.BEZECHOWA: ("bezech",),
-    Echogenicznosc.HIPOECHOGENICZNA: ("hipoech", "hypoech"),
-    Echogenicznosc.IZOECHOGENICZNA: ("izoech", "isoech"),
+    Echogenicznosc.HIPOECHOGENICZNA: ("hipoech", "hypoech", "obnizonej echogenicz"),
+    Echogenicznosc.IZOECHOGENICZNA: ("izoech", "isoech", "normoech"),
     Echogenicznosc.HIPERECHOGENICZNA: ("hiperech", "hyperech"),
     Echogenicznosc.ZLOZONA: ("zlozon", "torbielowatolit", "litotorbiel"),
 }
@@ -30,7 +30,7 @@ STEMS = {
 
 def check_extraction(data: EkstrakcjaBadania, text: str) -> list[str]:
     warnings = []
-    haystack = _fold(text)
+    haystack = fold(text)
 
     for name in ("lewa", "prawa"):
         piers = getattr(data.piersi, name)
@@ -93,7 +93,7 @@ def _check_observation(where: str, obs: Obserwacja, haystack: str) -> list[str]:
     if obs.godzina:
         warnings += _numbers(where, "godzina", _numbers_in(obs.godzina), obs.cytat)
 
-    quote = _fold(obs.cytat)
+    quote = fold(obs.cytat)
     for name in ("ksztalt", "brzeg", "echogenicznosc"):
         value = getattr(obs, name)
         if value is not None and not any(stem in quote for stem in STEMS[value]):
@@ -132,7 +132,7 @@ def _sides(strona: Strona) -> tuple[str, ...]:
 
 
 def quote_similarity(quote: str, folded_text: str) -> float:
-    needle = _fold(quote)
+    needle = fold(quote)
     if not needle:
         return 0.0
     if needle in folded_text:
@@ -146,7 +146,7 @@ def quote_similarity(quote: str, folded_text: str) -> float:
     return best
 
 
-def _fold(text: str) -> str:
+def fold(text: str) -> str:
     # Hyphens are dropped so compounds match whether or not normalisation joined a line break.
     text = text.lower().replace("ł", "l").replace("-", "")
     text = unicodedata.normalize("NFKD", text)
