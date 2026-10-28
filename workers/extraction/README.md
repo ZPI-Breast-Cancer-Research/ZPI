@@ -62,7 +62,7 @@ python -m workers.extraction extract opis.txt              # LLM only, from a te
 ```
 
 `run` prints one JSON per document to stdout (or `--out`, one line each) and a summary to stderr,
-e.g. `ok – 1 zmian, 2 węzłów, LLM 34s, OCR 66s, 2 ostrzeżeń`. Check `warnings` first: they point
+e.g. `ok – 1 lesions, 2 lymph nodes, LLM 34s, OCR 66s, 2 warnings`. Check `warnings` first: they point
 at fields that do not follow from the report. `provenance` says which model, prompt and rotation
 produced the result.
 
@@ -83,7 +83,7 @@ them – the output contains the report text.
 |---|---|
 | `Several models available … Choose one with LLM_MODEL or --model` | set `$env:LLM_MODEL` (see `models`) |
 | `Cannot connect to http://localhost:1234` | LM Studio: *Developer* → *Status: Running* |
-| `HTTP 400 … context` or `Parsowanie: …` after 2 attempts | context too small: reload with 8192, or `--few-shot 0` |
+| `HTTP 400 … context` or `Parsing: …` after 2 attempts | context too small: reload with 8192, or `--few-shot 0` |
 | `ConvertPirAttribute2RuntimeAttribute not support` | PaddlePaddle 3.3 oneDNN bug on Windows CPU; the engine disables oneDNN – update this module |
 | `paddlepaddle` install fails with a long path error | enable Windows long paths or use a short venv path |
 | LM Studio: *0 GPUs detected* / `nvidia-smi`: *GPU access blocked by the operating system* | the dGPU is switched off: plug in the charger, set a non-battery power mode in the laptop vendor tool (e.g. MSI Center *User Scenario*), restart LM Studio |

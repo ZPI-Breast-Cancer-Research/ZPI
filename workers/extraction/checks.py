@@ -24,7 +24,7 @@ STEMS = {
     Echogenicznosc.HIPOECHOGENICZNA: ("hipoech", "hypoech"),
     Echogenicznosc.IZOECHOGENICZNA: ("izoech", "isoech"),
     Echogenicznosc.HIPERECHOGENICZNA: ("hiperech", "hyperech"),
-    Echogenicznosc.ZLOZONA: ("zlozon", "torbielowato-lit", "lito-torbiel"),
+    Echogenicznosc.ZLOZONA: ("zlozon", "torbielowatolit", "litotorbiel"),
 }
 
 
@@ -147,7 +147,8 @@ def quote_similarity(quote: str, folded_text: str) -> float:
 
 
 def _fold(text: str) -> str:
-    text = text.lower().replace("ł", "l")
+    # Hyphens are dropped so compounds match whether or not normalisation joined a line break.
+    text = text.lower().replace("ł", "l").replace("-", "")
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"\s+", " ", text).strip()

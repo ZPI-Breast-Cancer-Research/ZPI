@@ -7,7 +7,7 @@ from pathlib import Path
 from .config import Settings
 from .llm import LLMError, get_llm_client
 from .ocr import IMAGE_SUFFIXES, OcrEngine, OcrError, get_ocr_engine
-from .orientation import OrientationDetector, get_orientation_detector
+from .orientation import OrientationDetector, OrientationError, get_orientation_detector
 from .pipeline import extract_from_images, extract_from_text, run_ocr
 from .schema import ExtractionResult
 
@@ -17,13 +17,12 @@ TEXT_SUFFIXES = {".txt"}
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    settings = _settings(args)
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8")
     try:
-        return args.handler(args, settings)
-    except (LLMError, OcrError, ValueError) as exc:
-        print(f"Błąd: {exc}", file=sys.stderr)
+        return args.handler(args, _settings(args))
+    except (LLMError, OcrError, OrientationError, ValueError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
 
 
@@ -55,12 +54,12 @@ def cmd_ocr(args: argparse.Namespace, settings: Settings) -> int:
         rotations = ", ".join(f"{page.rotation}°" for page in result.pages if page.rotation)
         print(
             f"===== {source} | {result.engine} {result.engine_version} | "
-            f"pewność: {confidence:.2f} | {result.seconds:.1f}s"
+            f"confidence: {confidence:.2f} | {result.seconds:.1f}s"
             if confidence is not None
             else f"===== {source} | {result.engine} {result.engine_version}"
         )
         if rotations:
-            print(f"obrócono: {rotations}")
+            print(f"rotated: {rotations}")
         print(result.text)
     return 0
 
@@ -82,7 +81,7 @@ def cmd_extract(args: argparse.Namespace, settings: Settings) -> int:
 def cmd_run(args: argparse.Namespace, settings: Settings) -> int:
     documents = _documents(args.input)
     if not documents:
-        print(f"Brak plików .txt / obrazów w {args.input}", file=sys.stderr)
+        print(f"No .txt files or images in {args.input}", file=sys.stderr)
         return 1
 
     client = get_llm_client(settings)
@@ -122,7 +121,7 @@ def cmd_run(args: argparse.Namespace, settings: Settings) -> int:
             out.close()
 
     print(
-        f"Gotowe: {len(documents) - failures} ok, {failures} błędów, "
+        f"Done: {len(documents) - failures} ok, {failures} failed, "
         f"{time.perf_counter() - started:.0f}s",
         file=sys.stderr,
     )
@@ -133,7 +132,7 @@ def _documents(path: Path) -> list[tuple[str, list[Path]]]:
     if path.is_file():
         return [(path.name, [path])]
     if not path.is_dir():
-        raise ValueError(f"{path} nie istnieje")
+        raise ValueError(f"{path} does not exist")
 
     documents = []
     for entry in sorted(path.iterdir()):
@@ -149,28 +148,28 @@ def _documents(path: Path) -> list[tuple[str, list[Path]]]:
 
 def _summary(result: ExtractionResult) -> str:
     if result.status != "ok":
-        return f"BŁĄD – {result.error}"
+        return f"ERROR – {result.error}"
     assert result.data is not None
     parts = [
-        f"{len(result.data.zmiany)} zmian",
-        f"{len(result.data.wezly)} węzłów",
+        f"{len(result.data.zmiany)} lesions",
+        f"{len(result.data.wezly)} lymph nodes",
         f"LLM {result.llm_seconds}s",
     ]
     if result.ocr_seconds is not None:
         parts.append(f"OCR {result.ocr_seconds}s")
     if result.warnings:
-        parts.append(f"{len(result.warnings)} ostrzeżeń")
+        parts.append(f"{len(result.warnings)} warnings")
     return "ok – " + ", ".join(parts)
 
 
 def _ocr_engine(settings: Settings) -> OcrEngine:
-    print(f"Ładowanie OCR: {settings.ocr_engine} ...", file=sys.stderr)
+    print(f"Loading OCR: {settings.ocr_engine} ...", file=sys.stderr)
     return get_ocr_engine(settings.ocr_engine, lang=settings.ocr_lang)
 
 
 def _orientation(settings: Settings) -> OrientationDetector | None:
     if settings.ocr_orientation != "none":
-        print(f"Ładowanie detektora orientacji: {settings.ocr_orientation} ...", file=sys.stderr)
+        print(f"Loading orientation detector: {settings.ocr_orientation} ...", file=sys.stderr)
     return get_orientation_detector(settings.ocr_orientation)
 
 

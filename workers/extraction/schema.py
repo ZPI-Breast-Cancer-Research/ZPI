@@ -91,7 +91,7 @@ class Wymiary(BaseModel):
     jednostka: Jednostka = Field(description="Jednostka dokładnie jak w tekście.")
     kwalifikator: Kwalifikator = Field(
         description=(
-            "'ok', 'około', 'orientacyjnie' -> około; 'do' -> do; "
+            "'ok', 'około', 'orientacyjny', 'orientacyjnie' -> około; 'do' -> do; "
             "w pozostałych przypadkach dokładny."
         )
     )

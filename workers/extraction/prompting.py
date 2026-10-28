@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from .llm.base import Message
 from .schema import EkstrakcjaBadania
 
-PROMPT_VERSION = "v5"
+PROMPT_VERSION = "v6"
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
@@ -68,11 +68,14 @@ def load_few_shot() -> list[tuple[str, str]]:
     return examples
 
 
-def build_messages(report_text: str, *, few_shot: int = 1) -> list[Message]:
+@cache
+def system_prompt() -> str:
     system = (PROMPTS_DIR / "system.md").read_text(encoding="utf-8")
-    messages: list[Message] = [
-        {"role": "system", "content": system.replace("{fields}", describe_schema())}
-    ]
+    return system.replace("{fields}", describe_schema())
+
+
+def build_messages(report_text: str, *, few_shot: int = 1) -> list[Message]:
+    messages: list[Message] = [{"role": "system", "content": system_prompt()}]
     for example_report, example_output in load_few_shot()[:few_shot]:
         messages.append({"role": "user", "content": _user_content(example_report)})
         messages.append({"role": "assistant", "content": example_output})

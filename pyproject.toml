@@ -19,6 +19,8 @@ dependencies = [
     "nibabel>=5.2",
     "numpy>=1.26",
     "requests>=2.32",
+    # storage (MinIO / S3)
+    "boto3>=1.34",
     # MLOps
     "mlflow>=2.16",
 ]
@@ -30,8 +32,18 @@ ml = [
     "nnunetv2>=2.5",
     "SimpleITK>=2.3",
     "dicom2nifti>=2.4",
-    "openai>=1.40",               # klient OpenAI-compatible API (LM Studio / vLLM)
     "sentence-transformers>=3.0", # embeddingi do doboru przykładów few-shot
+]
+# Report extraction worker – mirrors workers/extraction/requirements*.txt
+extraction = [
+    "pydantic>=2.7,<3",
+    "requests>=2.32,<3",
+    "pillow>=10,<14",
+]
+extraction-paddle = [
+    "mri-breast-analysis[extraction]",
+    "paddlepaddle>=3.0,<4",
+    "paddleocr>=3.0,<4",
 ]
 # Fine-tuning LoRA/QLoRA Bielika
 llm-training = [

@@ -84,7 +84,7 @@ def extract_from_text(
 ) -> ExtractionResult:
     text = normalize_text(text)
     if not text:
-        return _error_result(source, "Pusty tekst opisu (OCR nic nie odczytał?)", text, llm)
+        return _error_result(source, "Empty report text (did OCR read nothing?)", text, llm)
 
     messages = build_messages(text, few_shot=few_shot)
     schema = EkstrakcjaBadania.model_json_schema() if structured_output else None
@@ -117,7 +117,7 @@ def extract_from_text(
             created_at=datetime.now(UTC),
         )
 
-    result = _error_result(source, f"Parsowanie: {last_error}", text, llm, attempts=MAX_ATTEMPTS)
+    result = _error_result(source, f"Parsing: {last_error}", text, llm, attempts=MAX_ATTEMPTS)
     result.llm_seconds = round(llm_seconds, 2)
     return result
 
