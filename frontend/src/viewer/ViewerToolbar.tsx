@@ -35,9 +35,10 @@ interface Props {
   onToggleMask: () => void;
   series: Series;
   onSeries: (series: Series) => void;
+  available: Series[];
 }
 
-export default function ViewerToolbar({ tool, onTool, onUndo, canUndo, showMask, onToggleMask, series, onSeries }: Props) {
+export default function ViewerToolbar({ tool, onTool, onUndo, canUndo, showMask, onToggleMask, series, onSeries, available }: Props) {
   return (
     <div className="viewer-toolbar" role="toolbar" aria-label={t("viewer.tools")}>
       <div className="viewer-toolbar__group">
@@ -69,7 +70,10 @@ export default function ViewerToolbar({ tool, onTool, onUndo, canUndo, showMask,
       </div>
       <div className="segmented" role="radiogroup" aria-label={t("viewer.series")}>
         {(["post", "sub", "pre"] as Series[]).map((s) => (
-          <button key={s} type="button" role="radio" aria-checked={series === s} aria-pressed={series === s} onClick={() => onSeries(s)}>
+          <button key={s} type="button" role="radio" aria-checked={series === s} aria-pressed={series === s}
+            disabled={!available.includes(s)}
+            onClick={() => onSeries(s)}
+          >
             {t(`viewer.series.${s}`)}
           </button>
         ))}

@@ -1,5 +1,5 @@
-import { mockDelay } from "../mock";
-import type { Lesion } from "../viewer/types";
+import { mockDelay, mockStudyUid } from "../mock";
+import type { MaskSource } from "../viewer/types";
 import type { FieldKey } from "./fields";
 
 export interface QueueEntry {
@@ -36,7 +36,8 @@ export interface ReviewCase {
   uncertainty: number;
   segmentationVersion: string;
   extractionVersion: string | null;
-  lesion: Lesion;
+  studyUid: string | null;
+  mask: MaskSource;
   report: ReportPart[] | null;
   proposals: Partial<Record<FieldKey, Proposal>>;
   measurements: { volume: number | null; size: number | null; sizeInReport: number | null };
@@ -44,7 +45,7 @@ export interface ReviewCase {
 
 export interface ApprovalPayload {
   mask: "confirmed" | "corrected";
-  strokes: number;
+  edits: number;
   fields: Partial<Record<FieldKey, { value: string; state: "confirmed" | "corrected" }>>;
   editingSeconds: number;
 }
@@ -72,6 +73,8 @@ const REPORT: ReportPart[] = [
   { text: "." },
 ];
 
+const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10] };
+
 // TODO: no review endpoints yet
 export async function fetchQueue(): Promise<{ queue: QueueEntry[]; done: DoneEntry[] }> {
   return mockDelay({
@@ -84,7 +87,9 @@ export async function fetchQueue(): Promise<{ queue: QueueEntry[]; done: DoneEnt
 }
 
 export async function fetchCase(studyId: string): Promise<ReviewCase> {
-  const entry = QUEUE.find((q) => q.studyId === studyId) ?? QUEUE[0];
+  const index = Math.max(0, QUEUE.findIndex((q) => q.studyId === studyId));
+  const entry = QUEUE[index];
+  const studyUid = await mockStudyUid(index);
   const noReport = studyId === "s5";
   return mockDelay({
     studyId: entry.studyId,
@@ -96,7 +101,8 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
     uncertainty: entry.uncertainty,
     segmentationVersion: "7",
     extractionVersion: noReport ? null : "3",
-    lesion: { x: 330, y: 170, slices: [36, 50] },
+    studyUid,
+    mask: MOCK_MASK,
     report: noReport ? null : REPORT,
     proposals: noReport
       ? {}

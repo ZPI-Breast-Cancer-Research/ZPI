@@ -1,23 +1,32 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
-import type { MaskState, Stroke } from "./types";
+import type { MaskState } from "./types";
+import type { ViewerHandle } from "./Viewer";
 
 export function useMaskEditor() {
+  const viewer = useRef<ViewerHandle>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [edits, setEdits] = useState(0);
+  const editsRef = useRef(0);
+  editsRef.current = edits;
 
   // any brush/eraser stroke makes the mask "corrected", no separate confirm needed
-  const state: MaskState = strokes.length > 0 ? "corrected" : confirmed ? "confirmed" : "proposed";
+  const state: MaskState = edits > 0 ? "corrected" : confirmed ? "confirmed" : "proposed";
 
-  const addStroke = useCallback((stroke: Stroke) => setStrokes((current) => [...current, stroke]), []);
-  const undo = useCallback(() => setStrokes((current) => current.slice(0, -1)), []);
+  const addEdit = useCallback(() => setEdits((n) => n + 1), []);
+  const undo = useCallback(() => {
+    if (!editsRef.current) return;
+    viewer.current?.undo();
+    setEdits((n) => n - 1);
+  }, []);
   const confirm = useCallback(() => setConfirmed(true), []);
-  const reset = useCallback(() => {
-    setStrokes([]);
+  const restoreModel = useCallback(() => {
+    viewer.current?.restoreModel();
+    setEdits(0);
     setConfirmed(false);
   }, []);
 
-  return { state, strokes, addStroke, undo, confirm, restoreModel: reset, reset };
+  return { viewer, state, edits, addEdit, undo, confirm, restoreModel };
 }
 
 export type MaskEditor = ReturnType<typeof useMaskEditor>;

@@ -31,10 +31,12 @@ export default function CaseReview({ data, queue, done }: Props) {
   const navigate = useNavigate();
   const toast = useToast();
   const mask = useMaskEditor();
+  const undoMask = mask.undo;
   const startedAt = useRef(Date.now());
   const [tool, setTool] = useState<Tool>("brush");
   const [series, setSeries] = useState<Series>("post");
   const [showMask, setShowMask] = useState(true);
+  const [available, setAvailable] = useState<Series[]>(["post"]);
 
   const keys = FIELDS.map((f) => f.key).filter((key) => data.proposals[key]);
   const [values, setValues] = useState<Values>(() => Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
@@ -62,7 +64,7 @@ export default function CaseReview({ data, queue, done }: Props) {
     mutationFn: () =>
       approveCase(data.studyId, {
         mask: mask.state === "corrected" ? "corrected" : "confirmed",
-        strokes: mask.strokes.length,
+        edits: mask.edits,
         fields: Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
         editingSeconds: Math.round((Date.now() - startedAt.current) / 1000),
       }),
@@ -82,7 +84,7 @@ export default function CaseReview({ data, queue, done }: Props) {
       if (mod && event.key === "Enter") return approveRef.current();
       if (mod && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        return mask.undo();
+        return undoMask();
       }
       if (mod || event.altKey) return;
       const tools: Record<string, Tool> = { b: "brush", e: "eraser", p: "pan", w: "window" };
@@ -91,7 +93,7 @@ export default function CaseReview({ data, queue, done }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mask.undo]);
+  }, [undoMask]);
 
   return (
     <Page
@@ -140,13 +142,25 @@ export default function CaseReview({ data, queue, done }: Props) {
             tool={tool}
             onTool={setTool}
             onUndo={mask.undo}
-            canUndo={mask.strokes.length > 0}
+            canUndo={mask.edits > 0}
             showMask={showMask}
             onToggleMask={() => setShowMask((s) => !s)}
             series={series}
             onSeries={setSeries}
+            available={available}
           />
-          <Viewer lesion={data.lesion} series={series} mask={mask.state} strokes={mask.strokes} showMask={showMask} tool={tool} editable onStroke={mask.addStroke} />
+          <Viewer
+            ref={mask.viewer}
+            studyUid={data.studyUid}
+            mask={data.mask}
+            series={series}
+            maskState={mask.state}
+            showMask={showMask}
+            tool={tool}
+            editable
+            onEdit={mask.addEdit}
+            onSeriesFound={setAvailable}
+          />
           <MaskStrip state={mask.state} measurements={data.measurements} onConfirm={mask.confirm} onRestore={mask.restoreModel} />
         </section>
 

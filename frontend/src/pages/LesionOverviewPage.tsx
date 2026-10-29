@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
+import { errorText } from "../api";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
@@ -22,7 +23,7 @@ export default function LesionOverviewPage() {
   if (error) {
     return (
       <Page title={t("overview.title")}>
-        <ErrorState title={t("review.error")} body={error.message} onRetry={() => refetch()} />
+        <ErrorState title={t("review.error")} body={errorText(error)} onRetry={() => refetch()} />
       </Page>
     );
   }
@@ -71,7 +72,15 @@ export default function LesionOverviewPage() {
     >
       <div className="overview">
         <section className="overview__view" aria-label={t("viewer.image")}>
-          <Viewer lesion={data.lesion} series="post" mask="confirmed" strokes={[]} showMask modelOutline={showModel} />
+          <Viewer
+            studyUid={data.studyUid}
+            mask={data.masks.approved}
+            modelMask={data.masks.model}
+            series="post"
+            maskState="confirmed"
+            showMask
+            modelOutline={showModel}
+          />
           <div className="mask-strip">
             <span className="mask-strip__label">{t("overview.approvedMask")}</span>
             <span className={data.mask.corrected ? "status status--corrected" : "status"}>
