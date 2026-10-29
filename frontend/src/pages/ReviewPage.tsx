@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
+import { errorText } from "../api";
 import Page from "../components/layout/Page";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
@@ -34,7 +35,7 @@ export default function ReviewPage() {
   if (current.error || queue.error) {
     return (
       <Page title={t("nav.review")}>
-        <ErrorState title={t("review.error")} body={(current.error ?? queue.error)?.message} onRetry={() => (current.refetch(), queue.refetch())} />
+        <ErrorState title={t("review.error")} body={errorText(current.error ?? queue.error)} onRetry={() => (current.refetch(), queue.refetch())} />
       </Page>
     );
   }

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { errorText } from "../api";
 import Page from "../components/layout/Page";
 import { ErrorState, LoadingState } from "../components/State";
 import AttentionPanel from "../dashboard/AttentionPanel";
@@ -41,7 +42,7 @@ export default function DashboardPage() {
       {isPending ? (
         <LoadingState label={t("dashboard.loading")} />
       ) : error ? (
-        <ErrorState title={t("dashboard.error")} body={error.message} onRetry={() => refetch()} />
+        <ErrorState title={t("dashboard.error")} body={errorText(error)} onRetry={() => refetch()} />
       ) : (
         <div className="dashboard">
           <QueuePanel items={data.queue} />

@@ -2,7 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { ApiError } from "../api";
+import { ApiError, errorText } from "../api";
 import Page from "../components/layout/Page";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import Panel from "../components/layout/Panel";
@@ -122,7 +122,7 @@ export default function StudiesPage() {
           {studies.isPending ? (
             <LoadingState label={t("studies.loading")} />
           ) : studies.error ? (
-            <ErrorState title={errorTitle(studies.error)} body={studies.error.message} onRetry={() => studies.refetch()} retrying={studies.isFetching} />
+            <ErrorState title={errorTitle(studies.error)} body={errorText(studies.error)} onRetry={() => studies.refetch()} retrying={studies.isFetching} />
           ) : rows.length === 0 ? (
             <EmptyState title={t("studies.empty.title")} body={t("studies.empty.body")} />
           ) : (

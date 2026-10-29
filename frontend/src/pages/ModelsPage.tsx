@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
+import { errorText } from "../api";
 import Page from "../components/layout/Page";
 import { ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
@@ -88,7 +89,7 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
       {query.isPending ? (
         <LoadingState label={t("models.loading")} />
       ) : query.error ? (
-        <ErrorState title={t("models.error")} body={query.error.message} onRetry={() => query.refetch()} retrying={query.isFetching} />
+        <ErrorState title={t("models.error")} body={errorText(query.error)} onRetry={() => query.refetch()} retrying={query.isFetching} />
       ) : module === "segmentation" && seg ? (
         <SegmentationView data={seg} rejecting={rejecting} onCancelReject={() => setRejecting(false)} />
       ) : extraction.data ? (
