@@ -16,6 +16,8 @@ class ExtractionResult(models.Model):
     study = models.ForeignKey(
         'patients.Study', 
         on_delete=models.CASCADE, 
+        null=True,     # <-- pozwalamy na NULL w bazie
+        blank=True, 
         related_name='extractions'
     )
     model = models.ForeignKey(

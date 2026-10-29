@@ -4,8 +4,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
-from .models import Study, ExtractionResult  # Models matching the ERD schema[cite: 1]
-from common.storage import upload_to_minio
+from .models import Study 
+from common.storage import put_bytes
+from extraction.models import ExtractionResult
+import zipfile
+import io
 
 
 @api_view(["GET"])
@@ -40,11 +43,11 @@ def study_import(request):
     Endpoint accepting DICOM files (or a ZIP archive) and an optional report file (.txt, .jpg, .png).
     """
     # 1. Receive files uploaded from the frontend
-    dicom_files = request.FILES.getlist("dicoms")
+    archive_file = request.FILES.get("archives")
     report_file = request.FILES.get("report")
 
     # Validation: did the user provide any files?
-    if not dicom_files and not report_file:
+    if not archive_file and not report_file:
         return Response(
             {"detail": "No files were provided for import."},
             status=status.HTTP_400_BAD_REQUEST
@@ -55,31 +58,58 @@ def study_import(request):
 
     try:
         # 2. If DICOM files are present, send them to Orthanc
-        if dicom_files:
-            orthanc_client = OrthancClient()
-            
-            # Note: depending on your orthanc_client implementation, 
-            # call the method that uploads files and returns the study ID from Orthanc.
-            # Example: orthanc_response = orthanc_client.upload_files(dicom_files)
-            # orthanc_study_id = orthanc_response.get("ID")
-            
-            orthanc_study_id = "mock_orthanc_uid_12345"  # Replace with actual client response
+        if archive_file:
+            # Wczytujemy bajty raz do pamięci, żeby uniknąć problemów ze wskaźnikiem pliku
+            archive_bytes = archive_file.read()
 
-            # Create an entry in the Study table (saving the Orthanc identifier)[cite: 1]
+            if not zipfile.is_zipfile(io.BytesIO(archive_bytes)):
+                return Response(
+                    {"detail": "Not correct ZIP file archive."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                    file_list = zf.namelist()
+
+                    valid_dicoms = [
+                        name for name in file_list 
+                        if not name.startswith("__MACOSX") 
+                        and not name.endswith(".DS_Store") 
+                        and not name.endswith("/")
+                    ]
+
+                    if not valid_dicoms:
+                        return Response(
+                            {"detail": "No files in archive."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    zip_key = f"ZIP/{archive_file.name}"
+                    put_bytes(archive_bytes, "studies", zip_key)
+
+            except zipfile.BadZipFile:
+                return Response(
+                    {"detail": "ZIP archive is damaged."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             study = Study.objects.create(
-                orthanc_path=orthanc_study_id
+                orthanc_path=None
             )
+            
+            
 
         # 3. If a report file (.txt / scan) is attached, upload it to MinIO
         if report_file:
-            minio_file_path = upload_to_minio(report_file)
+            file_bytes = report_file.read()
+            key = f"reports/{report_file.name}"
+            put_bytes(file_bytes,"reports",key,report_file.content_type)
 
             # Create a related entry in the ExtractionResult table[cite: 1]
             # (If there was no DICOM, the study field will be NULL, allowing unassigned reports)
             ExtractionResult.objects.create(
                 study=study,
-                generated_report={"file_path": minio_file_path},
-                status="pending"  # Initial status waiting for worker extraction
+                generated_report={"file_path": key},
             )
 
         return Response(
@@ -89,15 +119,6 @@ def study_import(request):
                 "orthanc_path": orthanc_study_id
             },
             status=status.HTTP_201_CREATED
-        )
-
-    except (OrthancUnauthorized, OrthancUnavailable):
-        return Response(
-            {
-                "code": "orthanc_error",
-                "detail": "Failed to connect to the DICOM server (Orthanc). Check configuration.",
-            },
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     except Exception as e:
         return Response(
