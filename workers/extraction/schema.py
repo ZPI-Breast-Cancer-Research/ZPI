@@ -1,5 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
+from functools import cache
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -91,7 +93,7 @@ class Wymiary(BaseModel):
     jednostka: Jednostka = Field(description="Jednostka dokładnie jak w tekście.")
     kwalifikator: Kwalifikator = Field(
         description=(
-            "'ok', 'około', 'orientacyjnie' -> około; 'do' -> do; "
+            "'ok', 'około', 'orientacyjny', 'orientacyjnie' -> około; 'do' -> do; "
             "w pozostałych przypadkach dokładny."
         )
     )
@@ -220,6 +222,28 @@ class EkstrakcjaBadania(BaseModel):
     )
     wezly: list[Wezel] = Field(default_factory=list)
     wniosek: Wniosek = Field(default_factory=Wniosek)
+
+
+@cache
+def llm_json_schema() -> dict[str, Any]:
+    """JSON Schema for structured output in strict mode (OpenAI / vLLM / llama.cpp).
+
+    Strict mode needs every property required and no extra keys; optional fields stay
+    nullable through their ``anyOf [..., null]``.
+    """
+    return _strict(EkstrakcjaBadania.model_json_schema())
+
+
+def _strict(node: Any) -> Any:
+    if isinstance(node, list):
+        return [_strict(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    node = {key: _strict(value) for key, value in node.items() if key != "default"}
+    if "properties" in node:
+        node["required"] = list(node["properties"])
+        node["additionalProperties"] = False
+    return node
 
 
 class Provenance(BaseModel):

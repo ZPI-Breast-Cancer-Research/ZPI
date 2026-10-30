@@ -22,13 +22,9 @@ class LocalHttpChatClient:
         self.timeout = timeout
         self._session = requests.Session()
         self._session.trust_env = False
-        self._model = model
-
-    @property
-    def model(self) -> str:
-        if not self._model:
-            self._model = self._only_loaded_model()
-        return self._model
+        # Empty until the first request resolves it, so reading it never touches the network.
+        self.model = model
+        self._auto_model = not model
 
     def list_models(self) -> list[str]:
         data = self._request("GET", "/models")
@@ -41,6 +37,8 @@ class LocalHttpChatClient:
         json_schema: dict[str, Any] | None = None,
         temperature: float = 0.0,
     ) -> LLMResponse:
+        if not self.model:
+            self.model = self._only_loaded_model()
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -54,7 +52,13 @@ class LocalHttpChatClient:
             }
 
         started = time.perf_counter()
-        data = self._request("POST", "/chat/completions", json=payload)
+        try:
+            data = self._request("POST", "/chat/completions", json=payload)
+        except LLMError:
+            if self._auto_model:
+                # The server may have swapped models; pick again on the next call.
+                self.model = ""
+            raise
         seconds = time.perf_counter() - started
 
         try:

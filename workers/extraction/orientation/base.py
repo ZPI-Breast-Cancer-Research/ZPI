@@ -4,6 +4,10 @@ from typing import Protocol
 ANGLES = (0, 90, 180, 270)
 
 
+class OrientationError(Exception):
+    pass
+
+
 class OrientationDetector(Protocol):
     name: str
 

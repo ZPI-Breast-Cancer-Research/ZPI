@@ -13,7 +13,7 @@ def normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = _CONTROL_CHARS.sub("", text)
     text = "\n".join(_SPACES.sub(" ", line).strip() for line in text.split("\n"))
-    text = _HYPHENATED_BREAK.sub("-", text)
+    text = _HYPHENATED_BREAK.sub("", text)
     text = _MANY_BLANK_LINES.sub("\n\n", text)
     start = _REPORT_START.search(text)
     if start:

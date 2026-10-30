@@ -62,7 +62,7 @@ python -m workers.extraction extract opis.txt              # LLM only, from a te
 ```
 
 `run` prints one JSON per document to stdout (or `--out`, one line each) and a summary to stderr,
-e.g. `ok – 1 zmian, 2 węzłów, LLM 34s, OCR 66s, 2 ostrzeżeń`. Check `warnings` first: they point
+e.g. `ok – 1 lesions, 2 lymph nodes, LLM 34s, OCR 66s, 2 warnings`. Check `warnings` first: they point
 at fields that do not follow from the report. `provenance` says which model, prompt and rotation
 produced the result.
 
@@ -83,11 +83,82 @@ them – the output contains the report text.
 |---|---|
 | `Several models available … Choose one with LLM_MODEL or --model` | set `$env:LLM_MODEL` (see `models`) |
 | `Cannot connect to http://localhost:1234` | LM Studio: *Developer* → *Status: Running* |
-| `HTTP 400 … context` or `Parsowanie: …` after 2 attempts | context too small: reload with 8192, or `--few-shot 0` |
+| `HTTP 400 … context` or `Parsing: …` after 2 attempts | context too small: reload with 8192, or `--few-shot 0` |
 | `ConvertPirAttribute2RuntimeAttribute not support` | PaddlePaddle 3.3 oneDNN bug on Windows CPU; the engine disables oneDNN – update this module |
 | `paddlepaddle` install fails with a long path error | enable Windows long paths or use a short venv path |
 | LM Studio: *0 GPUs detected* / `nvidia-smi`: *GPU access blocked by the operating system* | the dGPU is switched off: plug in the charger, set a non-battery power mode in the laptop vendor tool (e.g. MSI Center *User Scenario*), restart LM Studio |
 | LLM takes 30–40 s per report | the model runs on the CPU – check *GPU Offload* and *GPU Settings* in LM Studio |
+
+## Evaluation
+
+`warnings` only say that a field does not follow from the text; accuracy needs hand-checked
+ground truth. It lives in `data/ground_truth/` (git-ignored as a whole – it contains report text):
+
+```
+data/ground_truth/<scan>.json       # {"source": "<scan>.jpg", "data": EkstrakcjaBadania}, read by hand from the scan
+data/ground_truth/text/<scan>.txt   # hand-typed report text from „Opis badania:” – reference for OCR
+```
+
+```powershell
+# full pipeline (OCR + LLM) – scores extraction and OCR (character error rate vs text/)
+python -m workers.extraction run data/reports --out data/eval/runs/full.jsonl
+python -m workers.extraction eval data/eval/runs/full.jsonl --report data/eval/runs/full.report.json
+# LLM alone on the perfect text – the gap to the run above is what OCR costs
+python -m workers.extraction run data/ground_truth/text --out data/eval/runs/llm.jsonl
+python -m workers.extraction eval data/eval/runs/llm.jsonl
+```
+
+`eval` uses `data/ground_truth` unless `--gold` says otherwise. New scans: `gold-init <run.jsonl>
+--out-dir data/ground_truth` writes skeletons from a run (never overwrites), which must then be
+corrected by hand against the scan.
+
+Annotation conventions (where the schema leaves a choice):
+- Every finding with its own size, location or BI-RADS is a lesion, including microcalcification
+  clusters/areas and benign findings (cysts, lipomas; `strona` = `obustronnie` when both breasts).
+  A biopsy marker or a pacemaker shadow is not.
+- `zmiana.birads` comes from the conclusion line that names the lesion (the body rarely gives it).
+- One `wniosek` per report: with several conclusion lines it holds the line with the highest
+  BI-RADS (`tekst` without the category and the recommendation, `zalecenie` verbatim).
+- Nodes are recorded per modality and side; `okolica` is the region in the nominative
+  („dół pachowy”, „okolica podobojczykowa”), negated regions get `patologiczne = false`.
+- `godzina` is the clock position only (`godz 9-2cm` → `"9"`, distance 2 cm).
+- `piersi.zmiany_ogniskowe` is true when any lesion of that breast is described in either modality.
+
+Documents are matched by file stem (`skan.jpg` ↔ `skan.txt` ↔ `skan.json`). Lesions, their
+observations and nodes are paired by quote overlap (same modality), and `eval` reports
+precision / recall / F1 for them. For each field of the paired items it reports accuracy plus
+`missed` (gold has a value, prediction is null) and `spurious` (the reverse). Fields of unpaired
+items are not scored, because recall already counts them. A failed document is scored as an
+empty extraction. Verbatim text fields count as correct at ≥ 90 % similarity after folding case
+and diacritics, and `wymiary.max_mm` compares sizes after unit conversion. A document whose text
+is a few-shot example is skipped, since it would inflate the scores (`--include-leaked` to keep it).
+For runs with OCR, the character error rate is the edit distance to `text/<scan>.txt` after
+normalisation, with whitespace collapsed. The output contains file names and numbers only.
+
+The top of the output is a `summary`: pooled accuracy over all scored fields, accuracy per field
+group (`piersi`, MMG / USG observations, `zmiana`, `wezel`, `wniosek`), entity F1 and conclusion
+BI-RADS accuracy. Use it to compare runs.
+
+### Experiments
+
+To keep a history of what improves the results, run changes as experiments instead of plain
+`run` + `eval`:
+
+```powershell
+python -m workers.extraction experiment baseline --note "hypothesis"   # transcripts (LLM alone)
+python -m workers.extraction experiment baseline-ocr --input data/reports
+python -m workers.extraction experiment old-run --predictions data/eval/runs/x.jsonl  # record an existing run
+python -m workers.extraction experiments                               # table of all experiments
+```
+
+Each one saves `experiments/runs/<id>_<name>.json`: the configuration (model, few-shot,
+structured output, OCR, prompt / schema version **and hash**, git commit, ground-truth hash), runtime
+and all scores – no report text, so records are committed with the code. Predictions go to
+`data/eval/runs/<id>_<name>.jsonl` (git-ignored). The command prints the difference to the previous
+experiment. The reasoning (hypothesis → result → decision) goes into
+[`experiments/EXPERIMENTS.md`](experiments/EXPERIMENTS.md), and
+`notebook/02_extraction_experiments.ipynb` plots the history (needs `matplotlib` and `jupyter` –
+the `dev` dependency group).
 
 ## Configuration
 
@@ -141,6 +212,8 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `prompting.py`, `prompts/` | prompt, field list generated from the schema, few-shot examples |
 | `parsing.py` | JSON extraction from the answer + schema validation (one retry with feedback) |
 | `checks.py` | warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions |
+| `evaluation.py` | scoring predictions against gold files: entity matching, per-field accuracy, summary, OCR CER, report table (`eval`) |
+| `tracking.py`, `experiments/` | experiment history: records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
 | `__main__.py` | CLI |
 | `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path) |
 
