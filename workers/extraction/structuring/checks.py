@@ -1,7 +1,15 @@
 import re
 
-from .normalize import fold, quote_similarity
-from .schema import Brzeg, Echogenicznosc, EkstrakcjaBadania, Ksztalt, Modalnosc, Obserwacja, Strona
+from ..normalize import fold, quote_similarity
+from ..schema import (
+    Brzeg,
+    Echogenicznosc,
+    EkstrakcjaBadania,
+    Ksztalt,
+    Modalnosc,
+    Obserwacja,
+    Strona,
+)
 
 QUOTE_MIN_SIMILARITY = 0.85
 VERBATIM_MIN_SIMILARITY = 0.9
