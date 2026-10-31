@@ -208,15 +208,13 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `ocr/` | OCR interface, PaddleOCR engine, registry |
 | `orientation/` | page orientation detector (PaddleOCR document classifier), rotation, registry |
 | `llm/` | LLM interface + local-host guard, HTTP client for `/v1/chat/completions`, registry |
-| `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” |
-| `prompting.py`, `prompts/` | prompt, field list generated from the schema, few-shot examples |
-| `parsing.py` | JSON extraction from the answer + schema validation (one retry with feedback) |
-| `checks.py` | warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions |
-| `evaluation.py` | scoring predictions against gold files: entity matching, per-field accuracy, summary, OCR CER, report table (`eval`) |
-| `tracking.py`, `experiments/` | experiment history: records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
+| `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” and the footer („Wykonał/a:”, „Opis:”); text matching helpers `fold` / `quote_similarity` shared by checks and evaluation |
+| `structuring/` | report text → structured data: `prompting.py` + `prompts/` prompt, field list generated from the schema, few-shot examples; `parsing.py` JSON extraction from the answer + schema validation (one retry with feedback); `checks.py` warnings: warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions |
+| `evaluation/` | scoring predictions against gold files (`eval`): `compare.py` entity matching, per-field comparison, OCR CER; `scores.py` score/report data and summary; `loading.py` gold, transcript and prediction files; `report.py` text table; `tracking.py` experiment history – records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
+| `experiments/` | experiment records (`runs/`) and journal `EXPERIMENTS.md` |
 | `__main__.py` | CLI |
 | `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path) |
 
-Changing `prompts/` or `prompting.py`: bump `PROMPT_VERSION`. Changing `schema.py`: bump
-`SCHEMA_VERSION` and update `prompts/few_shot/` (examples are validated against the schema at
+Changing `structuring/prompts/` or `structuring/prompting.py`: bump `PROMPT_VERSION`. Changing `schema.py`: bump
+`SCHEMA_VERSION` and update `structuring/prompts/few_shot/` (examples are validated against the schema at
 load time). Few-shot reports must be synthetic.

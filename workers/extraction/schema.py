@@ -226,11 +226,6 @@ class EkstrakcjaBadania(BaseModel):
 
 @cache
 def llm_json_schema() -> dict[str, Any]:
-    """JSON Schema for structured output in strict mode (OpenAI / vLLM / llama.cpp).
-
-    Strict mode needs every property required and no extra keys; optional fields stay
-    nullable through their ``anyOf [..., null]``.
-    """
     return _strict(EkstrakcjaBadania.model_json_schema())
 
 

@@ -3,7 +3,7 @@ import re
 
 from pydantic import ValidationError
 
-from .schema import EkstrakcjaBadania
+from ..schema import EkstrakcjaBadania
 
 _CODE_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 

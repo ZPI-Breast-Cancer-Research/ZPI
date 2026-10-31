@@ -1,8 +1,15 @@
 import re
-import unicodedata
-from difflib import SequenceMatcher
 
-from .schema import Brzeg, Echogenicznosc, EkstrakcjaBadania, Ksztalt, Modalnosc, Obserwacja, Strona
+from ..normalize import fold, quote_similarity
+from ..schema import (
+    Brzeg,
+    Echogenicznosc,
+    EkstrakcjaBadania,
+    Ksztalt,
+    Modalnosc,
+    Obserwacja,
+    Strona,
+)
 
 QUOTE_MIN_SIMILARITY = 0.85
 VERBATIM_MIN_SIMILARITY = 0.9
@@ -129,26 +136,3 @@ def _numbers_in(text: str) -> list[float]:
 
 def _sides(strona: Strona) -> tuple[str, ...]:
     return ("lewa", "prawa") if strona == Strona.OBUSTRONNIE else (strona.value,)
-
-
-def quote_similarity(quote: str, folded_text: str) -> float:
-    needle = fold(quote)
-    if not needle:
-        return 0.0
-    if needle in folded_text:
-        return 1.0
-    size = len(needle)
-    step = max(1, size // 10)
-    best = 0.0
-    for start in range(0, max(1, len(folded_text) - size + 1), step):
-        window = folded_text[start : start + size]
-        best = max(best, SequenceMatcher(None, needle, window, autojunk=False).ratio())
-    return best
-
-
-def fold(text: str) -> str:
-    # Hyphens are dropped so compounds match whether or not normalisation joined a line break.
-    text = text.lower().replace("ł", "l").replace("-", "")
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", text).strip()

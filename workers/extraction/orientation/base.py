@@ -1,8 +1,6 @@
 from pathlib import Path
 from typing import Protocol
 
-ANGLES = (0, 90, 180, 270)
-
 
 class OrientationError(Exception):
     pass
@@ -12,6 +10,16 @@ class OrientationDetector(Protocol):
     name: str
 
     def correction_angle(self, image: Path) -> int: ...
+
+
+def make_upright(image: Path, detector: OrientationDetector, out_dir: Path) -> tuple[Path, int]:
+    """Upright copy of ``image`` in ``out_dir`` and the correction angle that was applied."""
+    # Detect on the EXIF-applied copy so detection and rotation see the same pixels.
+    upright = upright_copy(image, out_dir)
+    angle = detector.correction_angle(upright)
+    if angle:
+        upright = upright_copy(image, out_dir, angle)
+    return upright, angle
 
 
 def upright_copy(image: Path, out_dir: Path, angle: int = 0) -> Path:

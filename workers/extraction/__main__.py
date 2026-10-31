@@ -6,9 +6,15 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TextIO
 
-from . import tracking
 from .config import Settings
-from .evaluation import evaluate, format_report, load_gold, load_predictions, load_transcripts
+from .evaluation import (
+    evaluate,
+    format_report,
+    load_gold,
+    load_predictions,
+    load_transcripts,
+    tracking,
+)
 from .llm import LLMError, get_llm_client
 from .ocr import IMAGE_SUFFIXES, OcrEngine, OcrError, get_ocr_engine
 from .orientation import OrientationDetector, OrientationError, get_orientation_detector

@@ -1,8 +1,3 @@
-"""Experiment history: one JSON record per evaluated run, versioned in git.
-
-A record holds what produced the run (model, prompt and schema fingerprints, git commit, gold set)
-and its scores – never report text, so it is safe to commit. Predictions stay in data/eval/runs/.
-"""
 
 import hashlib
 import json
@@ -13,13 +8,13 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from .config import Settings
-from .evaluation import Report
-from .prompting import PROMPT_VERSION, load_few_shot, system_prompt
-from .schema import SCHEMA_VERSION, ExtractionResult, llm_json_schema
+from ..config import Settings
+from ..schema import SCHEMA_VERSION, ExtractionResult, llm_json_schema
+from ..structuring.prompting import PROMPT_VERSION, load_few_shot, system_prompt
+from .scores import Report
 
-EXPERIMENTS_DIR = Path(__file__).parent / "experiments" / "runs"
-REPO_ROOT = Path(__file__).resolve().parents[2]
+EXPERIMENTS_DIR = Path(__file__).parents[1] / "experiments" / "runs"
+REPO_ROOT = Path(__file__).resolve().parents[3]
 TABLE_METRICS = (
     ("field_accuracy", "fields"),
     ("zmiany_f1", "lesF1"),
