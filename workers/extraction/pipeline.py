@@ -3,14 +3,14 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .checks import check_extraction
 from .llm.base import LLMClient, LLMError, Message
 from .normalize import normalize_text
 from .ocr.base import OcrEngine, OcrPage, OcrResult
-from .orientation import OrientationDetector, upright_copy
-from .parsing import ParseError, parse_response
-from .prompting import PROMPT_VERSION, build_messages
+from .orientation import OrientationDetector, make_upright
 from .schema import ExtractionResult, Provenance, llm_json_schema
+from .structuring.checks import check_extraction
+from .structuring.parsing import ParseError, parse_response
+from .structuring.prompting import PROMPT_VERSION, build_messages
 
 MAX_ATTEMPTS = 2
 
@@ -35,11 +35,7 @@ def _read_upright(
 ) -> OcrPage:
     if orientation is None:
         return ocr.read_page(image)
-    # Detect on the EXIF-applied copy so detection and rotation see the same pixels.
-    upright = upright_copy(image, tmp)
-    angle = orientation.correction_angle(upright)
-    if angle:
-        upright = upright_copy(image, tmp, angle)
+    upright, angle = make_upright(image, orientation, tmp)
     page = ocr.read_page(upright)
     page.source = image.name
     page.rotation = angle

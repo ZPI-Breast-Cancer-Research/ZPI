@@ -4,8 +4,8 @@ from difflib import SequenceMatcher
 from typing import Any, TypeVar
 
 from ..normalize import fold, normalize_text, quote_similarity
-from ..prompting import load_few_shot
 from ..schema import EkstrakcjaBadania, ExtractionResult, Obserwacja, Wezel, Wymiary, Zmiana
+from ..structuring.prompting import load_few_shot
 from .scores import Report
 
 TEXT_MIN_SIMILARITY = 0.9
@@ -58,10 +58,15 @@ def evaluate(
     return report
 
 
-def char_error_rate(reference: str, hypothesis: str) -> float:
+def char_error_rate(reference: str, hypothesis: str, *, normalize: bool = True) -> float:
     """Levenshtein distance / reference length, after the same normalisation as the LLM input
-    and with all whitespace collapsed (line breaks are layout, not OCR errors)."""
-    ref, hyp = (" ".join(normalize_text(t).split()) for t in (reference, hypothesis))
+    and with all whitespace collapsed (line breaks are layout, not OCR errors).
+
+    ``normalize=False`` skips ``normalize_text`` (whitespace is still collapsed), to measure
+    how much the normalisation itself removes from the error.
+    """
+    prepare = normalize_text if normalize else str
+    ref, hyp = (" ".join(prepare(t).split()) for t in (reference, hypothesis))
     if not ref:
         return 0.0 if not hyp else 1.0
     previous = list(range(len(hyp) + 1))
