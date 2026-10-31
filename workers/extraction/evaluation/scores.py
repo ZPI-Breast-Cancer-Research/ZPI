@@ -22,6 +22,35 @@ class FieldScore:
     def accuracy(self) -> float | None:
         return self.correct / self.n if self.n else None
 
+    @property
+    def precision(self) -> float | None:
+        """Of the values the model filled in, the share that is right (spurious lowers it)."""
+        predicted = self.correct + self.wrong + self.spurious
+        return self.correct / predicted if predicted else None
+
+    @property
+    def recall(self) -> float | None:
+        """Of the values in the gold data, the share the model got right (missed lowers it)."""
+        expected = self.correct + self.wrong + self.missed
+        return self.correct / expected if expected else None
+
+    @property
+    def f1(self) -> float | None:
+        p, r = self.precision, self.recall
+        if p is None or r is None:
+            return None
+        return 2 * p * r / (p + r) if p + r else 0.0
+
+    @classmethod
+    def pooled(cls, scores: Iterable["FieldScore"]) -> "FieldScore":
+        total = cls()
+        for s in scores:
+            total.correct += s.correct
+            total.wrong += s.wrong
+            total.missed += s.missed
+            total.spurious += s.spurious
+        return total
+
 
 @dataclass
 class EntityScore:
@@ -63,13 +92,23 @@ class Report:
     def entity_score(self, name: str) -> EntityScore:
         return self.entities.setdefault(name, EntityScore())
 
+    def group_score(self, group: str | None = None) -> FieldScore:
+        """All field scores pooled, or only those of one ``SUMMARY_GROUPS`` group."""
+        return FieldScore.pooled(
+            s for name, s in self.fields.items() if group is None or name.startswith(group + ".")
+        )
+
     def summary(self) -> dict[str, float | None]:
         """Headline numbers for comparing runs: pooled field accuracy, per group and entity F1."""
-        summary = {"field_accuracy": _pooled_accuracy(self.fields.values())}
+        overall = self.group_score()
+        summary = {
+            "field_accuracy": overall.accuracy,
+            "field_precision": overall.precision,
+            "field_recall": overall.recall,
+            "field_f1": overall.f1,
+        }
         for group in SUMMARY_GROUPS:
-            summary[f"{group}_accuracy"] = _pooled_accuracy(
-                s for name, s in self.fields.items() if name.startswith(group + ".")
-            )
+            summary[f"{group}_accuracy"] = self.group_score(group).accuracy
         for entity in ("zmiany", "obserwacje", "wezly"):
             score = self.entities.get(entity)
             summary[f"{entity}_f1"] = score.f1 if score else None
@@ -92,14 +131,6 @@ class Report:
             "provenance": self.provenance,
             "summary": self.summary(),
             "entities": scores(self.entities, ("precision", "recall", "f1")),
-            "fields": scores(self.fields, ("n", "accuracy")),
+            "fields": scores(self.fields, ("n", "accuracy", "precision", "recall", "f1")),
             "ocr_cer": {"mean": self.mean_ocr_cer, "documents": self.ocr_cer},
         }
-
-
-def _pooled_accuracy(scores: Iterable[FieldScore]) -> float | None:
-    correct = total = 0
-    for score in scores:
-        correct += score.correct
-        total += score.n
-    return correct / total if total else None

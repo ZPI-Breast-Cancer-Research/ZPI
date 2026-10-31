@@ -1,4 +1,4 @@
-from .scores import Report
+from .scores import SUMMARY_GROUPS, FieldScore, Report
 
 
 def format_report(report: Report) -> str:
@@ -22,12 +22,12 @@ def format_report(report: Report) -> str:
             f"worst {report.ocr_cer[worst]:.1%} ({worst})"
         )
 
-    lines += ["", "summary"]
-    lines += [
-        f"  {name:<36}{_pct(value).strip():>6}"
-        for name, value in report.summary().items()
-        if name != "ocr_cer"
-    ]
+    lines += ["", f"{'field group':<26}{'n':>5}{'acc':>7}{'P':>7}{'R':>7}{'F1':>7}"]
+    for group in (None, *SUMMARY_GROUPS):
+        lines.append(f"{group or 'all fields':<26}{_score_cells(report.group_score(group))}")
+    birads = report.fields.get("wniosek.birads")
+    if birads:
+        lines.append(f"{'wniosek.birads':<26}{_score_cells(birads)}")
 
     lines += ["", f"{'entity':<14}{'gold':>6}{'pred':>6}{'match':>7}{'P':>7}{'R':>7}{'F1':>7}"]
     for name, e in report.entities.items():
@@ -39,13 +39,16 @@ def format_report(report: Report) -> str:
     width = max((len(name) for name in report.fields), default=10) + 2
     lines += [
         "",
-        f"{'field':<{width}}{'n':>5}{'acc':>7}{'wrong':>7}{'missed':>8}{'spurious':>10}",
+        f"{'field':<{width}}{'n':>5}{'acc':>7}{'P':>7}{'R':>7}{'F1':>7}"
+        f"{'wrong':>7}{'missed':>8}{'spurious':>10}",
     ]
     for name, s in sorted(report.fields.items()):
-        lines.append(
-            f"{name:<{width}}{s.n:>5}{_pct(s.accuracy)}{s.wrong:>7}{s.missed:>8}{s.spurious:>10}"
-        )
+        lines.append(f"{name:<{width}}{_score_cells(s)}{s.wrong:>7}{s.missed:>8}{s.spurious:>10}")
     return "\n".join(lines)
+
+
+def _score_cells(s: FieldScore) -> str:
+    return f"{s.n:>5}{_pct(s.accuracy)}{_pct(s.precision)}{_pct(s.recall)}{_pct(s.f1)}"
 
 
 def _pct(value: float | None) -> str:
