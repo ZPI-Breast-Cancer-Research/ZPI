@@ -1,8 +1,3 @@
-"""Experiment history: one JSON record per evaluated run, versioned in git.
-
-A record holds what produced the run (model, prompt and schema fingerprints, git commit, gold set)
-and its scores – never report text, so it is safe to commit. Predictions stay in data/eval/runs/.
-"""
 
 import hashlib
 import json
