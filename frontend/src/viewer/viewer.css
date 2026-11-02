@@ -214,51 +214,7 @@
   font-weight: 600;
 }
 
-.viewer-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--color-field);
-  border-bottom: 1px solid var(--color-rule);
-}
-
-.viewer-toolbar__group {
-  display: flex;
-  border: 1px solid var(--color-rule-strong);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.viewer-toolbar__group button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 10px;
-  background: none;
-  border: 0;
-  color: var(--color-ink-muted);
-  font-size: 13.5px;
-  cursor: pointer;
-}
-
-.viewer-toolbar__group button + button {
-  border-left: 1px solid var(--color-rule-strong);
-}
-
-.viewer-toolbar__group button:hover {
-  background: #111a2b;
-  color: var(--color-ink);
-}
-
-.viewer-toolbar__group button[aria-pressed="true"] {
-  background: var(--color-ink);
-  color: var(--color-side);
-}
-
-.viewer-toolbar__group svg {
+.icon {
   width: 18px;
   height: 18px;
   fill: none;
@@ -266,8 +222,151 @@
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+  flex: none;
 }
 
-.viewer-toolbar .segmented {
+.icon__knob {
+  fill: var(--color-field);
+}
+
+/* tool rail: square buttons, icon above the name */
+.tool-rail {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 76px;
+  min-height: 0;
+  background: var(--color-field);
+  border-right: 1px solid var(--color-rule);
+}
+
+.tool-rail__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 58px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--color-rule);
+  color: var(--color-ink-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tool-rail__btn .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.tool-rail__btn:hover:not(:disabled) {
+  background: #111a2b;
+  color: var(--color-ink);
+}
+
+.tool-rail__btn[aria-pressed="true"] {
+  background: var(--color-ink);
+  color: var(--color-side);
+  font-weight: 600;
+}
+
+.tool-rail__btn[aria-pressed="true"] .icon__knob {
+  fill: var(--color-ink);
+}
+
+.tool-rail__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* bar above the images: the active tool's options on the left, the series on the right */
+.viewer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  flex: none;
+  min-height: 44px;
+  padding: 6px 10px;
+  background: var(--color-field);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.viewer-bar__series {
   margin-left: auto;
+}
+
+.viewer-bar__series > :disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.viewer-bar__icon {
+  display: grid;
+  place-items: center;
+}
+
+.tool-options {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-ink-muted);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.tool-options .segmented > * {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-options__shape {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.tool-options__shape--sphere {
+  background: radial-gradient(circle at 35% 35%, transparent 35%, currentColor 140%);
+}
+
+.tool-options__size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tool-options__size button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  color: var(--color-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tool-options__size button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tool-options__size b {
+  min-width: 46px;
+  color: var(--color-ink);
+  font-weight: 600;
+  text-align: center;
+}
+
+.tool-options__hint {
+  color: var(--color-ink-faint);
 }

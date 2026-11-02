@@ -1,5 +1,6 @@
 import { formatMetric } from "../format";
 import { t } from "../i18n";
+import Icon from "../viewer/icons";
 import type { MaskState } from "../viewer/types";
 import type { ReviewCase } from "./api";
 
@@ -8,12 +9,15 @@ interface Props {
   measurements: ReviewCase["measurements"];
   onConfirm: () => void;
   onRestore: () => void;
+  showMask: boolean;
+  onToggleMask: () => void;
 }
 
-export default function MaskStrip({ state, measurements, onConfirm, onRestore }: Props) {
+export default function MaskStrip({ state, measurements, onConfirm, onRestore, showMask, onToggleMask }: Props) {
   return (
     <div className="mask-strip" aria-label={t("review.mask")}>
       <span className="mask-strip__label">{t("review.mask")}</span>
+      <MaskToggle shown={showMask} onToggle={onToggleMask} />
       {state === "corrected" ? (
         <span className="muted">{t("review.mask.recalc")}</span>
       ) : (
@@ -49,5 +53,14 @@ export default function MaskStrip({ state, measurements, onConfirm, onRestore }:
         )}
       </span>
     </div>
+  );
+}
+
+export function MaskToggle({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="mask-strip__eye" aria-pressed={shown} title={t("viewer.maskShown")} onClick={onToggle}>
+      <Icon name="eye" />
+      {!shown && t("viewer.maskHidden")}
+    </button>
   );
 }

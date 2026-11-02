@@ -12,12 +12,20 @@ import { fetchOverview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
 import { FIELDS } from "../review/fields";
+import { MaskToggle } from "../review/MaskStrip";
+import Icon from "../viewer/icons";
+import type { Series, Tool } from "../viewer/types";
 import Viewer from "../viewer/Viewer";
+import ViewerBar from "../viewer/ViewerBar";
 
 export default function LesionOverviewPage() {
   const { studyId = "" } = useParams();
   const { search } = useLocation();
   const [showModel, setShowModel] = useState(false);
+  const [showMask, setShowMask] = useState(true);
+  const [tool, setTool] = useState<Tool>("pan");
+  const [series, setSeries] = useState<Series>("post");
+  const [available, setAvailable] = useState<Series[]>(["post"]);
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
   if (error) {
@@ -72,17 +80,38 @@ export default function LesionOverviewPage() {
     >
       <div className="overview">
         <section className="overview__view" aria-label={t("viewer.image")}>
+          {/* read only: no rail, just looking around */}
+          <ViewerBar series={series} onSeries={setSeries} available={available}>
+            <div className="segmented" role="group" aria-label={t("viewer.tools")}>
+              {(["pan", "window"] as Tool[]).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="viewer-bar__icon"
+                  aria-pressed={tool === name}
+                  aria-label={t(name === "pan" ? "viewer.pan" : "viewer.window")}
+                  title={name === "pan" ? t("viewer.panTitle") : `${t("viewer.window")} (W)`}
+                  onClick={() => setTool(name)}
+                >
+                  <Icon name={name} />
+                </button>
+              ))}
+            </div>
+          </ViewerBar>
           <Viewer
             studyUid={data.studyUid}
             mask={data.masks.approved}
             modelMask={data.masks.model}
-            series="post"
+            series={series}
             maskState="confirmed"
-            showMask
+            showMask={showMask}
+            tool={tool}
             modelOutline={showModel}
+            onSeriesFound={setAvailable}
           />
           <div className="mask-strip">
             <span className="mask-strip__label">{t("overview.approvedMask")}</span>
+            <MaskToggle shown={showMask} onToggle={() => setShowMask((s) => !s)} />
             <span className={data.mask.corrected ? "status status--corrected" : "status"}>
               {t(data.mask.corrected ? "overview.correctedBy" : "overview.confirmedBy")}
             </span>

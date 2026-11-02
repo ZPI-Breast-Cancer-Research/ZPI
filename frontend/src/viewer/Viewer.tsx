@@ -16,11 +16,16 @@ import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
 import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
 import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
-import type { MaskSource, MaskState, Plane, Series, Tool } from "./types";
+import type { BrushShape, MaskSource, MaskState, Plane, Series, Tool } from "./types";
 import "./viewer.css";
 
 const STRIP = 32;
 const ERASER = "Eraser";
+const THRESHOLD = "ThresholdBrush";
+const STRATEGY: Record<BrushShape, Record<"brush" | "threshold" | "eraser", string>> = {
+  circle: { brush: "FILL_INSIDE_CIRCLE", threshold: "THRESHOLD_INSIDE_CIRCLE", eraser: "ERASE_INSIDE_CIRCLE" },
+  sphere: { brush: "FILL_INSIDE_SPHERE", threshold: "THRESHOLD_INSIDE_SPHERE", eraser: "ERASE_INSIDE_SPHERE" },
+};
 const Labelmap = ToolEnums.SegmentationRepresentations.Labelmap;
 const PINK: Types.Color = [236, 111, 152, 255];
 const LIGHT: Types.Color = [232, 236, 241, 255];
@@ -47,13 +52,20 @@ interface Props {
   tool?: Tool;
   editable?: boolean;
   modelOutline?: boolean;
+  brushShape?: BrushShape;
+  // radius in mm, so the brush covers the same tissue at any zoom
+  brushRadius?: number;
   onEdit?: () => void;
   onSeriesFound?: (available: Series[]) => void;
+  // false when the series on screen has a different grid than the mask
+  onGridMatch?: (same: boolean) => void;
+  onWindow?: (window: { width: number; center: number }) => void;
 }
 
 export interface ViewerHandle {
   undo: () => void;
   restoreModel: () => void;
+  resetWindow: () => void;
 }
 
 async function loadVolume(studyUid: string, seriesUid: string) {
@@ -71,6 +83,11 @@ function addMask(segmentationId: string, volume: Types.IImageVolume, source: Mas
   const labelmap = volumeLoader.createAndCacheDerivedLabelmapVolume(volume.volumeId, { volumeId: segmentationId });
   if (source) paintMask(labelmap, source);
   segmentation.addSegmentations([{ segmentationId, representation: { type: Labelmap, data: { volumeId: segmentationId } } }]);
+}
+
+function sameGrid(a: Types.IImageVolume, b: Types.IImageVolume) {
+  const close = (x: ArrayLike<number>, y: ArrayLike<number>) => Array.from(x).every((v, i) => Math.abs(v - y[i]) < 1e-3);
+  return close(a.dimensions, b.dimensions) && close(a.spacing, b.spacing) && close(a.direction, b.direction) && close(a.origin, b.origin);
 }
 
 function removeMask(segmentationId: string) {
@@ -98,7 +115,23 @@ function readLayout(): { main: Plane; single: boolean } {
 }
 
 const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
-  { studyUid, mask, modelMask = null, series, maskState, showMask, tool = "window", editable = false, modelOutline = false, onEdit, onSeriesFound },
+  {
+    studyUid,
+    mask,
+    modelMask = null,
+    series,
+    maskState,
+    showMask,
+    tool = "window",
+    editable = false,
+    modelOutline = false,
+    brushShape = "circle",
+    brushRadius = 5,
+    onEdit,
+    onSeriesFound,
+    onGridMatch,
+    onWindow,
+  },
   ref,
 ) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
@@ -122,8 +155,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   // a plane's camera scale from before the user zoomed or panned it; none means it still fits the view
   const fitScale = useRef<Partial<Record<Plane, number>>>({});
   const panning = useRef(false);
-  const callbacks = useRef({ onEdit, onSeriesFound });
-  callbacks.current = { onEdit, onSeriesFound };
+  const callbacks = useRef({ onEdit, onSeriesFound, onGridMatch, onWindow });
+  callbacks.current = { onEdit, onSeriesFound, onGridMatch, onWindow };
 
   const [problem, setProblem] = useState<Problem | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -141,7 +174,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const viewports = useMemo(() => PLANES.map((plane) => ids[plane]), [ids]);
   const shownRef = useRef(shown);
   shownRef.current = shown;
-  const painting = editable && (tool === "brush" || tool === "eraser") && !grab;
+  const painting = editable && (tool === "brush" || tool === "threshold" || tool === "eraser") && !grab;
   panning.current = tool === "pan" || grab;
 
   useEffect(() => {
@@ -168,13 +201,17 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     const group = ToolGroupManager.createToolGroup(ids.tools)!;
     [PanTool, WindowLevelTool, ZoomTool, BrushTool].forEach((tool) => group.addTool(tool.toolName));
     group.addToolInstance(ERASER, BrushTool.toolName, { activeStrategy: "ERASE_INSIDE_CIRCLE" });
+    // the threshold range is taken around the clicked point, so there is no range to set by hand
+    group.addToolInstance(THRESHOLD, BrushTool.toolName, {
+      activeStrategy: "THRESHOLD_INSIDE_CIRCLE",
+      threshold: { isDynamic: true, dynamicRadius: 3 },
+    });
     group.addTool(ReferenceLinesTool.toolName, { sourceViewportId: ids[mainRef.current] });
     for (const id of viewports) group.addViewport(id, ENGINE_ID);
     // pan and zoom work with any tool: middle button pans, right button zooms (Ctrl + wheel is handled below)
     group.setToolActive(PanTool.toolName, { bindings: [{ mouseButton: ToolEnums.MouseBindings.Auxiliary }] });
     group.setToolActive(ZoomTool.toolName, { bindings: [{ mouseButton: ToolEnums.MouseBindings.Secondary }] });
     group.setToolEnabled(ReferenceLinesTool.toolName);
-    toolUtils.segmentation.setBrushSizeForToolGroup(ids.tools, 5);
 
     const resize = new ResizeObserver(() => rendering.resize(true, true));
     for (const plane of PLANES) resize.observe(elements[plane]);
@@ -188,6 +225,13 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       setZoom(zoomOf(mainRef.current));
     };
     for (const plane of PLANES) elements[plane].addEventListener(Enums.Events.CAMERA_MODIFIED, onCamera);
+
+    const onVoi = (event: Event) => {
+      const { viewportId, range } = (event as CustomEvent<{ viewportId: string; range: Types.VOIRange }>).detail;
+      if (viewportId !== ids[mainRef.current] || !range) return;
+      callbacks.current.onWindow?.({ width: range.upper - range.lower, center: (range.upper + range.lower) / 2 });
+    };
+    for (const plane of PLANES) elements[plane].addEventListener(Enums.Events.VOI_MODIFIED, onVoi);
 
     // a stroke counts as an edit only if it actually changed the labelmap
     const onModified = (event: Event) => {
@@ -257,6 +301,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
 
     return () => {
       for (const plane of PLANES) elements[plane].removeEventListener(Enums.Events.CAMERA_MODIFIED, onCamera);
+      for (const plane of PLANES) elements[plane].removeEventListener(Enums.Events.VOI_MODIFIED, onVoi);
       eventTarget.removeEventListener(ToolEnums.Events.SEGMENTATION_DATA_MODIFIED, onModified);
       window.removeEventListener("pointerup", onUp);
       root.removeEventListener("mousedown", onMouseDown, true);
@@ -323,6 +368,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         }
         segmentation.activeSegmentation.setActiveSegmentation(id, ids.mask);
       }
+      callbacks.current.onGridMatch?.(sameGrid(volume, cache.getVolume(ids.mask)!));
       // the masks were painted before they had an actor, so push them to the GPU now
       segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
       if (modelMask) segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.model);
@@ -380,11 +426,26 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   useEffect(() => {
     const group = ToolGroupManager.getToolGroup(ids.tools);
     if (!group) return;
-    const names: Record<Tool, string> = { brush: BrushTool.toolName, eraser: ERASER, pan: PanTool.toolName, window: WindowLevelTool.toolName };
+    const names: Record<Tool, string> = {
+      brush: BrushTool.toolName,
+      threshold: THRESHOLD,
+      eraser: ERASER,
+      pan: PanTool.toolName,
+      window: WindowLevelTool.toolName,
+    };
     const primary = grab ? PanTool.toolName : names[editable || tool === "pan" ? tool : "window"];
     for (const name of Object.values(names)) if (name !== primary) group.setToolPassive(name);
     group.setToolActive(primary, { bindings: [{ mouseButton: ToolEnums.MouseBindings.Primary }] });
   }, [ids, tool, editable, grab]);
+
+  useEffect(() => {
+    const group = ToolGroupManager.getToolGroup(ids.tools);
+    if (!group) return;
+    group.setToolConfiguration(BrushTool.toolName, { activeStrategy: STRATEGY[brushShape].brush });
+    group.setToolConfiguration(THRESHOLD, { activeStrategy: STRATEGY[brushShape].threshold });
+    group.setToolConfiguration(ERASER, { activeStrategy: STRATEGY[brushShape].eraser });
+    toolUtils.segmentation.setBrushSizeForToolGroup(ids.tools, brushRadius);
+  }, [ids, brushShape, brushRadius]);
 
   // reference lines show where the main plane cuts the others
   useEffect(() => {
@@ -462,8 +523,12 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         paintMask(labelmap, mask);
         segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
       },
+      resetWindow: () => {
+        for (const id of viewports) (engine.current?.getViewport(id) as Types.IVolumeViewport | undefined)?.resetProperties();
+        engine.current?.render();
+      },
     }),
-    [ids, mask],
+    [ids, mask, viewports],
   );
 
   function startZoom(plane: Plane) {

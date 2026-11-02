@@ -7,9 +7,11 @@ import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { formatDate, formatDecimal } from "../format";
 import { t } from "../i18n";
+import ToolOptions, { RADIUS_MAX, RADIUS_MIN } from "../viewer/ToolOptions";
 import Viewer from "../viewer/Viewer";
-import ViewerToolbar from "../viewer/ViewerToolbar";
-import type { Series, Tool } from "../viewer/types";
+import ViewerBar from "../viewer/ViewerBar";
+import ViewerToolRail from "../viewer/ViewerToolRail";
+import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
 import { approveCase, type DoneEntry, type QueueEntry, type ReviewCase } from "./api";
 import BiradsForm, { type FieldState } from "./BiradsForm";
@@ -37,6 +39,11 @@ export default function CaseReview({ data, queue, done }: Props) {
   const [series, setSeries] = useState<Series>("post");
   const [showMask, setShowMask] = useState(true);
   const [available, setAvailable] = useState<Series[]>(["post"]);
+  const [brushShape, setBrushShape] = useState<BrushShape>("circle");
+  const [brushRadius, setBrushRadius] = useState(5);
+  const [gridMatch, setGridMatch] = useState(true);
+  const [windowLevel, setWindowLevel] = useState<{ width: number; center: number } | null>(null);
+  const resizeBrush = (radius: number) => setBrushRadius(Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, radius)));
 
   const keys = FIELDS.map((f) => f.key).filter((key) => data.proposals[key]);
   const [values, setValues] = useState<Values>(() => Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
@@ -87,9 +94,11 @@ export default function CaseReview({ data, queue, done }: Props) {
         return undoMask();
       }
       if (mod || event.altKey) return;
-      const tools: Record<string, Tool> = { b: "brush", e: "eraser", p: "pan", w: "window" };
+      const tools: Record<string, Tool> = { b: "brush", t: "threshold", e: "eraser", p: "pan", w: "window" };
       if (tools[event.key]) setTool(tools[event.key]);
       else if (event.key === "m") setShowMask((s) => !s);
+      else if (event.key === "s") setBrushShape((s) => (s === "circle" ? "sphere" : "circle"));
+      else if (event.key === "[" || event.key === "]") setBrushRadius((r) => Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, r + (event.key === "]" ? 1 : -1))));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -138,30 +147,50 @@ export default function CaseReview({ data, queue, done }: Props) {
         <ReviewQueue queue={queue} done={done} currentId={data.studyId} />
 
         <section className="review__view" aria-label={t("viewer.image")}>
-          <ViewerToolbar
-            tool={tool}
+          <ViewerToolRail
+            tool={tool === "threshold" && !gridMatch ? "brush" : tool}
             onTool={setTool}
             onUndo={mask.undo}
             canUndo={mask.edits > 0}
-            showMask={showMask}
-            onToggleMask={() => setShowMask((s) => !s)}
-            series={series}
-            onSeries={setSeries}
-            available={available}
+            thresholdOk={gridMatch}
           />
-          <Viewer
-            ref={mask.viewer}
-            studyUid={data.studyUid}
-            mask={data.mask}
-            series={series}
-            maskState={mask.state}
-            showMask={showMask}
-            tool={tool}
-            editable
-            onEdit={mask.addEdit}
-            onSeriesFound={setAvailable}
-          />
-          <MaskStrip state={mask.state} measurements={data.measurements} onConfirm={mask.confirm} onRestore={mask.restoreModel} />
+          <div className="review__viewer">
+            <ViewerBar series={series} onSeries={setSeries} available={available}>
+              <ToolOptions
+                tool={tool}
+                shape={brushShape}
+                onShape={setBrushShape}
+                radius={brushRadius}
+                onRadius={resizeBrush}
+                window={windowLevel}
+                onResetWindow={() => mask.viewer.current?.resetWindow()}
+              />
+            </ViewerBar>
+            <Viewer
+              ref={mask.viewer}
+              studyUid={data.studyUid}
+              mask={data.mask}
+              series={series}
+              maskState={mask.state}
+              showMask={showMask}
+              tool={tool === "threshold" && !gridMatch ? "brush" : tool}
+              editable
+              brushShape={brushShape}
+              brushRadius={brushRadius}
+              onEdit={mask.addEdit}
+              onSeriesFound={setAvailable}
+              onGridMatch={setGridMatch}
+              onWindow={setWindowLevel}
+            />
+            <MaskStrip
+              state={mask.state}
+              measurements={data.measurements}
+              onConfirm={mask.confirm}
+              onRestore={mask.restoreModel}
+              showMask={showMask}
+              onToggleMask={() => setShowMask((s) => !s)}
+            />
+          </div>
         </section>
 
         <section className="review__form" aria-label={t("review.form")}>

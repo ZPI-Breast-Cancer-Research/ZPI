@@ -33,10 +33,17 @@
 
 .review__view {
   display: flex;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
   background: var(--color-image);
+}
+
+.review__viewer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .review__form {
@@ -207,6 +214,32 @@
   color: var(--color-ink);
   font-size: 15px;
   font-weight: 600;
+}
+
+.mask-strip__eye {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 8px;
+  background: none;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mask-strip__eye .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.mask-strip__eye[aria-pressed="false"] {
+  color: var(--color-ink-faint);
 }
 
 .mask-strip__end {
