@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
+from django.shortcuts import get_object_or_404
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
 from .models import Study 
 from common.storage import put_bytes
@@ -13,16 +14,19 @@ import pydicom
 from celery import current_app
 
 
+from extraction.models import ExtractionResult
+from segmentation.models import SegmentationResult 
+
 @api_view(["GET"])
 def study_list(request):
     try:
-        studies = OrthancClient().list_studies()
+        orthanc_client = OrthancClient()
+        orthanc_studies = orthanc_client.list_studies()
     except OrthancUnauthorized:
         return Response(
             {
                 "code": "orthanc_unauthorized",
-                "detail": "Orthanc (DICOM server) rejected the backend's credentials. "
-                "Check ORTHANC_USER and ORTHANC_PASSWORD.",
+                "detail": "Orthanc (DICOM server) rejected the backend's credentials.",
             },
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
@@ -30,12 +34,39 @@ def study_list(request):
         return Response(
             {
                 "code": "orthanc_unavailable",
-                "detail": "Orthanc (DICOM server) is unavailable. Check that it is running "
-                "and that ORTHANC_URL is configured correctly.",
+                "detail": "Orthanc (DICOM server) is unavailable.",
             },
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-    return Response(studies)
+
+    response_data = []
+    for o_study in orthanc_studies:
+        orthanc_id = o_study.get("orthanc_id")
+        
+        db_study = Study.objects.filter(orthanc_path=orthanc_id).first()
+        
+        extraction = None
+        segmentation = None
+        if db_study:
+            extraction = ExtractionResult.objects.filter(study=db_study).first()
+            segmentation = SegmentationResult.objects.filter(study=db_study).first()
+
+        response_data.append({
+            "orthanc_id": orthanc_id,
+            "study_instance_uid": o_study.get("study_instance_uid"),
+            "patient_id": o_study.get("patient_id"),
+            "study_date": o_study.get("study_date"),
+            "description": o_study.get("description"),
+            "modalities": o_study.get("modalities", []),
+            "series_count": o_study.get("series_count", 0),
+            "viewer_url": o_study.get("viewer_url"),
+            
+            "extraction_status": extraction.status if extraction else "missing",
+            "segmentation_status": segmentation.status if segmentation else "queued",
+            "uncertainty": segmentation.uncertainty if segmentation and segmentation.uncertainty else (extraction.uncertainity if extraction else None),
+        })
+
+    return Response(response_data)
 
 
 @api_view(["POST"])
@@ -189,6 +220,106 @@ def study_import(request):
             {
                 "code": "server_error",
                 "detail": f"An unexpected error occurred during import: {str(e)}",
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser, FormParser])
+def attach_report_to_study(request, orthanc_id):
+    """
+    Endpoint attaching new file to existing study using orthanc_path
+    """
+    study = get_object_or_404(Study, orthanc_path=orthanc_id)
+    report_file = request.FILES.get("report")
+
+    if not report_file:
+        return Response(
+            {"detail": "No report file provided."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        file_bytes = report_file.read()
+        key = f"reports/{report_file.name}"
+        put_bytes(file_bytes, "reports", key, report_file.content_type)
+        ExtractionResult.objects.create(
+            study=study,
+            generated_report=key,
+        )
+        current_app.send_task("extraction.run", kwargs={"keys": [key]})
+
+        return Response(
+            {"detail": "Report successfully attached to the study."},
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response(
+            {
+                "code": "server_error",
+                "detail": f"An unexpected error occurred: {str(e)}",
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+@api_view(["POST"])
+def attach_existing_report(request, orthanc_id):
+    """
+    
+    """
+    study = get_object_or_404(Study, orthanc_path=orthanc_id)
+    report_id = request.data.get("report_id")
+
+    if not report_id:
+        return Response(
+            {"detail": "No report_id provided."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        extraction = get_object_or_404(ExtractionResult, id=report_id, study__isnull=True)
+        extraction.study = study
+        extraction.save()
+
+        return Response(
+            {"detail": "Existing report successfully attached to the study."},
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response(
+            {
+                "code": "server_error",
+                "detail": f"An unexpected error occurred: {str(e)}",
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+@api_view(["GET"])
+def unassigned_reports_list(request):
+    try:
+        unassigned = ExtractionResult.objects.filter(study__isnull=True)
+        
+        response_data = []
+        for item in unassigned:
+            file_name = item.generated_report.split("/")[-1] if item.generated_report else "unknown"
+            
+            # Określamy rodzaj pliku na podstawie rozszerzenia
+            ext = file_name.split(".")[-1].lower()
+            kind = "scan" if ext in ["jpg", "jpeg", "png"] else "text"
+
+            response_data.append({
+                "id": str(item.id),
+                "fileName": file_name,
+                "kind": kind,
+                "addedAt": item.created_at.strftime("%Y-%m-%d") if hasattr(item, "created_at") and item.created_at else None,
+            })
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response(
+            {
+                "code": "server_error",
+                "detail": f"An unexpected error occurred: {str(e)}",
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
