@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { EmptyState } from "../components/State";
 import WarningIcon from "../components/WarningIcon";
-import { formatDate, formatDecimal } from "../format";
+import { formatDate, formatDecimal, formatWhen, toIsoDate } from "../format";
 import { t, type MessageKey } from "../i18n";
 import type { ImageStatus, ReportStatus, StudyRow } from "./api";
 
@@ -70,11 +70,27 @@ interface Props {
   onAttach: (row: StudyRow) => void;
   filter: Filter;
   onFilter: (filter: Filter) => void;
+  // with the verified filter: only what was verified today
+  today: boolean;
+  onToday: (today: boolean) => void;
 }
 
-export default function StudiesTable({ rows, selectedId, onSelect, onAttach, filter, onFilter }: Props) {
+export default function StudiesTable({ rows, selectedId, onSelect, onAttach, filter, onFilter, today, onToday }: Props) {
   const [query, setQuery] = useState("");
-  const visible = rows.filter((row) => matches(row, filter, query));
+  const location = useLocation();
+  const verified = filter === "verified";
+  const todayIso = toIsoDate(new Date());
+  const visible = rows
+    .filter((row) => matches(row, filter, query))
+    .filter((row) => !verified || !today || row.verifiedAt?.startsWith(todayIso))
+    .sort((a, b) =>
+      // to review: least certain first, the order verification follows; verified: latest first
+      filter === "to_review"
+        ? (b.uncertainty ?? -1) - (a.uncertainty ?? -1)
+        : verified
+          ? (b.verifiedAt ?? "").localeCompare(a.verifiedAt ?? "")
+          : 0,
+    );
 
   return (
     <>
@@ -94,6 +110,16 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
             </button>
           ))}
         </div>
+        {verified && (
+          <div className="segmented" role="group" aria-label={t("studies.when")}>
+            <button type="button" aria-pressed={today} onClick={() => onToday(true)}>
+              {t("studies.today")}
+            </button>
+            <button type="button" aria-pressed={!today} onClick={() => onToday(false)}>
+              {t("studies.anyDay")}
+            </button>
+          </div>
+        )}
         <span className="studies__count">
           {visible.length} {t("studies.count")}
         </span>
@@ -110,7 +136,14 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
               <th>{t("studies.col.date")}</th>
               <th>{t("studies.col.image")}</th>
               <th>{t("studies.col.report")}</th>
-              <th className="cell-right">{t("studies.col.uncertainty")}</th>
+              {verified ? (
+                <th className="studies__sorted">{t("studies.col.verifiedAt")} ↓</th>
+              ) : (
+                <th className={filter === "to_review" ? "cell-right studies__sorted" : "cell-right"} title={filter === "to_review" ? t("studies.leastCertainFirst") : undefined}>
+                  {t("studies.col.uncertainty")}
+                  {filter === "to_review" && " ↓"}
+                </th>
+              )}
               <th />
             </tr>
           </thead>
@@ -154,14 +187,24 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
                       "—"
                     )}
                   </td>
-                  <td className="cell-right">{row.uncertainty !== null ? formatDecimal(row.uncertainty) : "—"}</td>
+                  {verified ? (
+                    <td>{row.verifiedAt ? formatWhen(row.verifiedAt) : "—"}</td>
+                  ) : (
+                    <td className="cell-right">{row.uncertainty !== null ? formatDecimal(row.uncertainty) : "—"}</td>
+                  )}
                   <td className="cell-right">
                     {row.viewerUrl ? (
                       <a className="link" href={row.viewerUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
                         {t("studies.openViewer")}
                       </a>
                     ) : (
-                      <Link className="link" to={next.to} onClick={(event) => event.stopPropagation()}>
+                      <Link
+                        className="link"
+                        to={next.to}
+                        // the case's "back" leads to this same list
+                        state={{ from: location.pathname + location.search }}
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         {t(next.label)}
                       </Link>
                     )}

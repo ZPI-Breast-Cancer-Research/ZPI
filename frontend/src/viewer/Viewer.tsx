@@ -10,7 +10,7 @@ import {
   WindowLevelTool,
   ZoomTool,
 } from "@cornerstonejs/tools";
-import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
@@ -60,6 +60,8 @@ interface Props {
   // false when the series on screen has a different grid than the mask
   onGridMatch?: (same: boolean) => void;
   onWindow?: (window: { width: number; center: number }) => void;
+  // a page's own control in the main view header, e.g. full view on the review screen
+  headerExtra?: ReactNode;
 }
 
 export interface ViewerHandle {
@@ -131,6 +133,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     onSeriesFound,
     onGridMatch,
     onWindow,
+    headerExtra,
   },
   ref,
 ) {
@@ -628,6 +631,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
                     </button>
                   </>
                 )}
+                {isMain && headerExtra}
                 {isMain ? (
                   <span className="viewer__layout" role="group" title={t("viewer.layout")}>
                     <button type="button" aria-pressed={!single} onClick={() => setLayout((l) => ({ ...l, single: false }))}>

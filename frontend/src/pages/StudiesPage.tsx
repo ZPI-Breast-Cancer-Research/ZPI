@@ -1,13 +1,13 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 import { ApiError, errorText } from "../api";
 import Page from "../components/layout/Page";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import AttachReport from "../studies/AttachReport";
 import DropZone from "../studies/DropZone";
 import { FileTag, ImportTable, UnpairedReports } from "../studies/ImportReview";
@@ -29,6 +29,12 @@ export default function StudiesPage() {
   const [params, setParams] = useSearchParams();
   const [imported, setImported] = useState<GroupedFiles | null>(null);
   const [attachFor, setAttachFor] = useState<StudyRow | null>(null);
+  const notice = (useLocation().state as { notice?: MessageKey } | null)?.notice;
+
+  // e.g. the review queue ran out on the way here
+  useEffect(() => {
+    if (notice) toast(t(notice));
+  }, [notice, toast]);
 
   const studies = useQuery({ queryKey: ["studies"], queryFn: listStudies, retry: false });
   const unassigned = useQuery({ queryKey: ["unassigned-reports"], queryFn: listUnassignedReports });
@@ -133,6 +139,8 @@ export default function StudiesPage() {
               onAttach={setAttachFor}
               filter={filter}
               onFilter={(next) => updateParams({ filtr: next })}
+              today={params.get("dzis") !== "0"}
+              onToday={(today) => updateParams({ dzis: today ? "1" : "0" })}
             />
           )}
         </Panel>

@@ -346,7 +346,8 @@ textarea {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  /* above the strips at the bottom of the case screens */
+  bottom: 64px;
   z-index: 20;
   padding: 10px 16px;
   border-radius: 4px;
@@ -362,6 +363,17 @@ textarea {
 .toast--on {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+.toast--on .toast__link {
+  pointer-events: auto;
+}
+
+.toast__link {
+  margin-left: 14px;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {

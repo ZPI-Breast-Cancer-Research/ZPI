@@ -20,7 +20,9 @@ import ViewerBar from "../viewer/ViewerBar";
 
 export default function LesionOverviewPage() {
   const { studyId = "" } = useParams();
-  const { search } = useLocation();
+  const { search, state } = useLocation();
+  // back to the list the overview was opened from
+  const backTo = (state as { from?: string } | null)?.from ?? "/badania?filtr=verified";
   const [showModel, setShowModel] = useState(false);
   const [showMask, setShowMask] = useState(true);
   const [tool, setTool] = useState<Tool>("pan");
@@ -51,6 +53,7 @@ export default function LesionOverviewPage() {
   return (
     <Page
       title={data.patientId}
+      back={{ to: backTo, label: t("nav.studies") }}
       context={
         <>
           <span>
@@ -69,9 +72,6 @@ export default function LesionOverviewPage() {
       }
       actions={
         <>
-          <Link className="btn" to="/badania">
-            {t("overview.back")}
-          </Link>
           <Link className="btn" to={`/weryfikacja/${data.studyId}`}>
             {t("overview.openReview")}
           </Link>

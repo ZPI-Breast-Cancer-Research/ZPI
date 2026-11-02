@@ -10,6 +10,18 @@ export function formatDate(iso: string): string {
   return day && month && year ? `${day}.${month}.${year}` : iso;
 }
 
+// ISO date and time -> HH:MM today, DD.MM.YYYY, HH:MM otherwise
+export function formatWhen(iso: string, today = new Date()): string {
+  const [date, time = ""] = iso.split("T");
+  const isToday = date === toIsoDate(today);
+  return isToday ? time.slice(0, 5) : `${formatDate(date)}, ${time.slice(0, 5)}`;
+}
+
+export function toIsoDate(day: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+}
+
 export function formatDayMonth(iso: string): string {
   return formatDate(iso).slice(0, 5);
 }

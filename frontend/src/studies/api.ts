@@ -1,4 +1,5 @@
 import { fetchStudies } from "../api";
+import { toIsoDate } from "../format";
 import { MOCK_API, mockDelay } from "../mock";
 
 export type ImageStatus =
@@ -20,6 +21,8 @@ export interface StudyRow {
   image: ImageStatus | null;
   report: ReportStatus | null;
   uncertainty: number | null;
+  // ISO date and time the image was verified
+  verifiedAt: string | null;
   viewerUrl: string | null;
 }
 
@@ -41,6 +44,10 @@ function dicomDateToIso(value: string | null): string | null {
   return value && /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : null;
 }
 
+const todayAt = (time: string) => `${toIsoDate(new Date())}T${time}`;
+
+const VERIFIED_AT: Record<string, string> = { s6: todayAt("09:12"), s7: "2026-10-21T14:05", s8: todayAt("10:40") };
+
 const MOCK_ROWS: StudyRow[] = (
   [
     ["processing", "missing", null],
@@ -60,6 +67,7 @@ const MOCK_ROWS: StudyRow[] = (
   image,
   report,
   uncertainty,
+  verifiedAt: VERIFIED_AT[`s${i + 1}`] ?? null,
   viewerUrl: null,
 }));
 
@@ -75,6 +83,7 @@ export async function listStudies(): Promise<StudyRow[]> {
     image: null,
     report: null,
     uncertainty: null,
+    verifiedAt: null,
     viewerUrl: study.viewer_url,
   }));
 }

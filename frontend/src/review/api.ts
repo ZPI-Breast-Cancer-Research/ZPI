@@ -9,12 +9,6 @@ export interface QueueEntry {
   uncertainty: number;
 }
 
-export interface DoneEntry {
-  studyId: string;
-  studyNumber: string;
-  corrected: boolean;
-}
-
 export interface Proposal {
   value: string;
   // model and the regex rules gave different answers
@@ -75,15 +69,12 @@ const REPORT: ReportPart[] = [
 
 const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10] };
 
-// TODO: no review endpoints yet
-export async function fetchQueue(): Promise<{ queue: QueueEntry[]; done: DoneEntry[] }> {
-  return mockDelay({
-    queue: QUEUE,
-    done: [
-      { studyId: "s6", studyNumber: "0006", corrected: false },
-      { studyId: "s7", studyNumber: "0007", corrected: true },
-    ],
-  });
+// TODO: no review endpoints yet; approved cases leave the mock queue until the page reloads
+const approved = new Set<string>();
+
+// least certain first, the order verification follows
+export async function fetchQueue(): Promise<QueueEntry[]> {
+  return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => b.uncertainty - a.uncertainty));
 }
 
 export async function fetchCase(studyId: string): Promise<ReviewCase> {
@@ -118,6 +109,7 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
   });
 }
 
-export async function approveCase(_studyId: string, _payload: ApprovalPayload): Promise<void> {
+export async function approveCase(studyId: string, _payload: ApprovalPayload): Promise<void> {
+  approved.add(studyId);
   return mockDelay(undefined, 400);
 }

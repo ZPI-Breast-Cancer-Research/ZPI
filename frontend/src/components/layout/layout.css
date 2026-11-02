@@ -152,8 +152,45 @@
 
 .banner__actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 16px;
   margin-left: auto;
+}
+
+/* the next-case list opens below the banner */
+.banner:has(.approve__menu) {
+  position: relative;
+  z-index: 5;
+  overflow: visible;
+}
+
+.banner__back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-ink-muted);
+  text-decoration: none;
+}
+
+.banner__back:hover {
+  color: var(--color-ink);
+}
+
+.banner__back svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.banner__rule {
+  width: 1px;
+  height: 22px;
+  margin: 0 -4px;
+  background: var(--color-rule-strong);
 }
 
 /* panel */
