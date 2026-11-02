@@ -1,4 +1,4 @@
-import { fetchStudies } from "../api";
+import { fetchStudies, sendStudy as apiSendStudy, api } from "../api";
 import { MOCK_API, mockDelay } from "../mock";
 
 export type ImageStatus =
@@ -66,25 +66,36 @@ const MOCK_ROWS: StudyRow[] = (
 // the backend doesn't return image/report statuses yet, so those stay empty for real data
 export async function listStudies(): Promise<StudyRow[]> {
   if (MOCK_API) return mockDelay(MOCK_ROWS);
-  const studies = await fetchStudies();
-  return studies.map((study) => ({
-    id: study.orthanc_id,
-    number: null,
-    patientId: study.patient_id ?? "—",
-    studyDate: dicomDateToIso(study.study_date),
-    image: null,
-    report: null,
-    uncertainty: null,
-    viewerUrl: study.viewer_url,
+    const studies = await fetchStudies();
+    return studies.map((study, i) => ({
+      id: study.orthanc_id,
+      number: String(i + 1).padStart(4, "0"), 
+      patientId: study.patient_id ?? "—",
+      studyDate: dicomDateToIso(study.study_date),
+      image: study.segmentation_status as ImageStatus,
+      report: study.extraction_status as ReportStatus,
+      uncertainty: study.uncertainty,
+      viewerUrl: study.viewer_url,
   }));
 }
 
 // TODO: no backend endpoints for the rest of this file yet
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
-  return mockDelay([
-    { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24" },
-    { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22" },
-  ]);
+  if (MOCK_API) {
+    return mockDelay([
+      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24" },
+      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22" },
+    ]);
+  }
+  
+  // Pobieranie danych z prawdziwego backendu
+  const reports = await api.get('/api/reports/unassigned/');;
+  return reports.data.map((report: any) => ({
+    id: report.id,
+    fileName: report.file_name ?? report.fileName,
+    kind: report.kind,
+    addedAt: report.added_at ?? report.addedAt,
+  }));
 }
 
 export async function getProcessingSteps(study: StudyRow): Promise<ProcessingStep[]> {
@@ -100,10 +111,22 @@ export async function getProcessingSteps(study: StudyRow): Promise<ProcessingSte
   ]);
 }
 
-export async function sendStudies(count: number): Promise<number> {
-  return mockDelay(count, 400);
+export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<any> {
+  return await apiSendStudy(archiveFile, reportFile);
 }
+export const sendStudies = sendStudy;
 
-export async function attachReport(_studyId: string, _source: File | string): Promise<void> {
-  return mockDelay(undefined, 400);
+export async function attachReport(studyId: string, source: File | string): Promise<void> {
+  const formData = new FormData();
+  
+  if (source instanceof File) {
+    formData.append("report", source);
+    await api.post(`/api/studies/${studyId}/attach-report/`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  } else {
+    await api.post(`/api/studies/${studyId}/attach-existing-report/`, {
+      report_id: source,
+    });
+  }
 }

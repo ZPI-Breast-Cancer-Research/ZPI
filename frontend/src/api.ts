@@ -1,8 +1,8 @@
 import axios from "axios";
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+export const API_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
-const api = axios.create({ baseURL: API_URL, timeout: 15000 });
+export const api = axios.create({ baseURL: API_URL, timeout: 15000 });
 
 export interface Study {
   orthanc_id: string;
@@ -13,8 +13,10 @@ export interface Study {
   modalities: string[];
   series_count: number;
   viewer_url: string | null;
+  extraction_status: string;
+  segmentation_status: string;
+  uncertainty: number | null;
 }
-
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -54,6 +56,27 @@ export async function fetchStudies(): Promise<Study[]> {
       throw new ApiError(body?.detail ?? `Backend returned HTTP ${error.response.status}.`, "unknown");
     }
     throw new ApiError("Unexpected error while loading studies.", "unknown");
+  }
+}
+
+export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<any> {
+  const formData = new FormData();
+  if (archiveFile) {
+    formData.append("archives", archiveFile);
+  }
+  if (reportFile) {
+    formData.append("report", reportFile);
+  }
+
+  try {
+    const { data } = await api.post("/api/studies/import/", formData);
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const body = error.response?.data as { code?: string; detail?: string } | undefined;
+      throw new ApiError(body?.detail || "Błąd podczas wysyłania badania.", "unknown");
+    }
+    throw new ApiError("Nieoczekiwany błąd podczas wysyłania.", "unknown");
   }
 }
 

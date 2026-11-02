@@ -5,7 +5,7 @@ class Study(models.Model):
     """
     Represents a patient study linked with the Orthanc PACS.
     """
-    orthanc_path = models.CharField(max_length=255, help_text="Orthanc study ID or path")
+    orthanc_path = models.CharField(max_length=255,null=True, help_text="Orthanc study ID or path")
 
     class Meta:
         db_table = 'studies'
