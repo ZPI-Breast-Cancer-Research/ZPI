@@ -9,6 +9,8 @@ from common.storage import put_bytes
 from extraction.models import ExtractionResult
 import zipfile
 import io
+import pydicom
+from celery import current_app
 
 
 @api_view(["GET"])
@@ -85,6 +87,31 @@ def study_import(request):
                             status=status.HTTP_400_BAD_REQUEST
                         )
 
+                    study_uids = set()
+                    for name in valid_dicoms:
+                        try:
+                            with zf.open(name) as dicom_file:
+                                ds = pydicom.dcmread(dicom_file, stop_before_pixels=True)
+                                if hasattr(ds, "StudyInstanceUID"):
+                                    study_uids.add(str(ds.StudyInstanceUID))
+                        except Exception:
+                            pass
+
+                    if not study_uids:
+                        return Response(
+                            {"detail": "No valid DICOM metadata found in archive files."},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    if len(study_uids) > 1:
+                        return Response(
+                            {
+                                "code": "multiple_studies_error",
+                                "detail": "The ZIP archive contains files from multiple different studies (different StudyInstanceUID). Please upload one study per archive."
+                            },
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
                     zip_key = f"ZIP/{archive_file.name}"
                     put_bytes(archive_bytes, "studies", zip_key)
 
@@ -93,10 +120,47 @@ def study_import(request):
                     {"detail": "ZIP archive is damaged."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            try:
+                orthanc_client = OrthancClient()
+                orthanc_response = orthanc_client.upload_dicom_zip(archive_bytes)
+
+                
+                # Obsługa zależnie od tego, co wyświetli się w konsoli:
+                if isinstance(orthanc_response, dict):
+                    orthanc_study_id = orthanc_response.get("ParentStudy") or orthanc_response.get("ID")
+                elif isinstance(orthanc_response, list) and len(orthanc_response) > 0:
+                    first_item = orthanc_response[0]
+                    if isinstance(first_item, dict):
+                        orthanc_study_id = first_item.get("ParentStudy") or first_item.get("ID")
+                    else:
+                        orthanc_study_id = str(first_item)
+
+                if not orthanc_study_id:
+                    # Fallback – pobierz ostatnie badanie z listy, jeśli Orthanc nic konkretnego nie zwrócił w ID
+                    studies_list = orthanc_client.list_studies()
+                    if studies_list:
+                        orthanc_study_id = studies_list[0].get("orthanc_id")
+
+            except OrthancUnauthorized:
+                return Response(
+                    {
+                        "code": "orthanc_unauthorized",
+                        "detail": "Orthanc (DICOM server) rejected the backend's credentials during upload.",
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            except OrthancUnavailable:
+                return Response(
+                    {
+                        "code": "orthanc_unavailable",
+                        "detail": "Orthanc (DICOM server) is unavailable during upload.",
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
             study = Study.objects.create(
-                orthanc_path=None
+                orthanc_path=orthanc_study_id
             )
-            
             
 
         # 3. If a report file (.txt / scan) is attached, upload it to MinIO
@@ -109,9 +173,9 @@ def study_import(request):
             # (If there was no DICOM, the study field will be NULL, allowing unassigned reports)
             ExtractionResult.objects.create(
                 study=study,
-                generated_report={"file_path": key},
+                generated_report=key,
             )
-
+            current_app.send_task("extraction.run", kwargs={"keys": [key]})
         return Response(
             {
                 "detail": "Study and documents have been successfully imported.",

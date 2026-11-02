@@ -88,3 +88,26 @@ class OrthancClient:
             "series_count": len(study.get("Series", [])),
             "viewer_url": self.viewer_url(uid),
         }
+    def upload_dicom_zip(self, zip_bytes: bytes) -> dict:
+        url = f"{self.base_url}/instances"
+        headers = {"Content-Type": "application/zip"}
+        
+        try:
+            response = requests.post(
+                url, 
+                data=zip_bytes, 
+                auth=self.auth, 
+                headers=headers, 
+                timeout=TIMEOUT
+            )
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc upload to {url} failed: {exc}") from exc
+
+        if response.status_code == 401:
+            raise OrthancUnauthorized(f"Orthanc rejected credentials during upload (HTTP 401)")
+            
+        try:
+            response.raise_for_status()
+            return response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise OrthancUnavailable(f"Orthanc upload response invalid: {exc}") from exc
