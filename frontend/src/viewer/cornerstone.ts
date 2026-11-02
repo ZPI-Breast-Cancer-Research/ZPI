@@ -27,7 +27,7 @@ export function initCornerstone() {
 export const ENGINE_ID = "maria";
 let engine: RenderingEngine | null = null;
 
-// one engine (one WebGL context) for the whole app; a new one per viewer would lose the already loaded textures
+// one engine for the whole app; a new one per viewer would lose the already loaded textures
 export function getEngine() {
   initCornerstone();
   engine ??= new RenderingEngine(ENGINE_ID);

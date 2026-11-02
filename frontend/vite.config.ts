@@ -11,9 +11,7 @@ export default defineConfig({
     exclude: ["@cornerstonejs/dicom-image-loader"],
     include: ["dicom-parser"],
   },
-  // @icr/polyseg-wasm is an optional Cornerstone add-on (contour/surface conversion) we don't use
-  worker: { format: "es", rollupOptions: { external: ["@icr/polyseg-wasm"] } },
-  build: { rollupOptions: { external: ["@icr/polyseg-wasm"] } },
+  worker: { format: "es" },
   define: { __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? "dev") },
   server: {
     host: "0.0.0.0",
