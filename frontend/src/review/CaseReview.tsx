@@ -60,6 +60,8 @@ export default function CaseReview({ data, queue }: Props) {
   const [fullView, setFullView] = useState(readFullView);
   const [picking, setPicking] = useState(false);
   const [pickedId, setPickedId] = useState<string | null>(null);
+  const [maskSlices, setMaskSlices] = useState(0);
+  const [filling, setFilling] = useState(false);
   const resizeBrush = (radius: number) => setBrushRadius(Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, radius)));
 
   // back to the list the case was opened from, or the cases waiting for verification
@@ -134,6 +136,15 @@ export default function CaseReview({ data, queue }: Props) {
 
   const togglePicking = useCallback((open: boolean) => setPicking(open), []);
 
+  const fillRef = useRef(() => {});
+  fillRef.current = async () => {
+    if (filling || maskSlices < 2) return;
+    setFilling(true);
+    const done = await mask.viewer.current?.interpolate();
+    setFilling(false);
+    if (done === false) toast(t("viewer.fillFailed"));
+  };
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement).matches("input, select, textarea")) return;
@@ -150,6 +161,7 @@ export default function CaseReview({ data, queue }: Props) {
       else if (event.key === "s") setBrushShape((s) => (s === "circle" ? "sphere" : "circle"));
       else if (event.key === "[" || event.key === "]") setBrushRadius((r) => Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, r + (event.key === "]" ? 1 : -1))));
       else if (event.key === "f") setFullView(true);
+      else if (event.key === "i") fillRef.current();
       else if (event.key === "n") setPicking((open) => !open);
       else if (event.key === "Escape") {
         setPicking(false);
@@ -210,6 +222,9 @@ export default function CaseReview({ data, queue }: Props) {
             onUndo={mask.undo}
             canUndo={mask.edits > 0}
             thresholdOk={gridMatch}
+            canFill={maskSlices >= 2}
+            filling={filling}
+            onFill={() => fillRef.current()}
           />
           <div className="review__viewer">
             <ViewerBar series={series} onSeries={setSeries} available={available}>
@@ -238,6 +253,7 @@ export default function CaseReview({ data, queue }: Props) {
               onSeriesFound={setAvailable}
               onGridMatch={setGridMatch}
               onWindow={setWindowLevel}
+              onExtent={(extent) => setMaskSlices(extent?.slices.length ?? 0)}
               headerExtra={
                 <button
                   type="button"

@@ -46,6 +46,10 @@
   border-color: rgba(236, 111, 152, 0.65);
 }
 
+.viewer__plane--gap {
+  border: 1px dashed var(--color-warning);
+}
+
 .viewer__plane--current {
   background: var(--color-primary);
   border-color: var(--color-primary);
@@ -90,6 +94,11 @@
   text-decoration-color: var(--color-rule-strong);
   text-underline-offset: 3px;
   cursor: pointer;
+}
+
+.viewer__extent .viewer__gap {
+  color: var(--color-warning);
+  text-decoration-color: rgba(240, 144, 127, 0.5);
 }
 
 .viewer__extent button:hover {

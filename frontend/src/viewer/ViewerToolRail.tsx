@@ -9,9 +9,13 @@ interface Props {
   canUndo: boolean;
   // the threshold brush reads the series on screen, which has to share the mask's grid
   thresholdOk: boolean;
+  // filling between slices needs the mask on at least two of them
+  canFill: boolean;
+  filling: boolean;
+  onFill: () => void;
 }
 
-export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, thresholdOk }: Props) {
+export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, thresholdOk, canFill, filling, onFill }: Props) {
   const toolButton = (name: Tool, label: string, title: string, disabled = false) => (
     <button type="button" className="tool-rail__btn" aria-pressed={tool === name} title={title} disabled={disabled} onClick={() => onTool(name)}>
       <Icon name={name} />
@@ -27,6 +31,17 @@ export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, threshol
       <button type="button" className="tool-rail__btn" title={`${t("viewer.undo")} (Ctrl+Z)`} disabled={!canUndo} onClick={onUndo}>
         <Icon name="undo" />
         {t("viewer.undo")}
+      </button>
+      <button
+        type="button"
+        className="tool-rail__btn"
+        title={canFill ? t("viewer.fillTitle") : t("viewer.fillOff")}
+        disabled={!canFill || filling}
+        aria-busy={filling}
+        onClick={onFill}
+      >
+        <Icon name="fill" />
+        {filling ? t("viewer.filling") : t("viewer.fill")}
       </button>
       {toolButton("pan", t("viewer.pan"), t("viewer.panTitle"))}
       {toolButton("window", t("viewer.window"), `${t("viewer.window")} (W)`)}
