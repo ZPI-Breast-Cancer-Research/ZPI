@@ -14,6 +14,12 @@ export function formatDayMonth(iso: string): string {
   return formatDate(iso).slice(0, 5);
 }
 
+const oneDecimal = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+export function formatOneDecimal(value: number): string {
+  return oneDecimal.format(value);
+}
+
 const percent = new Intl.NumberFormat("pl-PL", { style: "percent", maximumFractionDigits: 0 });
 
 export function formatPercent(share: number): string {

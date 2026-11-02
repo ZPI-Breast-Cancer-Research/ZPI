@@ -6,7 +6,6 @@ import {
   init as toolsInit,
   PanTool,
   ReferenceLinesTool,
-  StackScrollTool,
   WindowLevelTool,
   ZoomTool,
 } from "@cornerstonejs/tools";
@@ -21,7 +20,7 @@ export function initCornerstone() {
   coreInit();
   loaderInit({ maxWebWorkers: Math.max(1, Math.min(4, (navigator.hardwareConcurrency ?? 2) - 1)) });
   toolsInit();
-  [PanTool, WindowLevelTool, StackScrollTool, ZoomTool, BrushTool, ReferenceLinesTool].forEach(addTool);
+  [PanTool, WindowLevelTool, ZoomTool, BrushTool, ReferenceLinesTool].forEach(addTool);
 }
 
 export const ENGINE_ID = "maria";

@@ -1,22 +1,35 @@
 .viewer {
   position: relative;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 0 2px;
+  grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "strip main first" "strip main second";
+  gap: 2px;
   flex: 1;
   min-height: 0;
-  background: var(--color-image);
+  background: #121a28;
+}
+
+.viewer--single {
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-areas: "strip main" "strip main";
+}
+
+.viewer--single .viewer__well:not(.viewer__well--main) {
+  display: none;
 }
 
 .viewer__planes {
+  grid-area: strip;
   position: relative;
-  margin: 4px 0 8px;
+  padding: 4px 0 8px;
+  background: var(--color-image);
 }
 
 .viewer__plane {
   position: absolute;
-  left: 12px;
-  right: 8px;
+  left: 9px;
+  right: 6px;
   height: 7px;
   padding: 0;
   background: none;
@@ -39,13 +52,118 @@
 }
 
 .viewer__well {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
+  background: var(--color-image);
+}
+
+/* plane name above the image instead of text over it */
+.viewer__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--color-field);
+  border-bottom: 1px solid var(--color-rule);
+  color: var(--color-ink-muted);
+  font-size: 13px;
+  white-space: nowrap;
   overflow: hidden;
 }
 
-.viewer__well--side {
-  border-left: 1px solid #121a28;
+.viewer__head b {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.viewer__extent button {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--color-rule-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.viewer__extent button:hover {
+  color: var(--color-ink);
+}
+
+.viewer__head-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--color-ink);
+}
+
+.viewer__head-btn,
+.viewer__layout button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  background: none;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  color: var(--color-ink-muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.viewer__head-btn:hover,
+.viewer__layout button:hover {
+  color: var(--color-ink);
+  border-color: var(--color-ink-muted);
+}
+
+.viewer__head-btn svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.viewer__layout {
+  display: flex;
+}
+
+.viewer__layout button {
+  border-radius: 0;
+}
+
+.viewer__layout button:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.viewer__layout button + button {
+  border-radius: 0 var(--radius) var(--radius) 0;
+  border-left: 0;
+}
+
+.viewer__layout button[aria-pressed="true"] {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+  color: var(--color-side);
+  font-weight: 600;
+}
+
+.viewer__image {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .viewer__canvas {
@@ -56,6 +174,25 @@
 .viewer__canvas--paint {
   cursor: crosshair;
   touch-action: none;
+}
+
+/* orientation letters at the edges, so the sides never get mixed up */
+.viewer__edge {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #8d97a8;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.viewer__edge--start {
+  left: 10px;
+}
+
+.viewer__edge--end {
+  right: 10px;
 }
 
 .viewer__status {
@@ -75,34 +212,6 @@
 .viewer__status b {
   color: #cdd3dc;
   font-weight: 600;
-}
-
-.viewer__dc {
-  position: absolute;
-  color: #cdd3dc;
-  font: 400 12.5px / 1.5 var(--font-mono);
-  pointer-events: none;
-  text-shadow: 0 1px 2px #000;
-}
-
-.viewer__dc--tl {
-  left: 12px;
-  top: 10px;
-}
-
-.viewer__dc--tr {
-  right: 14px;
-  top: 10px;
-  text-align: right;
-}
-
-.viewer__dc--bl {
-  left: 12px;
-  bottom: 10px;
-}
-
-.viewer__mask-note {
-  color: var(--color-corrected);
 }
 
 .viewer-toolbar {
