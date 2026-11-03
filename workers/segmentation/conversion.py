@@ -1,3 +1,4 @@
+import argparse
 import gzip
 import json
 import os
@@ -351,3 +352,26 @@ def _code_version() -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """--study, --case-id, --out; print the result; return 1 unless the status is ok."""
+    parser = argparse.ArgumentParser(description="Convert a DICOM study to NIfTI model input.")
+    parser.add_argument("--study", type=Path, required=True, help="directory with one DICOM study")
+    parser.add_argument("--case-id", required=True, help="prefix of the output files")
+    parser.add_argument("--out", type=Path, required=True, help="output directory")
+    args = parser.parse_args(argv)
+
+    result = convert_study(args.study, args.case_id, args.out)
+    print(f"{args.case_id}: {result.status}")
+    for role, path in result.nifti.items():
+        print(f"  {role}: {path}")
+    if result.manifest["missing_roles"]:
+        print(f"  missing roles: {', '.join(result.manifest['missing_roles'])}")
+    if result.manifest["geometry_error"]:
+        print(f"  {result.manifest['geometry_error']}")
+    return 0 if result.status is Status.OK else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
