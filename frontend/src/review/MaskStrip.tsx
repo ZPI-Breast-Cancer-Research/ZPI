@@ -1,58 +1,50 @@
-import { formatMetric } from "../format";
+import Hint from "../components/Hint";
 import { t } from "../i18n";
 import Icon from "../viewer/icons";
-import type { MaskState } from "../viewer/types";
-import type { ReviewCase } from "./api";
 
 interface Props {
-  state: MaskState;
-  measurements: ReviewCase["measurements"];
+  corrected: boolean;
+  // slices that differ from the model's mask in the main view
+  edited: number;
+  // empty slices between drawn ones, numbered from 0
+  gaps: number[];
   version?: string;
-  onConfirm: () => void;
+  onGoTo: (index: number) => void;
+  onFill: () => void;
   onRestore: () => void;
   showMask: boolean;
   onToggleMask: () => void;
 }
 
-export default function MaskStrip({ state, measurements, version, onConfirm, onRestore, showMask, onToggleMask }: Props) {
+// only what is about the mask itself: its state, a gap to fill, the way back to the model's
+export default function MaskStrip({ corrected, edited, gaps, version, onGoTo, onFill, onRestore, showMask, onToggleMask }: Props) {
   return (
     <div className="mask-strip" aria-label={t("review.mask")}>
-      <span className="mask-strip__label">{t("review.mask")}</span>
-      {version && <span className="muted">{t("review.maskVersion", { v: version })}</span>}
-      <MaskToggle shown={showMask} onToggle={onToggleMask} />
-      {state === "corrected" ? (
-        <span className="muted">{t("review.mask.recalc")}</span>
-      ) : (
-        <>
-          <span>
-            {t("review.mask.volume")} <b>{formatMetric(measurements.volume, " cm³")}</b>
-          </span>
-          <span>
-            {t("review.mask.size")} <b>{formatMetric(measurements.size, " mm")}</b>
-          </span>
-        </>
-      )}
-      <span>
-        {t("review.mask.inReport")} <b>{formatMetric(measurements.sizeInReport, " mm")}</b>
+      <span className={corrected ? "mask-strip__state mask-strip__state--corrected" : "mask-strip__state"} title={version && t("review.maskVersion", { v: version })}>
+        {t(corrected ? "review.mask.corrected" : "review.mask.proposed")}
+        {corrected && edited > 0 && <small> {t(edited === 1 ? "review.mask.onSlice" : "review.mask.onSlices", { n: edited })}</small>}
       </span>
+      {gaps.length > 0 && (
+        <span className="mask-strip__gap">
+          {t(gaps.length === 1 ? "review.mask.gap" : "review.mask.gaps", { n: gaps.length })}{" "}
+          <button type="button" className="link" onClick={() => onGoTo(gaps[0])}>
+            {gaps[0] + 1}
+          </button>
+          {" · "}
+          <Hint name={t("viewer.fill")} shortcut="I" text={t("viewer.hint.fill")} place="top">
+            <button type="button" className="link" onClick={onFill}>
+              {t(gaps.length === 1 ? "review.mask.fillGap" : "review.mask.fillGaps")}
+            </button>
+          </Hint>
+        </span>
+      )}
       <span className="mask-strip__end">
-        {state === "proposed" && (
-          <>
-            <span className="status">{t("review.mask.proposed")}</span>
-            <button type="button" className="btn" onClick={onConfirm}>
-              {t("review.mask.confirm")}
-            </button>
-          </>
+        {corrected && (
+          <button type="button" className="link" onClick={onRestore}>
+            {t("review.mask.restore")}
+          </button>
         )}
-        {state === "confirmed" && <span className="status status--confirmed">{t("review.mask.confirmed")}</span>}
-        {state === "corrected" && (
-          <>
-            <span className="status status--corrected">{t("review.mask.corrected")}</span>
-            <button type="button" className="link" onClick={onRestore}>
-              {t("review.mask.restore")}
-            </button>
-          </>
-        )}
+        <MaskToggle shown={showMask} onToggle={onToggleMask} />
       </span>
     </div>
   );
@@ -63,6 +55,7 @@ export function MaskToggle({ shown, onToggle }: { shown: boolean; onToggle: () =
     <button type="button" className="mask-strip__eye" aria-pressed={shown} title={t("viewer.maskShown")} onClick={onToggle}>
       <Icon name="eye" />
       {!shown && t("viewer.maskHidden")}
+      <kbd>M</kbd>
     </button>
   );
 }

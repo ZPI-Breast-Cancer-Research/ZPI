@@ -8,7 +8,7 @@ import { useToast } from "../components/Toast";
 import { formatDate, formatDecimal } from "../format";
 import { t } from "../i18n";
 import ToolOptions, { RADIUS_MAX, RADIUS_MIN } from "../viewer/ToolOptions";
-import Viewer from "../viewer/Viewer";
+import Viewer, { type MaskInfo } from "../viewer/Viewer";
 import Icon from "../viewer/icons";
 import { useViewerLayout } from "../viewer/layout";
 import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
@@ -64,7 +64,7 @@ export default function CaseReview({ data, queue }: Props) {
   const [fullView, setFullView] = useState(readFullView);
   const [picking, setPicking] = useState(false);
   const [pickedId, setPickedId] = useState<string | null>(null);
-  const [maskSlices, setMaskSlices] = useState(0);
+  const [maskInfo, setMaskInfo] = useState<MaskInfo | null>(null);
   const [filling, setFilling] = useState(false);
   const resizeBrush = (radius: number) => setBrushRadius(Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, radius)));
 
@@ -85,7 +85,9 @@ export default function CaseReview({ data, queue }: Props) {
 
   const openFields = keys.filter((key) => !states[key]);
   const flagged = openFields.filter((key) => data.proposals[key]?.disagreement).length;
-  const ready = mask.state !== "proposed" && openFields.length === 0;
+  const ready = openFields.length === 0;
+  // edits that all ended up undone or restored leave the model's mask as it was
+  const corrected = mask.state === "corrected" && (maskInfo?.edited ?? 1) > 0;
 
   // the queue is ordered least certain first; the next case is the first other one unless picked
   const remaining = queue.filter((q) => q.studyId !== data.studyId);
@@ -104,7 +106,7 @@ export default function CaseReview({ data, queue }: Props) {
   const approve = useMutation({
     mutationFn: () =>
       approveCase(data.studyId, {
-        mask: mask.state === "corrected" ? "corrected" : "confirmed",
+        mask: corrected ? "corrected" : "confirmed",
         edits: mask.edits,
         fields: Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
         editingSeconds: Math.round((Date.now() - startedAt.current) / 1000),
@@ -112,7 +114,7 @@ export default function CaseReview({ data, queue }: Props) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["studies"] });
-      toast(t(mask.state === "corrected" ? "review.approvedCorrected" : "review.approvedConfirmed", { n: data.studyNumber }), {
+      toast(t(corrected ? "review.approvedCorrected" : "review.approvedConfirmed", { n: data.studyNumber }), {
         label: t("review.openOverview"),
         to: `/badania/${data.studyId}`,
       });
@@ -123,11 +125,6 @@ export default function CaseReview({ data, queue }: Props) {
   const approveRef = useRef(() => {});
   approveRef.current = () => ready && !approve.isPending && approve.mutate();
 
-  const showMaskDecision = () => {
-    setFullView(false);
-    const button = document.querySelector<HTMLButtonElement>(".mask-strip .btn");
-    button?.focus();
-  };
   const showOpenField = () => {
     setFullView(false);
     // the form comes back on the next render
@@ -142,11 +139,16 @@ export default function CaseReview({ data, queue }: Props) {
 
   const fillRef = useRef(() => {});
   fillRef.current = async () => {
-    if (filling || maskSlices < 2) return;
+    if (filling || (maskInfo?.slices ?? 0) < 2) return;
     setFilling(true);
     const done = await mask.viewer.current?.interpolate();
     setFilling(false);
     if (done === false) toast(t("viewer.fillFailed"));
+  };
+
+  const restoreSliceRef = useRef(() => {});
+  restoreSliceRef.current = () => {
+    if (mask.viewer.current?.restoreSlice()) toast(t("viewer.sliceRestored"));
   };
 
   useEffect(() => {
@@ -166,6 +168,7 @@ export default function CaseReview({ data, queue }: Props) {
       else if (event.key === "[" || event.key === "]") setBrushRadius((r) => Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, r + (event.key === "]" ? 1 : -1))));
       else if (event.key === "f") setFullView(true);
       else if (event.key === "i") fillRef.current();
+      else if (event.key === "r") restoreSliceRef.current();
       else if (event.key === "n") setPicking((open) => !open);
       else if (event.key === "Escape") {
         setPicking(false);
@@ -209,8 +212,7 @@ export default function CaseReview({ data, queue }: Props) {
             <span className="muted">{t("review.lastInQueue")}</span>
           )}
           <ApproveButton
-            missing={{ mask: mask.state === "proposed", fields: openFields.length }}
-            onMissingMask={showMaskDecision}
+            missingFields={openFields.length}
             onMissingFields={showOpenField}
             next={next}
             upcoming={remaining.slice(0, UPCOMING)}
@@ -232,9 +234,11 @@ export default function CaseReview({ data, queue }: Props) {
             onUndo={mask.undo}
             canUndo={mask.edits > 0}
             thresholdOk={gridMatch}
-            canFill={maskSlices >= 2}
+            canFill={(maskInfo?.slices ?? 0) >= 2}
             filling={filling}
             onFill={() => fillRef.current()}
+            canRestoreSlice={!!maskInfo?.currentEdited}
+            onRestoreSlice={() => restoreSliceRef.current()}
           />
           <div className="review__viewer">
             <ViewerBar
@@ -267,7 +271,7 @@ export default function CaseReview({ data, queue }: Props) {
               studyUid={data.studyUid}
               mask={data.mask}
               series={series}
-              maskState={mask.state}
+              maskState={corrected ? "corrected" : "proposed"}
               showMask={showMask}
               tool={tool === "threshold" && !gridMatch ? "brush" : tool}
               editable
@@ -277,15 +281,17 @@ export default function CaseReview({ data, queue }: Props) {
               onSeriesFound={setAvailable}
               onGridMatch={setGridMatch}
               onWindow={setWindowLevel}
-              onExtent={(extent) => setMaskSlices(extent?.slices.length ?? 0)}
+              onMaskInfo={setMaskInfo}
               layout={layout}
               onLayout={setLayout}
             />
             <MaskStrip
-              state={mask.state}
-              measurements={data.measurements}
+              corrected={corrected}
+              edited={maskInfo?.edited ?? 0}
+              gaps={maskInfo?.gaps ?? []}
               version={data.segmentationVersion}
-              onConfirm={mask.confirm}
+              onGoTo={(index) => mask.viewer.current?.goToSlice(index)}
+              onFill={() => fillRef.current()}
               onRestore={mask.restoreModel}
               showMask={showMask}
               onToggleMask={() => setShowMask((s) => !s)}

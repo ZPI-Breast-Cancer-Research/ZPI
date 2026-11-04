@@ -367,10 +367,34 @@
   font-weight: 600;
 }
 
-.mask-strip__label {
+.mask-strip__state {
   color: var(--color-ink);
   font-size: 15px;
   font-weight: 600;
+}
+
+.mask-strip__state--corrected {
+  color: var(--color-corrected);
+}
+
+.mask-strip__state small {
+  color: var(--color-ink-muted);
+  font-size: 13.5px;
+  font-weight: 400;
+}
+
+/* a gap is the one thing to act on, so it is a sentence with its action */
+.mask-strip__gap,
+.mask-strip__gap .link {
+  color: var(--color-warning);
+}
+
+.mask-strip__gap .link {
+  text-decoration-color: rgba(240, 144, 127, 0.5);
+}
+
+.mask-strip__eye kbd {
+  font-size: 10.5px;
 }
 
 .mask-strip__eye {

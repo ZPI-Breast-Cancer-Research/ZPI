@@ -14,13 +14,16 @@ interface Props {
   canFill: boolean;
   filling: boolean;
   onFill: () => void;
+  // the slice on screen differs from the model's mask
+  canRestoreSlice: boolean;
+  onRestoreSlice: () => void;
 }
 
 const KEYS: Record<Tool, string> = { pan: "P", window: "W", brush: "B", threshold: "T", eraser: "E" };
 
 // greyed buttons stay hoverable (aria-disabled), so their hint still shows
-export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, thresholdOk, canFill, filling, onFill }: Props) {
-  const button = (key: Tool | "fill" | "undo", name: string, shortcut: string, label: string, onClick: () => void, state: { pressed?: boolean; off?: boolean; busy?: boolean } = {}) => (
+export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, thresholdOk, canFill, filling, onFill, canRestoreSlice, onRestoreSlice }: Props) {
+  const button = (key: Tool | "fill" | "undo" | "slice", name: string, shortcut: string, label: string, onClick: () => void, state: { pressed?: boolean; off?: boolean; busy?: boolean } = {}) => (
     <Hint name={name} shortcut={shortcut} text={t(`viewer.hint.${key}`)}>
       <button
         type="button"
@@ -53,6 +56,7 @@ export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, threshol
       <span className="tool-rail__gap" aria-hidden="true" />
       {button("fill", t("viewer.fill"), "I", filling ? t("viewer.filling") : t("viewer.fill"), onFill, { off: !canFill || filling, busy: filling })}
       {button("undo", t("viewer.undo"), "Ctrl+Z", t("viewer.undo"), onUndo, { off: !canUndo })}
+      {button("slice", t("viewer.restoreSlice"), "R", t("viewer.restoreSlice"), onRestoreSlice, { off: !canRestoreSlice })}
     </nav>
   );
 }

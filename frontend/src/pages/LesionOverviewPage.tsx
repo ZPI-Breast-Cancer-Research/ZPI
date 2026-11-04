@@ -114,7 +114,7 @@ export default function LesionOverviewPage() {
             onLayout={setLayout}
           />
           <div className="mask-strip">
-            <span className="mask-strip__label">{t("overview.approvedMask")}</span>
+            <span className="mask-strip__state">{t("overview.approvedMask")}</span>
             <MaskToggle shown={showMask} onToggle={() => setShowMask((s) => !s)} />
             <span className={data.mask.corrected ? "status status--corrected" : "status"}>
               {t(data.mask.corrected ? "overview.correctedBy" : "overview.confirmedBy")}

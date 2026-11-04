@@ -6,9 +6,8 @@ import { t } from "../i18n";
 import type { QueueEntry } from "./api";
 
 interface Props {
-  // what still has to be checked before approving; empty means ready
-  missing: { mask: boolean; fields: number };
-  onMissingMask: () => void;
+  // fields still to be checked before approving; zero means ready
+  missingFields: number;
   onMissingFields: () => void;
   next: QueueEntry | null;
   // the few cases after this one; the full list lives in Badania
@@ -22,7 +21,7 @@ interface Props {
 }
 
 // one control for "approve and go on": the main part approves, the arrow picks where to go next
-export default function ApproveButton({ missing, onMissingMask, onMissingFields, next, upcoming, total, open, onOpen, onPickNext, onApprove, pending }: Props) {
+export default function ApproveButton({ missingFields, onMissingFields, next, upcoming, total, open, onOpen, onPickNext, onApprove, pending }: Props) {
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,21 +31,13 @@ export default function ApproveButton({ missing, onMissingMask, onMissingFields,
     return () => document.removeEventListener("mousedown", close);
   }, [open, onOpen]);
 
-  if (missing.mask || missing.fields) {
+  if (missingFields) {
     return (
       <span className="approve approve--missing">
         {t("review.missing")}{" "}
-        {missing.mask && (
-          <button type="button" className="link" onClick={onMissingMask}>
-            {t("review.missing.mask")}
-          </button>
-        )}
-        {missing.mask && missing.fields > 0 && ", "}
-        {missing.fields > 0 && (
-          <button type="button" className="link" onClick={onMissingFields}>
-            {t(missing.fields === 1 ? "review.missing.field" : missing.fields < 5 ? "review.missing.fewFields" : "review.missing.manyFields", { n: missing.fields })}
-          </button>
-        )}
+        <button type="button" className="link" onClick={onMissingFields}>
+          {t(missingFields === 1 ? "review.missing.field" : missingFields < 5 ? "review.missing.fewFields" : "review.missing.manyFields", { n: missingFields })}
+        </button>
       </span>
     );
   }

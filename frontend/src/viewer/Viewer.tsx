@@ -1,4 +1,3 @@
-const STRIP = 32;
 import { cache, Enums, eventTarget, setVolumesForViewports, utilities as csUtils, volumeLoader, type Types } from "@cornerstonejs/core";
 import {
   BrushTool,
@@ -18,7 +17,8 @@ import { t } from "../i18n";
 import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
 import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
-import { interpolateMask, maskExtent, type Extent } from "./maskTools";
+import { interpolateMask, maskExtent, restoreSlice, type Extent } from "./maskTools";
+import SliceStrip from "./SliceStrip";
 import type { BrushShape, MaskSource, MaskState, Plane, Series, Tool } from "./types";
 import "./viewer.css";
 
@@ -36,6 +36,12 @@ const ORIENTATION: Record<Plane, Enums.OrientationAxis> = {
   axial: Enums.OrientationAxis.AXIAL,
   sagittal: Enums.OrientationAxis.SAGITTAL,
   coronal: Enums.OrientationAxis.CORONAL,
+};
+// the same planes snapped to the study's own grid, so a slice on screen is exactly one layer of voxels
+const ALIGNED: Record<Plane, Enums.OrientationAxis> = {
+  axial: Enums.OrientationAxis.AXIAL_REFORMAT,
+  sagittal: Enums.OrientationAxis.SAGITTAL_REFORMAT,
+  coronal: Enums.OrientationAxis.CORONAL_REFORMAT,
 };
 // a trackpad sends many small wheel events; one slice per this much scrolling
 const WHEEL_STEP = 60;
@@ -61,10 +67,20 @@ interface Props {
   // false when the series on screen has a different grid than the mask
   onGridMatch?: (same: boolean) => void;
   onWindow?: (window: { width: number; center: number }) => void;
-  onExtent?: (extent: Extent | null) => void;
+  // where the mask is on the main plane and how it differs from the model's, after every change
+  onMaskInfo?: (info: MaskInfo) => void;
   // which plane is big and whether the others show; the page keeps it (useViewerLayout)
   layout: Layout;
   onLayout: Dispatch<SetStateAction<Layout>>;
+}
+
+export interface MaskInfo {
+  slices: number;
+  gaps: number[];
+  edited: number;
+  // the slice on screen in the main view differs from the model's mask
+  currentEdited: boolean;
+  sizeMm: number | null;
 }
 
 export interface ViewerHandle {
@@ -73,6 +89,9 @@ export interface ViewerHandle {
   resetWindow: () => void;
   // fills the slices between the drawn ones; resolves false when there was nothing to fill
   interpolate: () => Promise<boolean>;
+  // the model's mask back on the main view's current slice; false when it already matched
+  restoreSlice: () => boolean;
+  goToSlice: (index: number) => void;
 }
 
 async function loadVolume(studyUid: string, seriesUid: string) {
@@ -129,7 +148,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     onSeriesFound,
     onGridMatch,
     onWindow,
-    onExtent,
+    onMaskInfo,
     layout,
     onLayout: setLayout,
   },
@@ -156,8 +175,10 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   // a plane's camera scale from before the user zoomed or panned it; none means it still fits the view
   const fitScale = useRef<Partial<Record<Plane, number>>>({});
   const panning = useRef(false);
-  const callbacks = useRef({ onEdit, onSeriesFound, onGridMatch, onWindow, onExtent });
-  callbacks.current = { onEdit, onSeriesFound, onGridMatch, onWindow, onExtent };
+  const callbacks = useRef({ onEdit, onSeriesFound, onGridMatch, onWindow, onMaskInfo });
+  callbacks.current = { onEdit, onSeriesFound, onGridMatch, onWindow, onMaskInfo };
+  // the mask as the model drew it, to tell which slices the radiologist changed
+  const original = useRef<Uint8Array | null>(null);
 
   const [problem, setProblem] = useState<Problem | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -171,7 +192,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   // the window was dragged away from the study's own; offers a way back in the header
   const [windowChanged, setWindowChanged] = useState(false);
   const [zoom, setZoom] = useState<number | null>(null);
-  const [extent, setExtent] = useState<Extent | null>(null);
+  const [extents, setExtents] = useState<Partial<Record<Plane, Extent>>>({});
   const [grab, setGrab] = useState(false);
 
   const { main, single } = layout;
@@ -324,7 +345,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     setProblem(null);
     setLoaded(false);
     setShown(null);
-    setExtent(null);
+    setExtents({});
     if (!studyUid) {
       setProblem("no-study");
       return;
@@ -338,6 +359,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       const main = await loadVolume(studyUid, found.post!);
       if (cancelled || !main) return;
       addMask(ids.mask, main, mask);
+      original.current = (cache.getVolume(ids.mask)!.voxelManager!.getCompleteScalarDataArray!() as Uint8Array).slice();
       if (modelMask) addMask(ids.model, main, modelMask);
       setLoaded(true);
     })().catch((error) => !cancelled && setProblem(error instanceof DicomWebError ? error.kind : "unavailable"));
@@ -378,7 +400,10 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
 
       if (cameras) {
         viewports.forEach((id, i) => rendering.getViewport(id).setCamera(cameras[i]));
-      } else if (mask) {
+      } else {
+        for (const plane of PLANES) (rendering.getViewport(ids[plane]) as Types.IVolumeViewport).setOrientation(ALIGNED[plane], false, true);
+      }
+      if (!cameras && mask) {
         // open every plane on the lesion
         const center = maskCenterWorld(cache.getVolume(ids.mask)!, mask);
         for (const plane of PLANES) {
@@ -408,7 +433,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         segmentation.config.color.setSegmentIndexColor(id, ids.model, 1, PINK);
       }
     }
-    const fill = maskState === "corrected" ? 0.3 : 0.15;
+    // the model's proposal is an outline only; filled once corrected
+    const fill = maskState === "corrected" ? 0.3 : maskState === "proposed" ? 0 : 0.15;
     segmentation.config.style.setStyle(
       { type: Labelmap, segmentationId: ids.mask },
       { renderOutline: true, outlineWidth: 1.5, outlineWidthInactive: 1.5, fillAlpha: fill, fillAlphaInactive: fill },
@@ -447,17 +473,22 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     toolUtils.segmentation.setBrushSizeForToolGroup(ids.tools, brushRadius);
   }, [ids, brushShape, brushRadius]);
 
-  // where the mask is on the main plane, recounted after every change to it
+  // where the mask is in every plane and which slices were changed, recounted after every change to it
   useEffect(() => {
     if (!shown) return;
     let timer = 0;
     const update = () => {
       const labelmap = cache.getVolume(ids.mask);
-      const viewport = engine.current?.getViewport(ids[main]) as Types.IVolumeViewport | undefined;
-      if (!labelmap || !viewport) return;
-      const next = maskExtent(labelmap, viewport.getCamera().viewPlaneNormal!, (world) => sliceOf(viewport, world).index);
-      setExtent(next);
-      callbacks.current.onExtent?.(next);
+      if (!labelmap) return;
+      const next: Partial<Record<Plane, Extent>> = {};
+      for (const plane of PLANES) {
+        const viewport = engine.current?.getViewport(ids[plane]) as Types.IVolumeViewport | undefined;
+        if (!viewport) continue;
+        // only the main plane shows edits, the others need no comparison
+        const compare = plane === main ? original.current : null;
+        next[plane] = maskExtent(labelmap, viewport.getCamera().viewPlaneNormal!, (world) => sliceOf(viewport, world).index, compare);
+      }
+      setExtents(next);
     };
     const onModified = (event: Event) => {
       if ((event as CustomEvent<{ segmentationId: string }>).detail.segmentationId !== ids.mask) return;
@@ -567,6 +598,24 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         callbacks.current.onEdit?.();
         return true;
       },
+      restoreSlice: () => {
+        const labelmap = cache.getVolume(ids.mask);
+        const viewport = engine.current?.getViewport(ids[mainRef.current]) as Types.IVolumeViewport | undefined;
+        if (!labelmap || !viewport || !original.current) return false;
+        const current = csUtils.getImageSliceDataForVolumeViewport(viewport)!.imageIndex;
+        const redo = restoreSlice(labelmap, original.current, (world) => sliceOf(viewport, world).index, current);
+        if (!redo) return false;
+        segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
+        historyMemo.push({
+          restoreMemo: (undo) => {
+            redo(!!undo);
+            segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
+          },
+        });
+        callbacks.current.onEdit?.();
+        return true;
+      },
+      goToSlice: (index) => jump(index),
     }),
     // resetWindow only reads refs and stable ids
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -601,17 +650,37 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     setZoom(null);
   }
 
-  const jump = (imageIndex: number) => {
-    const element = els.current[main];
+  const mainExtent = extents[main];
+  const currentEdited = !!mainExtent?.edited.includes(slices[main].index);
+  useEffect(() => {
+    if (!mainExtent) return;
+    callbacks.current.onMaskInfo?.({
+      slices: mainExtent.slices.length,
+      gaps: mainExtent.gaps,
+      edited: mainExtent.edited.length,
+      currentEdited,
+      sizeMm: mainExtent.sizeMm,
+    });
+  }, [mainExtent, currentEdited]);
+
+  const jumpIn = (plane: Plane, imageIndex: number) => {
+    const element = els.current[plane];
     if (element) csUtils.jumpToSlice(element, { imageIndex });
   };
+  const jump = (imageIndex: number) => jumpIn(main, imageIndex);
   const makeMain = (plane: Plane) => setLayout((l) => ({ ...l, main: plane }));
   // fixed order in the side column: axial, sagittal, coronal without the main one
   const area = (plane: Plane) => (plane === main ? "main" : PLANES.filter((p) => p !== main).indexOf(plane) === 0 ? "first" : "second");
-  const maskSlices = useMemo(() => new Set(extent?.slices), [extent]);
-  const gapSlices = useMemo(() => new Set(extent?.gaps), [extent]);
-  const slice = slices[main];
-  const perPlane = slice.count / STRIP;
+  const sets = useMemo(
+    () =>
+      Object.fromEntries(
+        PLANES.map((plane) => {
+          const extent = extents[plane];
+          return [plane, { mask: new Set(extent?.slices), gaps: new Set(plane === main ? extent?.gaps : []), edited: new Set(extent?.edited) }];
+        }),
+      ) as Record<Plane, { mask: Set<number>; gaps: Set<number>; edited: Set<number> }>,
+    [extents, main],
+  );
 
   return (
     <div
@@ -623,29 +692,6 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       }}
       onContextMenu={(event) => event.preventDefault()}
     >
-      <div className="viewer__planes" aria-label={t("viewer.slices")}>
-        {slice.count > 0 &&
-          Array.from({ length: STRIP }, (_, i) => {
-            const from = Math.floor(i * perPlane);
-            const to = Math.max(from, Math.floor((i + 1) * perPlane) - 1);
-            const inBin = (set: Set<number>) => Array.from({ length: to - from + 1 }, (_, k) => from + k).some((s) => set.has(s));
-            // a gap matters more than the mask around it, so it wins when one bar covers both
-            const hasGap = inBin(gapSlices);
-            const hasLesion = !hasGap && inBin(maskSlices);
-            const current = slice.index >= from && slice.index <= to;
-            return (
-              <button
-                key={i}
-                type="button"
-                className={`viewer__plane${hasLesion ? " viewer__plane--lesion" : ""}${hasGap ? " viewer__plane--gap" : ""}${current ? " viewer__plane--current" : ""}`}
-                style={{ top: `calc(${(i / STRIP) * 100}% + 4px)` }}
-                aria-label={`${t("viewer.slices")} ${from + 1}–${to + 1}`}
-                onClick={() => jump(Math.round((from + to) / 2))}
-              />
-            );
-          })}
-      </div>
-
       {PLANES.map((plane, i) => {
         const isMain = plane === main;
         return (
@@ -662,34 +708,6 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
               {slices[plane].count > 0 && (
                 <span className="viewer__pos">
                   {t("viewer.position", { n: slices[plane].index + 1 })} <span>{t("viewer.positionOf", { n: slices[plane].count })}</span>
-                </span>
-              )}
-              {isMain && shown && (
-                <span className="viewer__extent">
-                  {extent ? (
-                    <>
-                      {t("viewer.extent")}{" "}
-                      <button type="button" onClick={() => jump(extent.first)}>
-                        {extent.first + 1}
-                      </button>
-                      –
-                      <button type="button" onClick={() => jump(extent.last)}>
-                        {extent.last + 1}
-                      </button>
-                      {extent.gaps.length > 0 && (
-                        <>
-                          {" · "}
-                          <button type="button" className="viewer__gap" onClick={() => jump(extent.gaps[0])}>
-                            {extent.gaps.length === 1
-                              ? t("viewer.gap", { n: extent.gaps[0] + 1 })
-                              : t("viewer.gaps", { n: extent.gaps.length, first: extent.gaps[0] + 1 })}
-                          </button>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    t("viewer.extentNone")
-                  )}
                 </span>
               )}
               <span className="viewer__head-end">
@@ -727,6 +745,17 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
                 else makeMain(plane);
               }}
             >
+              {shown && (
+                <SliceStrip
+                  count={slices[plane].count}
+                  current={slices[plane].index}
+                  mask={sets[plane].mask}
+                  gaps={sets[plane].gaps}
+                  edited={sets[plane].edited}
+                  big={isMain}
+                  onPick={(index) => jumpIn(plane, index)}
+                />
+              )}
               <div
                 ref={(element) => (els.current[plane] = element)}
                 className={painting ? "viewer__canvas viewer__canvas--paint" : "viewer__canvas"}

@@ -1,9 +1,9 @@
 .viewer {
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas: "strip main first" "strip main second";
+  grid-template-areas: "main first" "main second";
   gap: 2px;
   flex: 1;
   min-height: 0;
@@ -11,48 +11,39 @@
 }
 
 .viewer--single {
-  grid-template-columns: 30px minmax(0, 1fr);
-  grid-template-areas: "strip main" "strip main";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main" "main";
 }
 
 .viewer--single .viewer__well:not(.viewer__well--main) {
   display: none;
 }
 
-.viewer__planes {
-  grid-area: strip;
-  position: relative;
-  padding: 4px 0 8px;
-  background: var(--color-image);
-}
-
-.viewer__plane {
+/* slice strip at the left edge of every view; wider with the slice number in the main one */
+.slice-strip {
   position: absolute;
-  left: 9px;
-  right: 6px;
-  height: 7px;
-  padding: 0;
-  background: none;
-  border: 1px solid rgba(196, 200, 206, 0.28);
-  transform: skewX(-42deg);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  width: 20px;
+  background: var(--color-image);
   cursor: pointer;
+  touch-action: none;
 }
 
-.viewer__plane:hover {
-  border-color: #c4c8ce;
+.slice-strip--big {
+  width: 66px;
 }
 
-.viewer__plane--lesion {
-  border-color: rgba(236, 111, 152, 0.65);
+.slice-strip svg {
+  display: block;
 }
 
-.viewer__plane--gap {
-  border: 1px dashed var(--color-warning);
-}
-
-.viewer__plane--current {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
+.slice-strip__number {
+  fill: var(--color-side);
+  font: 700 12px var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 .viewer__well {
@@ -91,27 +82,6 @@
 
 .viewer__pos span {
   color: var(--color-ink-faint);
-}
-
-.viewer__extent button {
-  padding: 0;
-  background: none;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--color-rule-strong);
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-
-.viewer__extent .viewer__gap {
-  color: var(--color-warning);
-  text-decoration-color: rgba(240, 144, 127, 0.5);
-}
-
-.viewer__extent button:hover {
-  color: var(--color-ink);
 }
 
 .viewer__head-end {
@@ -160,7 +130,11 @@
 
 .viewer__canvas {
   position: absolute;
-  inset: 0;
+  inset: 0 0 0 20px;
+}
+
+.viewer__well--main .viewer__canvas {
+  left: 66px;
 }
 
 .viewer__canvas--paint {
@@ -180,7 +154,11 @@
 }
 
 .viewer__edge--start {
-  left: 10px;
+  left: 28px;
+}
+
+.viewer__well--main .viewer__edge--start {
+  left: 74px;
 }
 
 .viewer__edge--end {
