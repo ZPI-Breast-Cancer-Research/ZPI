@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import Page from "../components/layout/Page";
@@ -9,7 +9,9 @@ import { formatDate, formatDecimal } from "../format";
 import { t } from "../i18n";
 import ToolOptions, { RADIUS_MAX, RADIUS_MIN } from "../viewer/ToolOptions";
 import Viewer from "../viewer/Viewer";
-import ViewerBar from "../viewer/ViewerBar";
+import Icon from "../viewer/icons";
+import { useViewerLayout } from "../viewer/layout";
+import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
 import ViewerToolRail from "../viewer/ViewerToolRail";
 import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
@@ -49,7 +51,9 @@ export default function CaseReview({ data, queue }: Props) {
   const mask = useMaskEditor();
   const undoMask = mask.undo;
   const startedAt = useRef(Date.now());
-  const [tool, setTool] = useState<Tool>("brush");
+  // looking comes first, so a case opens with the hand
+  const [tool, setTool] = useState<Tool>("pan");
+  const [layout, setLayout] = useViewerLayout();
   const [series, setSeries] = useState<Series>("post");
   const [showMask, setShowMask] = useState(true);
   const [available, setAvailable] = useState<Series[]>(["post"]);
@@ -174,19 +178,25 @@ export default function CaseReview({ data, queue }: Props) {
 
   return (
     <Page
-      title={data.patientId}
-      back={{ to: backTo, label: t("nav.studies") }}
+      back={{ to: backTo, label: t("review.backToQueue") }}
       context={
         <>
-          <span>
-            {t("review.age")} {data.age ?? "—"}
-          </span>
-          <span>
-            <b>#{data.studyNumber}</b> · {data.description} · {formatDate(data.studyDate)}
-          </span>
-          <span>
-            {t("review.uncertainty")} <b>{formatDecimal(data.uncertainty)}</b>
-          </span>
+          <div className="banner__group">
+            <Value label={t("review.patient")} strong>
+              {data.patientId}
+            </Value>
+            <Value label={t("review.ageLabel")}>{data.age ?? "—"}</Value>
+          </div>
+          <div className="banner__group">
+            <Value label={t("review.case")} strong>
+              #{data.studyNumber}
+            </Value>
+            <Value label={t("review.study")}>{data.description}</Value>
+            <Value label={t("review.date")}>{formatDate(data.studyDate)}</Value>
+            <Value label={t("review.uncertainty")} strong>
+              {formatDecimal(data.uncertainty)}
+            </Value>
+          </div>
         </>
       }
       actions={
@@ -227,7 +237,21 @@ export default function CaseReview({ data, queue }: Props) {
             onFill={() => fillRef.current()}
           />
           <div className="review__viewer">
-            <ViewerBar series={series} onSeries={setSeries} available={available}>
+            <ViewerBar
+              series={series}
+              onSeries={setSeries}
+              available={available}
+              corner={
+                <>
+                  <LayoutButton layout={layout} onLayout={setLayout} />
+                  {!fullView && (
+                    <button type="button" title={t("review.hideForm")} aria-label={t("review.hideForm")} onClick={() => setFullView(true)}>
+                      <Icon name="hideSide" />
+                    </button>
+                  )}
+                </>
+              }
+            >
               <ToolOptions
                 tool={tool}
                 shape={brushShape}
@@ -254,16 +278,8 @@ export default function CaseReview({ data, queue }: Props) {
               onGridMatch={setGridMatch}
               onWindow={setWindowLevel}
               onExtent={(extent) => setMaskSlices(extent?.slices.length ?? 0)}
-              headerExtra={
-                <button
-                  type="button"
-                  className="viewer__head-btn"
-                  title={t(fullView ? "review.showFormTitle" : "review.fullViewTitle")}
-                  onClick={() => setFullView((on) => !on)}
-                >
-                  {t(fullView ? "review.showForm" : "review.fullView")} <kbd>{fullView ? "Esc" : "F"}</kbd>
-                </button>
-              }
+              layout={layout}
+              onLayout={setLayout}
             />
             <MaskStrip
               state={mask.state}
@@ -277,7 +293,13 @@ export default function CaseReview({ data, queue }: Props) {
           </div>
         </section>
 
-        {!fullView && (
+        {fullView ? (
+          <button type="button" className="review__form-tab" title={t("review.showForm")} onClick={() => setFullView(false)}>
+            <Icon name="showSide" />
+            <span>{t("review.formTab")}</span>
+            {data.report && <b>{openFields.length ? t("review.left", { n: openFields.length }) : t("review.done")}</b>}
+          </button>
+        ) : (
           <section className="review__form" aria-label={t("review.form")}>
             <div className="review__form-body">
               <Panel title={t("review.report")}>
@@ -330,5 +352,15 @@ export default function CaseReview({ data, queue }: Props) {
         )}
       </div>
     </Page>
+  );
+}
+
+// a label above its value, as in the case banner
+function Value({ label, strong, children }: { label: string; strong?: boolean; children: ReactNode }) {
+  return (
+    <div className="banner__value">
+      <small>{label}</small>
+      {strong ? <b>{children}</b> : <span>{children}</span>}
+    </div>
   );
 }

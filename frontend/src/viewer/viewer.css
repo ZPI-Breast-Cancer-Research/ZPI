@@ -84,6 +84,15 @@
   font-weight: 600;
 }
 
+.viewer__pos {
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer__pos span {
+  color: var(--color-ink-faint);
+}
+
 .viewer__extent button {
   padding: 0;
   background: none;
@@ -113,8 +122,7 @@
   color: var(--color-ink);
 }
 
-.viewer__head-btn,
-.viewer__layout button {
+.viewer__head-btn {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -129,8 +137,7 @@
   cursor: pointer;
 }
 
-.viewer__head-btn:hover,
-.viewer__layout button:hover {
+.viewer__head-btn:hover {
   color: var(--color-ink);
   border-color: var(--color-ink-muted);
 }
@@ -143,30 +150,6 @@
   stroke-width: 1.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.viewer__layout {
-  display: flex;
-}
-
-.viewer__layout button {
-  border-radius: 0;
-}
-
-.viewer__layout button:first-child {
-  border-radius: var(--radius) 0 0 var(--radius);
-}
-
-.viewer__layout button + button {
-  border-radius: 0 var(--radius) var(--radius) 0;
-  border-left: 0;
-}
-
-.viewer__layout button[aria-pressed="true"] {
-  background: var(--color-ink);
-  border-color: var(--color-ink);
-  color: var(--color-side);
-  font-weight: 600;
 }
 
 .viewer__image {
@@ -234,10 +217,6 @@
   flex: none;
 }
 
-.icon__knob {
-  fill: var(--color-field);
-}
-
 /* tool rail: square buttons, icon above the name */
 .tool-rail {
   display: flex;
@@ -255,6 +234,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
+  width: 100%;
   height: 58px;
   padding: 0;
   background: none;
@@ -271,7 +251,7 @@
   height: 20px;
 }
 
-.tool-rail__btn:hover:not(:disabled) {
+.tool-rail__btn:hover:not([aria-disabled="true"]) {
   background: #111a2b;
   color: var(--color-ink);
 }
@@ -282,13 +262,29 @@
   font-weight: 600;
 }
 
-.tool-rail__btn[aria-pressed="true"] .icon__knob {
-  fill: var(--color-ink);
-}
-
-.tool-rail__btn:disabled {
+.tool-rail__btn[aria-disabled="true"] {
   opacity: 0.4;
   cursor: default;
+}
+
+.tool-rail .hint-anchor {
+  display: block;
+}
+
+/* two-word names break onto a second line */
+.tool-rail__label {
+  max-width: 70px;
+  font-size: 11.5px;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* looking, painting and mask operations are three groups */
+.tool-rail__gap {
+  flex: none;
+  height: 10px;
+  background: #060c18;
+  border-bottom: 1px solid var(--color-rule-strong);
 }
 
 /* bar above the images: the active tool's options on the left, the series on the right */
@@ -306,6 +302,34 @@
 
 .viewer-bar__series {
   margin-left: auto;
+}
+
+/* screen layout icons sit in the corner, full bar height */
+.viewer-bar__corner {
+  display: flex;
+  align-self: stretch;
+  margin: -6px -10px -6px 0;
+  border-left: 1px solid var(--color-rule);
+}
+
+.viewer-bar__corner button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+
+.viewer-bar__corner button + button {
+  border-left: 1px solid var(--color-rule);
+}
+
+.viewer-bar__corner button:hover {
+  background: #111a2b;
+  color: var(--color-ink);
 }
 
 .viewer-bar__series > :disabled {
@@ -376,6 +400,45 @@
   text-align: center;
 }
 
-.tool-options__hint {
-  color: var(--color-ink-faint);
+
+/* hover help */
+.hint-anchor {
+  display: inline-flex;
+}
+
+.hint {
+  position: fixed;
+  z-index: 30;
+  max-width: 220px;
+  padding: 6px 9px 7px;
+  background: var(--color-side);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  color: var(--color-ink-muted);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.hint__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 1px;
+}
+
+.hint__head b {
+  color: var(--color-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hint__head kbd {
+  margin-left: auto;
+  font-size: 10.5px;
 }

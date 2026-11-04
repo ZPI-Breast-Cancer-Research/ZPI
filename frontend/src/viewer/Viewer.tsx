@@ -1,3 +1,4 @@
+const STRIP = 32;
 import { cache, Enums, eventTarget, setVolumesForViewports, utilities as csUtils, volumeLoader, type Types } from "@cornerstonejs/core";
 import {
   BrushTool,
@@ -10,17 +11,17 @@ import {
   WindowLevelTool,
   ZoomTool,
 } from "@cornerstonejs/tools";
-import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
 import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
 import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
+import type { Layout } from "./layout";
 import { interpolateMask, maskExtent, type Extent } from "./maskTools";
 import type { BrushShape, MaskSource, MaskState, Plane, Series, Tool } from "./types";
 import "./viewer.css";
 
-const STRIP = 32;
 const ERASER = "Eraser";
 const THRESHOLD = "ThresholdBrush";
 const STRATEGY: Record<BrushShape, Record<"brush" | "threshold" | "eraser", string>> = {
@@ -38,7 +39,6 @@ const ORIENTATION: Record<Plane, Enums.OrientationAxis> = {
 };
 // a trackpad sends many small wheel events; one slice per this much scrolling
 const WHEEL_STEP = 60;
-const LAYOUT_KEY = "maria.viewer.layout";
 
 type Problem = DicomWebError["kind"] | "no-study";
 
@@ -62,8 +62,9 @@ interface Props {
   onGridMatch?: (same: boolean) => void;
   onWindow?: (window: { width: number; center: number }) => void;
   onExtent?: (extent: Extent | null) => void;
-  // a page's own control in the main view header, e.g. full view on the review screen
-  headerExtra?: ReactNode;
+  // which plane is big and whether the others show; the page keeps it (useViewerLayout)
+  layout: Layout;
+  onLayout: Dispatch<SetStateAction<Layout>>;
 }
 
 export interface ViewerHandle {
@@ -111,15 +112,6 @@ function sliceOf(viewport: Types.IVolumeViewport, world: Types.Point3) {
   return { index, spacing: spacingInNormalDirection };
 }
 
-function readLayout(): { main: Plane; single: boolean } {
-  try {
-    const saved = JSON.parse(sessionStorage.getItem(LAYOUT_KEY) ?? "{}");
-    return { main: PLANES.includes(saved.main) ? saved.main : "axial", single: saved.single === true };
-  } catch {
-    return { main: "axial", single: false };
-  }
-}
-
 const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   {
     studyUid,
@@ -138,7 +130,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     onGridMatch,
     onWindow,
     onExtent,
-    headerExtra,
+    layout,
+    onLayout: setLayout,
   },
   ref,
 ) {
@@ -170,8 +163,13 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [shown, setShown] = useState<Series | null>(null);
-  const [layout, setLayout] = useState(readLayout);
-  const [slice, setSlice] = useState({ index: 0, count: 0 });
+  const [slices, setSlices] = useState<Record<Plane, { index: number; count: number }>>({
+    axial: { index: 0, count: 0 },
+    sagittal: { index: 0, count: 0 },
+    coronal: { index: 0, count: 0 },
+  });
+  // the window was dragged away from the study's own; offers a way back in the header
+  const [windowChanged, setWindowChanged] = useState(false);
   const [zoom, setZoom] = useState<number | null>(null);
   const [extent, setExtent] = useState<Extent | null>(null);
   const [grab, setGrab] = useState(false);
@@ -184,14 +182,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   shownRef.current = shown;
   const painting = editable && (tool === "brush" || tool === "threshold" || tool === "eraser") && !grab;
   panning.current = tool === "pan" || grab;
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
-    } catch {
-      // the layout just won't be remembered
-    }
-  }, [layout]);
+  const windowing = useRef(false);
+  windowing.current = !grab && (tool === "window" || (!editable && tool !== "pan"));
 
   useEffect(() => {
     const rendering = getEngine();
@@ -228,11 +220,11 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
 
     const onCamera = (event: Event) => {
       const { viewportId } = (event as CustomEvent<{ viewportId: string }>).detail;
-      if (viewportId !== ids[mainRef.current]) return;
-      const viewport = rendering.getViewport(viewportId) as Types.IVolumeViewport;
-      const data = csUtils.getImageSliceDataForVolumeViewport(viewport);
-      if (data) setSlice({ index: data.imageIndex, count: data.numberOfSlices });
-      setZoom(zoomOf(mainRef.current));
+      const plane = PLANES.find((p) => ids[p] === viewportId);
+      if (!plane) return;
+      const data = csUtils.getImageSliceDataForVolumeViewport(rendering.getViewport(viewportId) as Types.IVolumeViewport);
+      if (data) setSlices((s) => ({ ...s, [plane]: { index: data.imageIndex, count: data.numberOfSlices } }));
+      if (plane === mainRef.current) setZoom(zoomOf(plane));
     };
     for (const plane of PLANES) elements[plane].addEventListener(Enums.Events.CAMERA_MODIFIED, onCamera);
 
@@ -262,6 +254,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       const plane = planeOf(event.target);
       if (!plane) return;
       if (event.button === 1 || event.button === 2 || (event.button === 0 && panning.current && !event.shiftKey)) startZoom(plane);
+      if (event.button === 0 && windowing.current && !event.shiftKey) setWindowChanged(true);
       if (!event.shiftKey || event.button !== 0) return;
       event.stopPropagation();
       event.preventDefault();
@@ -394,6 +387,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         }
       }
       rendering.render();
+      setWindowChanged(false);
       setShown(series);
     })().catch((error) => !cancelled && setProblem(error instanceof DicomWebError ? error.kind : "unavailable"));
 
@@ -485,9 +479,6 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     group.setToolConfiguration(ReferenceLinesTool.toolName, { sourceViewportId: ids[main] });
     if (single) group.setToolDisabled(ReferenceLinesTool.toolName);
     else group.setToolEnabled(ReferenceLinesTool.toolName);
-    const viewport = engine.current?.getViewport(ids[main]) as Types.IVolumeViewport | undefined;
-    const data = viewport && csUtils.getImageSliceDataForVolumeViewport(viewport);
-    if (data) setSlice({ index: data.imageIndex, count: data.numberOfSlices });
     setZoom(zoomOf(main));
     engine.current?.render();
     // zoomOf only reads refs
@@ -554,10 +545,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         paintMask(labelmap, mask);
         segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
       },
-      resetWindow: () => {
-        for (const id of viewports) (engine.current?.getViewport(id) as Types.IVolumeViewport | undefined)?.resetProperties();
-        engine.current?.render();
-      },
+      resetWindow,
       interpolate: async () => {
         const labelmap = cache.getVolume(ids.mask);
         if (!labelmap) return false;
@@ -580,8 +568,16 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         return true;
       },
     }),
+    // resetWindow only reads refs and stable ids
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [ids, mask, viewports],
   );
+
+  function resetWindow() {
+    for (const id of viewports) (engine.current?.getViewport(id) as Types.IVolumeViewport | undefined)?.resetProperties();
+    engine.current?.render();
+    setWindowChanged(false);
+  }
 
   function startZoom(plane: Plane) {
     const viewport = engine.current?.getViewport(ids[plane]);
@@ -614,6 +610,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const area = (plane: Plane) => (plane === main ? "main" : PLANES.filter((p) => p !== main).indexOf(plane) === 0 ? "first" : "second");
   const maskSlices = useMemo(() => new Set(extent?.slices), [extent]);
   const gapSlices = useMemo(() => new Set(extent?.gaps), [extent]);
+  const slice = slices[main];
   const perPlane = slice.count / STRIP;
 
   return (
@@ -661,7 +658,12 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
             onPointerLeave={() => (hovered.current = null)}
           >
             <header className="viewer__head">
-              <b>{isMain ? t(`viewer.plane.${plane}`) : `${i + 1} · ${t(`viewer.plane.${plane}`)}`}</b>
+              <b>{`${i + 1} · ${t(`viewer.plane.${plane}`)}`}</b>
+              {slices[plane].count > 0 && (
+                <span className="viewer__pos">
+                  {t("viewer.position", { n: slices[plane].index + 1 })} <span>{t("viewer.positionOf", { n: slices[plane].count })}</span>
+                </span>
+              )}
               {isMain && shown && (
                 <span className="viewer__extent">
                   {extent ? (
@@ -699,17 +701,12 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
                     </button>
                   </>
                 )}
-                {isMain && headerExtra}
-                {isMain ? (
-                  <span className="viewer__layout" role="group" title={t("viewer.layout")}>
-                    <button type="button" aria-pressed={!single} onClick={() => setLayout((l) => ({ ...l, single: false }))}>
-                      {t("viewer.layout.three")}
-                    </button>
-                    <button type="button" aria-pressed={single} onClick={() => setLayout((l) => ({ ...l, single: true }))}>
-                      {t("viewer.layout.one")}
-                    </button>
-                  </span>
-                ) : (
+                {isMain && windowChanged && (
+                  <button type="button" className="viewer__head-btn" title={t("viewer.windowRestoreTitle")} onClick={resetWindow}>
+                    {t("viewer.windowRestore")}
+                  </button>
+                )}
+                {!isMain && (
                   <button type="button" className="viewer__head-btn" title={t("viewer.makeMain", { key: i + 1 })} onClick={() => makeMain(plane)}>
                     <svg viewBox="0 0 16 16" aria-hidden="true">
                       <path d="M9.5 2.5h4v4 M13.5 2.5L9 7 M6.5 13.5h-4v-4 M2.5 13.5L7 9" />
@@ -721,9 +718,11 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
             </header>
             <div
               className="viewer__image"
-              // double click swaps planes; skipped while painting, where it would also lay two brush dots
+              // double click swaps planes, or brings the study's contrast back while adjusting it;
+              // skipped while painting, where it would also lay two brush dots
               onDoubleClick={() => {
                 if (painting) return;
+                if (windowing.current) return resetWindow();
                 if (isMain) setLayout((l) => ({ ...l, single: !l.single }));
                 else makeMain(plane);
               }}

@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 interface PageProps {
-  // on case screens this is the patient, not the page name
-  title: ReactNode;
+  // on case screens this is the patient, not the page name; the review banner shows it among its values
+  title?: ReactNode;
   // a quiet way back to the list the case was opened from
   back?: { to: string; label: string };
   context?: ReactNode;
@@ -26,7 +26,7 @@ export default function Page({ title, back, context, actions, children }: PagePr
             <span className="banner__rule" aria-hidden="true" />
           </>
         )}
-        <h1>{title}</h1>
+        {title && <h1>{title}</h1>}
         {context}
         {actions && <div className="banner__actions">{actions}</div>}
       </section>

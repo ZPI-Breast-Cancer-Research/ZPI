@@ -5,9 +5,39 @@
   min-height: 0;
 }
 
-/* full view: the form steps aside and the images take the width */
+/* form folded away: the images take the width, a narrow bar brings the form back */
 .review--full {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 40px;
+}
+
+.review__form-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 0;
+  background: var(--color-ground);
+  border: 0;
+  border-left: 1px solid var(--color-rule);
+  color: var(--color-ink-muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.review__form-tab:hover {
+  background: var(--color-hover);
+  color: var(--color-ink);
+}
+
+.review__form-tab span,
+.review__form-tab b {
+  writing-mode: vertical-rl;
+}
+
+.review__form-tab b {
+  color: var(--color-ink);
+  font-weight: 600;
 }
 
 /* approve and go on: one split button, or what still has to be checked */

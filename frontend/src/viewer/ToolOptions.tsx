@@ -48,7 +48,6 @@ export default function ToolOptions({ tool, shape, onShape, radius, onRadius, wi
           +
         </button>
       </span>
-      {tool === "threshold" && <span className="tool-options__hint">{t("viewer.thresholdHint")}</span>}
     </div>
   );
 }

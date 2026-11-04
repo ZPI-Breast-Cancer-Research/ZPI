@@ -1,3 +1,4 @@
+import Hint from "../components/Hint";
 import { t } from "../i18n";
 import Icon from "./icons";
 import type { Tool } from "./types";
@@ -7,7 +8,7 @@ interface Props {
   onTool: (tool: Tool) => void;
   onUndo: () => void;
   canUndo: boolean;
-  // the threshold brush reads the series on screen, which has to share the mask's grid
+  // the edge brush reads the series on screen, which has to share the mask's grid
   thresholdOk: boolean;
   // filling between slices needs the mask on at least two of them
   canFill: boolean;
@@ -15,36 +16,43 @@ interface Props {
   onFill: () => void;
 }
 
-export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, thresholdOk, canFill, filling, onFill }: Props) {
-  const toolButton = (name: Tool, label: string, title: string, disabled = false) => (
-    <button type="button" className="tool-rail__btn" aria-pressed={tool === name} title={title} disabled={disabled} onClick={() => onTool(name)}>
-      <Icon name={name} />
-      {label}
-    </button>
-  );
+const KEYS: Record<Tool, string> = { pan: "P", window: "W", brush: "B", threshold: "T", eraser: "E" };
 
-  return (
-    <nav className="tool-rail" aria-label={t("viewer.tools")}>
-      {toolButton("brush", t("viewer.brush"), `${t("viewer.brush")} (B) · ${t("viewer.spaceHint")}`)}
-      {toolButton("threshold", t("viewer.threshold"), thresholdOk ? t("viewer.thresholdTitle") : t("viewer.thresholdOff"), !thresholdOk)}
-      {toolButton("eraser", t("viewer.eraser"), `${t("viewer.eraser")} (E)`)}
-      <button type="button" className="tool-rail__btn" title={`${t("viewer.undo")} (Ctrl+Z)`} disabled={!canUndo} onClick={onUndo}>
-        <Icon name="undo" />
-        {t("viewer.undo")}
-      </button>
+// greyed buttons stay hoverable (aria-disabled), so their hint still shows
+export default function ViewerToolRail({ tool, onTool, onUndo, canUndo, thresholdOk, canFill, filling, onFill }: Props) {
+  const button = (key: Tool | "fill" | "undo", name: string, shortcut: string, label: string, onClick: () => void, state: { pressed?: boolean; off?: boolean; busy?: boolean } = {}) => (
+    <Hint name={name} shortcut={shortcut} text={t(`viewer.hint.${key}`)}>
       <button
         type="button"
         className="tool-rail__btn"
-        title={canFill ? t("viewer.fillTitle") : t("viewer.fillOff")}
-        disabled={!canFill || filling}
-        aria-busy={filling}
-        onClick={onFill}
+        aria-label={name}
+        aria-pressed={state.pressed}
+        aria-disabled={state.off || undefined}
+        aria-busy={state.busy || undefined}
+        onClick={() => !state.off && onClick()}
       >
-        <Icon name="fill" />
-        {filling ? t("viewer.filling") : t("viewer.fill")}
+        <Icon name={key} />
+        <span className="tool-rail__label">{label}</span>
       </button>
-      {toolButton("pan", t("viewer.pan"), t("viewer.panTitle"))}
-      {toolButton("window", t("viewer.window"), `${t("viewer.window")} (W)`)}
+    </Hint>
+  );
+  const toolButton = (name: Tool, off = false) =>
+    button(name, t(`viewer.${name}`), KEYS[name], t(name === "threshold" ? "viewer.thresholdLabel" : `viewer.${name}`), () => onTool(name), {
+      pressed: tool === name,
+      off,
+    });
+
+  return (
+    <nav className="tool-rail" aria-label={t("viewer.tools")}>
+      {toolButton("pan")}
+      {toolButton("window")}
+      <span className="tool-rail__gap" aria-hidden="true" />
+      {toolButton("brush")}
+      {toolButton("threshold", !thresholdOk)}
+      {toolButton("eraser")}
+      <span className="tool-rail__gap" aria-hidden="true" />
+      {button("fill", t("viewer.fill"), "I", filling ? t("viewer.filling") : t("viewer.fill"), onFill, { off: !canFill || filling, busy: filling })}
+      {button("undo", t("viewer.undo"), "Ctrl+Z", t("viewer.undo"), onUndo, { off: !canUndo })}
     </nav>
   );
 }

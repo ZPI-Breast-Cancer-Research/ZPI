@@ -1,13 +1,17 @@
 const PATHS: Record<string, JSX.Element> = {
   brush: <path d="M10.5 2.5l3 3-6.5 6.5H4V9z M9 4l3 3" />,
-  threshold: (
+  // a brush above a closed outline: paints up to the edge of the lesion
+  threshold: <path d="M12 1.5l2.5 2.5-4.5 4.5H7.5V6z M10.5 3l2.5 2.5 M5.5 8.5c-2.2 0-4 1.4-4 3.2s1.8 2.8 4 2.8 4-1 4-2.8" />,
+  slice: (
     <>
-      <path d="M2.5 4h11 M2.5 8h11 M2.5 12h11" />
-      <circle cx="6" cy="4" r="1.6" className="icon__knob" />
-      <circle cx="10.5" cy="8" r="1.6" className="icon__knob" />
-      <circle cx="5" cy="12" r="1.6" className="icon__knob" />
+      <path d="M2.5 12.5h11 M2.5 9.5h11" strokeDasharray="1.6 2" />
+      <path d="M6 6.5h4.5a2.5 2.5 0 0 0 0-5H6 M8 0.2L6 1.5 8 3" />
     </>
   ),
+  three: <path d="M2 3h12v10H2z M10 3v10 M10 8h4" />,
+  one: <path d="M2 3h12v10H2z" />,
+  hideSide: <path d="M2.5 3.5h11v9h-11z M10 3.5v9 M5 8h3 M6.5 6.5L8 8 6.5 9.5" />,
+  showSide: <path d="M2.5 3.5h11v9h-11z M10 3.5v9 M8 8H5 M6.5 6.5L5 8l1.5 1.5" />,
   eraser: <path d="M6 13.5h7.5 M2.5 10l6-6.5 4.5 4.5-5.5 5.5H6z M5.5 7l4.5 4.5" />,
   undo: <path d="M4.5 6.5h6a3.5 3.5 0 0 1 0 7H7 M7 3.5l-3 3 3 3" />,
   fill: (

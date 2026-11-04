@@ -15,8 +15,9 @@ import { FIELDS } from "../review/fields";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
 import type { Series, Tool } from "../viewer/types";
+import { useViewerLayout } from "../viewer/layout";
 import Viewer from "../viewer/Viewer";
-import ViewerBar from "../viewer/ViewerBar";
+import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
 
 export default function LesionOverviewPage() {
   const { studyId = "" } = useParams();
@@ -28,6 +29,7 @@ export default function LesionOverviewPage() {
   const [tool, setTool] = useState<Tool>("pan");
   const [series, setSeries] = useState<Series>("post");
   const [available, setAvailable] = useState<Series[]>(["post"]);
+  const [layout, setLayout] = useViewerLayout();
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
   if (error) {
@@ -81,7 +83,7 @@ export default function LesionOverviewPage() {
       <div className="overview">
         <section className="overview__view" aria-label={t("viewer.image")}>
           {/* read only: no rail, just looking around */}
-          <ViewerBar series={series} onSeries={setSeries} available={available}>
+          <ViewerBar series={series} onSeries={setSeries} available={available} corner={<LayoutButton layout={layout} onLayout={setLayout} />}>
             <div className="segmented" role="group" aria-label={t("viewer.tools")}>
               {(["pan", "window"] as Tool[]).map((name) => (
                 <button
@@ -108,6 +110,8 @@ export default function LesionOverviewPage() {
             tool={tool}
             modelOutline={showModel}
             onSeriesFound={setAvailable}
+            layout={layout}
+            onLayout={setLayout}
           />
           <div className="mask-strip">
             <span className="mask-strip__label">{t("overview.approvedMask")}</span>
