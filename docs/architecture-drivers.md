@@ -174,6 +174,7 @@ Pytanie · od czego zależy · kto rozstrzyga.
 - Czy użytkownik może odrzucić wynik modelu w całości (maska zupełnie błędna, brak zmiany)? · statusy badania, dane do treningu · zespół
 - Gdzie i w jakim formacie zapisujemy poprawioną maskę (DICOM SEG w Orthanc czy plik w backendzie)? · edycja w OHIF, trening, pomiary · ARCH-1
 - Kto w szpitalu będzie administratorem modeli (fizyk medyczny, dział nauki, IT, nikt)? · czy P2 jest w MVP · opiekunka + szpital
+- Czy ktoś potrzebuje dwóch ról naraz (radiolog i administrator)? Na razie jedna rola na konto: administrator nie weryfikuje badań, badacz ma tylko odczyt · uprawnienia, model użytkownika · zespół + szpital
 - Czy promocja modelu wymaga akceptacji klinicznej (radiolog lub kierownik)? · role, kroki P2 · szpital
 - Czy administrator może wymusić promocję mimo niespełnionej bramki jakości? · uprawnienia, audyt · zespół (rekomendacja: nie)
 - Czym jest „dotrenowanie” modelu ekstrakcji (fine-tuning LLM, przykłady few-shot, reguły)? · koszt obliczeń, architektura P2 dla ekstrakcji · Kacper Janiszewski

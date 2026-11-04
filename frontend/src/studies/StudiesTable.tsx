@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
+import { useCan } from "../auth/AuthProvider";
 import { EmptyState } from "../components/State";
 import WarningIcon from "../components/WarningIcon";
 import { formatDate, formatDecimal, formatWhen, toIsoDate } from "../format";
@@ -73,9 +74,9 @@ export function matches(row: StudyRow, filter: Filter, query = "", part: Part = 
   }
 }
 
-function action(row: StudyRow, search: string): { label: MessageKey; to: string } {
-  if (row.image === "to_review") return { label: "studies.action.review", to: `/weryfikacja/${row.id}` };
-  if (row.report === "to_review") return { label: "studies.action.reviewReport", to: `/weryfikacja/${row.id}` };
+function action(row: StudyRow, search: string, reviews: boolean): { label: MessageKey; to: string } {
+  if (reviews && row.image === "to_review") return { label: "studies.action.review", to: `/weryfikacja/${row.id}` };
+  if (reviews && row.report === "to_review") return { label: "studies.action.reviewReport", to: `/weryfikacja/${row.id}` };
   if (row.image?.startsWith("verified") || row.image === "saving") return { label: "studies.action.overview", to: `/badania/${row.id}` };
   // details stay on this list, so the filter stays too
   const params = new URLSearchParams(search);
@@ -100,6 +101,7 @@ interface Props {
 export default function StudiesTable({ rows, selectedId, onSelect, onAttach, filter, onFilter, today, onToday, part, onPart }: Props) {
   const [query, setQuery] = useState("");
   const location = useLocation();
+  const can = useCan();
   const verified = filter === "verified";
   const todayIso = toIsoDate(new Date());
   const visible = rows
@@ -180,7 +182,7 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
           </thead>
           <tbody>
             {visible.map((row) => {
-              const next = action(row, location.search);
+              const next = action(row, location.search, can("review"));
               return (
                 <tr
                   key={row.id}
@@ -201,7 +203,7 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
                     {row.report ? (
                       <span className="studies__report">
                         <span className={REPORT_CLASS[row.report]}>{t(`studies.report.${row.report}`)}</span>
-                        {row.report === "missing" && (
+                        {row.report === "missing" && can("addStudies") && (
                           <button
                             type="button"
                             className="link"

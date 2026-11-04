@@ -1,18 +1,20 @@
 import { Link, NavLink } from "react-router-dom";
 
 import logo from "../../assets/logo.png";
-import { useAuth } from "../../auth/AuthProvider";
+import { useAuth, useCan } from "../../auth/AuthProvider";
+import type { Permission } from "../../auth/api";
 import { t, type MessageKey } from "../../i18n";
 
-const MODULES: { to: string; label: MessageKey; adminOnly?: boolean }[] = [
+const MODULES: { to: string; label: MessageKey; permission?: Permission }[] = [
   { to: "/pulpit", label: "nav.dashboard" },
   { to: "/badania", label: "nav.studies" },
-  { to: "/weryfikacja", label: "nav.review" },
-  { to: "/modele", label: "nav.models", adminOnly: true },
+  { to: "/weryfikacja", label: "nav.review", permission: "review" },
+  { to: "/modele", label: "nav.models", permission: "viewModels" },
 ];
 
 export default function TopBar() {
   const { user } = useAuth();
+  const can = useCan();
   const initial = user?.name.charAt(0).toUpperCase() ?? "";
 
   return (
@@ -23,7 +25,7 @@ export default function TopBar() {
       </NavLink>
 
       <nav className="topbar__nav" aria-label={t("nav.modules")}>
-        {MODULES.filter((module) => !module.adminOnly || user?.role === "admin").map((module) => (
+        {MODULES.filter((module) => !module.permission || can(module.permission)).map((module) => (
           <NavLink key={module.to} to={module.to}>
             {t(module.label)}
           </NavLink>

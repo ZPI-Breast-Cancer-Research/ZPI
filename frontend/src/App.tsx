@@ -22,11 +22,18 @@ export default function App() {
           <Route path="pulpit" element={<DashboardPage />} />
           <Route path="badania" element={<StudiesPage />} />
           <Route path="badania/:studyId" element={<LesionOverviewPage />} />
-          <Route path="weryfikacja/:studyId?" element={<ReviewPage />} />
+          <Route
+            path="weryfikacja/:studyId?"
+            element={
+              <RequireRole permission="review" title={t("nav.review")}>
+                <ReviewPage />
+              </RequireRole>
+            }
+          />
           <Route
             path="modele"
             element={
-              <RequireRole role="admin" title={t("nav.models")}>
+              <RequireRole permission="viewModels" title={t("nav.models")}>
                 <ModelsPage module="segmentation" />
               </RequireRole>
             }
@@ -34,7 +41,7 @@ export default function App() {
           <Route
             path="modele/ekstrakcja"
             element={
-              <RequireRole role="admin" title={t("nav.models")}>
+              <RequireRole permission="viewModels" title={t("nav.models")}>
                 <ModelsPage module="extraction" />
               </RequireRole>
             }

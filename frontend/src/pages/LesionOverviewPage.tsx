@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import { errorText } from "../api";
+import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
@@ -30,6 +31,7 @@ export default function LesionOverviewPage() {
   const [series, setSeries] = useState<Series>("post");
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [layout, setLayout] = useViewerLayout();
+  const reviews = useCan()("review");
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
   if (error) {
@@ -73,11 +75,11 @@ export default function LesionOverviewPage() {
         </>
       }
       actions={
-        <>
+        reviews && (
           <Link className="btn" to={`/weryfikacja/${data.studyId}`}>
             {t("overview.openReview")}
           </Link>
-        </>
+        )
       }
     >
       <div className="overview">

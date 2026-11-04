@@ -3,6 +3,7 @@ import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { errorText } from "../api";
+import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import { ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
@@ -15,6 +16,7 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
   const { search } = useLocation();
   const [rejecting, setRejecting] = useState(false);
   const actions = useModelActions();
+  const manages = useCan()("manageModels");
 
   const segmentation = useQuery({
     queryKey: ["models", "segmentation", search],
@@ -44,7 +46,7 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
           {t("models.candidateWaits")}
         </span>
       );
-      buttons = (
+      buttons = manages && (
         <>
           <button type="button" className="btn" onClick={() => setRejecting(true)}>
             {t("models.reject")}

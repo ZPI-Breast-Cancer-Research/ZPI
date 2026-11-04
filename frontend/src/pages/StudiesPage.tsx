@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
 import { ApiError, errorText } from "../api";
+import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import Panel from "../components/layout/Panel";
@@ -26,6 +27,7 @@ function errorTitle(error: Error): string {
 
 export default function StudiesPage() {
   const toast = useToast();
+  const adds = useCan()("addStudies");
   const [params, setParams] = useSearchParams();
   const [imported, setImported] = useState<GroupedFiles | null>(null);
   const [attachFor, setAttachFor] = useState<StudyRow | null>(null);
@@ -165,46 +167,51 @@ export default function StudiesPage() {
             <AttachReport study={attachFor} unassigned={unassigned.data ?? []} onClose={() => setAttachFor(null)} />
           ) : (
             <>
-              <Panel title={t("studies.add")}>
-                <div className="pad">
-                  <DropZone
-                    title={t("studies.drop.title")}
-                    body={t("studies.drop.body")}
-                    folderLabel={t("studies.drop.folder")}
-                    filesLabel={t("studies.drop.files")}
-                    onFiles={(files) => setImported(groupFiles(files))}
-                  />
-                  <p className="field__help">{t("studies.drop.hint")}</p>
-                </div>
-              </Panel>
-              <Panel title={t("studies.unassigned")} aux={unassigned.data?.length ?? ""}>
-                {unassigned.data && unassigned.data.length > 0 ? (
-                  <table className="table">
-                    <tbody>
-                      {unassigned.data.map((report) => (
-                        <tr key={report.id}>
-                          <td>
-                            <FileTag file={{ name: report.fileName }} />
-                          </td>
-                          <td className="cell-right">
-                            {selected?.report === "missing" ? (
-                              <button type="button" className="link" onClick={() => attach(selected)}>
-                                {t("studies.unassigned.assign")}
-                              </button>
-                            ) : (
-                              <button type="button" className="link" onClick={() => updateParams({ filtr: "no_report" })}>
-                                {t("studies.unassigned.assign")}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="note">{t("studies.unassigned.none")}</p>
-                )}
-              </Panel>
+              {/* adding studies and pairing reports is the radiologist's job */}
+              {adds && (
+                <>
+                  <Panel title={t("studies.add")}>
+                    <div className="pad">
+                      <DropZone
+                        title={t("studies.drop.title")}
+                        body={t("studies.drop.body")}
+                        folderLabel={t("studies.drop.folder")}
+                        filesLabel={t("studies.drop.files")}
+                        onFiles={(files) => setImported(groupFiles(files))}
+                      />
+                      <p className="field__help">{t("studies.drop.hint")}</p>
+                    </div>
+                  </Panel>
+                  <Panel title={t("studies.unassigned")} aux={unassigned.data?.length ?? ""}>
+                    {unassigned.data && unassigned.data.length > 0 ? (
+                      <table className="table">
+                        <tbody>
+                          {unassigned.data.map((report) => (
+                            <tr key={report.id}>
+                              <td>
+                                <FileTag file={{ name: report.fileName }} />
+                              </td>
+                              <td className="cell-right">
+                                {selected?.report === "missing" ? (
+                                  <button type="button" className="link" onClick={() => attach(selected)}>
+                                    {t("studies.unassigned.assign")}
+                                  </button>
+                                ) : (
+                                  <button type="button" className="link" onClick={() => updateParams({ filtr: "no_report" })}>
+                                    {t("studies.unassigned.assign")}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="note">{t("studies.unassigned.none")}</p>
+                    )}
+                  </Panel>
+                </>
+              )}
               <ProcessingSteps study={selected} />
             </>
           )}
