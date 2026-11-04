@@ -24,7 +24,6 @@ export interface StudyRow {
   uncertainty: number | null;
   // ISO date and time the image was verified
   verifiedAt: string | null;
-  viewerUrl: string | null;
 }
 
 export interface UnassignedReport {
@@ -47,7 +46,7 @@ function dicomDateToIso(value: string | null): string | null {
 
 const todayAt = (time: string) => `${toIsoDate(new Date())}T${time}`;
 
-const VERIFIED_AT: Record<string, string> = { s6: todayAt("09:12"), s7: "2026-10-21T14:05", s8: todayAt("10:40") };
+const VERIFIED_AT: Record<string, string> = { s6: todayAt("09:12"), s7: todayAt("08:47"), s8: todayAt("10:40") };
 
 const MOCK_ROWS: StudyRow[] = (
   [
@@ -69,7 +68,6 @@ const MOCK_ROWS: StudyRow[] = (
   report,
   uncertainty,
   verifiedAt: VERIFIED_AT[`s${i + 1}`] ?? null,
-  viewerUrl: null,
 }));
 
 // mock rows follow what was approved on the review screen in this session
@@ -97,7 +95,6 @@ export async function listStudies(): Promise<StudyRow[]> {
     report: null,
     uncertainty: null,
     verifiedAt: null,
-    viewerUrl: study.viewer_url,
   }));
 }
 

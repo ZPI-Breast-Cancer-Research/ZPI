@@ -12,7 +12,7 @@ import AttachReport from "../studies/AttachReport";
 import DropZone from "../studies/DropZone";
 import { FileTag, ImportTable, UnpairedReports } from "../studies/ImportReview";
 import ProcessingSteps from "../studies/ProcessingSteps";
-import StudiesTable, { parseFilter } from "../studies/StudiesTable";
+import StudiesTable, { matches, parseFilter, parsePart } from "../studies/StudiesTable";
 import { listStudies, listUnassignedReports, sendStudies, type StudyRow } from "../studies/api";
 import { groupFiles, type GroupedFiles } from "../studies/files";
 import "../studies/studies.css";
@@ -43,7 +43,15 @@ export default function StudiesPage() {
   const selected = studies.data?.find((row) => row.id === selectedId) ?? null;
   const filter = parseFilter(params.get("filtr"));
   const updateParams = (changes: Record<string, string>) => setParams({ ...Object.fromEntries(params), ...changes });
-  const select = (row: StudyRow) => updateParams({ badanie: row.id });
+  const select = (row: StudyRow) => {
+    updateParams({ badanie: row.id });
+    // attaching a report belongs to the row it was opened for
+    if (attachFor && attachFor.id !== row.id) setAttachFor(null);
+  };
+  const attach = (row: StudyRow) => {
+    updateParams({ badanie: row.id });
+    setAttachFor(row);
+  };
 
   const send = useMutation({
     mutationFn: () => sendStudies(imported?.studies.length ?? 0),
@@ -110,13 +118,13 @@ export default function StudiesPage() {
         {t("studies.all")} <b>{rows.length}</b>
       </span>
       <span>
-        {t("studies.processing")} <b>{rows.filter((r) => r.image === "processing" || r.image === "queued").length}</b>
+        {t("studies.processing")} <b>{rows.filter((r) => matches(r, "processing")).length}</b>
       </span>
       <span>
-        {t("studies.toReview")} <b>{rows.filter((r) => r.image === "to_review").length}</b>
+        {t("studies.toReview")} <b>{rows.filter((r) => matches(r, "to_review")).length}</b>
       </span>
       <span>
-        {t("studies.noReport")} <b>{rows.filter((r) => r.report === "missing").length}</b>
+        {t("studies.noReport")} <b>{rows.filter((r) => matches(r, "no_report")).length}</b>
       </span>
     </>
   );
@@ -136,11 +144,18 @@ export default function StudiesPage() {
               rows={rows}
               selectedId={selectedId}
               onSelect={select}
-              onAttach={setAttachFor}
+              onAttach={attach}
               filter={filter}
               onFilter={(next) => updateParams({ filtr: next })}
               today={params.get("dzis") !== "0"}
               onToday={(today) => updateParams({ dzis: today ? "1" : "0" })}
+              part={parsePart(params.get("czeka"))}
+              onPart={(part) => {
+                const next = new URLSearchParams(params);
+                if (part === "all") next.delete("czeka");
+                else next.set("czeka", part === "mask" ? "maska" : "opis");
+                setParams(next);
+              }}
             />
           )}
         </Panel>
@@ -173,7 +188,7 @@ export default function StudiesPage() {
                           </td>
                           <td className="cell-right">
                             {selected?.report === "missing" ? (
-                              <button type="button" className="link" onClick={() => setAttachFor(selected)}>
+                              <button type="button" className="link" onClick={() => attach(selected)}>
                                 {t("studies.unassigned.assign")}
                               </button>
                             ) : (
