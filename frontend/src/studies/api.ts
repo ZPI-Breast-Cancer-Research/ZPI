@@ -1,6 +1,7 @@
 import { fetchStudies } from "../api";
 import { toIsoDate } from "../format";
 import { MOCK_API, mockDelay } from "../mock";
+import { reviewProgress } from "../review/api";
 
 export type ImageStatus =
   | "queued"
@@ -71,9 +72,21 @@ const MOCK_ROWS: StudyRow[] = (
   viewerUrl: null,
 }));
 
+// mock rows follow what was approved on the review screen in this session
+function withReview(row: StudyRow): StudyRow {
+  const { mask, form, done } = reviewProgress(row.id);
+  if (!mask && !form) return row;
+  return {
+    ...row,
+    image: mask === "corrected" ? "verified_corrected" : mask ? "verified_unchanged" : row.image,
+    report: form ? "verified" : row.report,
+    verifiedAt: done ? toIsoDate(new Date()) + "T" + new Date().toTimeString().slice(0, 5) : row.verifiedAt,
+  };
+}
+
 // the backend doesn't return image/report statuses yet, so those stay empty for real data
 export async function listStudies(): Promise<StudyRow[]> {
-  if (MOCK_API) return mockDelay(MOCK_ROWS);
+  if (MOCK_API) return mockDelay(MOCK_ROWS.map(withReview));
   const studies = await fetchStudies();
   return studies.map((study) => ({
     id: study.orthanc_id,

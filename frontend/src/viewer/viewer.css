@@ -1,9 +1,10 @@
 .viewer {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.6fr) 8px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas: "main first" "main second";
+  grid-template-areas: "main divider first" "main divider second";
+  column-gap: 0;
   gap: 2px;
   flex: 1;
   min-height: 0;
@@ -17,6 +18,31 @@
 
 .viewer--single .viewer__well:not(.viewer__well--main) {
   display: none;
+}
+
+/* drag to share the width between the main view and the side column */
+.viewer__divider {
+  grid-area: divider;
+  position: relative;
+  background: var(--color-field);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.viewer__divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 44px;
+  margin: -22px 0 0 -1.5px;
+  border-radius: 2px;
+  background: var(--color-rule-strong);
+}
+
+.viewer__divider:hover::after {
+  background: var(--color-ink-muted);
 }
 
 /* slice strip at the left edge of every view; wider with the slice number in the main one */
@@ -135,6 +161,12 @@
 
 .viewer__well--main .viewer__canvas {
   left: 66px;
+}
+
+/* Cornerstone makes the image focusable (tabIndex -1) only to take keys; it never needs a focus ring */
+.viewer__canvas:focus,
+.viewer__canvas :focus {
+  outline: none;
 }
 
 .viewer__canvas--paint {

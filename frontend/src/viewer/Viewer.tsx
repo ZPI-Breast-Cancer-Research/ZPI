@@ -17,7 +17,7 @@ import { t } from "../i18n";
 import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
 import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
-import { interpolateMask, maskExtent, restoreSlice, type Extent } from "./maskTools";
+import { applyPatch, interpolateMask, maskExtent, maskPatch, restoreSlice, type Extent, type MaskPatch } from "./maskTools";
 import SliceStrip from "./SliceStrip";
 import type { BrushShape, MaskSource, MaskState, Plane, Series, Tool } from "./types";
 import "./viewer.css";
@@ -45,6 +45,8 @@ const ALIGNED: Record<Plane, Enums.OrientationAxis> = {
 };
 // a trackpad sends many small wheel events; one slice per this much scrolling
 const WHEEL_STEP = 60;
+// main view and side column as 1.6 : 1
+const DEFAULT_SPLIT = 1.6 / 2.6;
 
 type Problem = DicomWebError["kind"] | "no-study";
 
@@ -92,6 +94,9 @@ export interface ViewerHandle {
   // the model's mask back on the main view's current slice; false when it already matched
   restoreSlice: () => boolean;
   goToSlice: (index: number) => void;
+  // the corrections as a small box to keep as a draft, and back
+  getPatch: () => MaskPatch | null;
+  applyPatch: (patch: MaskPatch) => boolean;
 }
 
 async function loadVolume(studyUid: string, seriesUid: string) {
@@ -195,7 +200,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const [extents, setExtents] = useState<Partial<Record<Plane, Extent>>>({});
   const [grab, setGrab] = useState(false);
 
-  const { main, single } = layout;
+  const { main, single, split } = layout;
   const mainRef = useRef(main);
   mainRef.current = main;
   const viewports = useMemo(() => PLANES.map((plane) => ids[plane]), [ids]);
@@ -520,7 +525,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   useEffect(() => {
     const frame = requestAnimationFrame(() => engine.current?.resize(true, true));
     return () => cancelAnimationFrame(frame);
-  }, [main, single]);
+  }, [main, single, split]);
 
   useEffect(() => {
     const viewportOf = (plane: Plane) => engine.current?.getViewport(ids[plane]);
@@ -616,6 +621,16 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         return true;
       },
       goToSlice: (index) => jump(index),
+      getPatch: () => {
+        const labelmap = cache.getVolume(ids.mask);
+        return labelmap && original.current ? maskPatch(labelmap, original.current) : null;
+      },
+      applyPatch: (patch) => {
+        const labelmap = cache.getVolume(ids.mask);
+        if (!labelmap || !applyPatch(labelmap, patch)) return false;
+        segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
+        return true;
+      },
     }),
     // resetWindow only reads refs and stable ids
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -686,12 +701,33 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     <div
       ref={rootEl}
       className={single ? "viewer viewer--single" : "viewer"}
+      style={single ? undefined : { gridTemplateColumns: `minmax(0, ${split ?? DEFAULT_SPLIT}fr) 8px minmax(0, ${1 - (split ?? DEFAULT_SPLIT)}fr)` }}
       // the brush paints in every view, so a stroke anywhere can change the mask
       onPointerDownCapture={() => {
         if (painting) editing.current = { changed: false };
       }}
       onContextMenu={(event) => event.preventDefault()}
     >
+      {!single && (
+        <div
+          className="viewer__divider"
+          role="separator"
+          aria-orientation="vertical"
+          title={t("viewer.divider")}
+          onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+          onPointerMove={(event) => {
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            const box = rootEl.current!.getBoundingClientRect();
+            const share = (event.clientX - box.left) / box.width;
+            // pulled to the right edge, the side views give way to the single view
+            if (share > 0.92) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+              setLayout((l) => ({ ...l, single: true, split: undefined }));
+            } else setLayout((l) => ({ ...l, split: Math.max(0.3, Math.min(0.85, share)) }));
+          }}
+          onDoubleClick={() => setLayout((l) => ({ ...l, split: undefined }))}
+        />
+      )}
       {PLANES.map((plane, i) => {
         const isMain = plane === main;
         return (

@@ -4,27 +4,35 @@ import Icon from "../viewer/icons";
 
 interface Props {
   corrected: boolean;
+  // approved on its own: locked until the approval is taken back
+  approved: boolean;
   // slices that differ from the model's mask in the main view
   edited: number;
   // empty slices between drawn ones, numbered from 0
   gaps: number[];
   version?: string;
+  pending: boolean;
   onGoTo: (index: number) => void;
   onFill: () => void;
   onRestore: () => void;
+  onApprove: () => void;
+  onUnapprove: () => void;
   showMask: boolean;
   onToggleMask: () => void;
 }
 
-// only what is about the mask itself: its state, a gap to fill, the way back to the model's
-export default function MaskStrip({ corrected, edited, gaps, version, onGoTo, onFill, onRestore, showMask, onToggleMask }: Props) {
+// only what is about the mask itself: its state, a gap to fill, the way back to the model's, approving it
+export default function MaskStrip(props: Props) {
+  const { corrected, approved, edited, gaps, version, pending, onGoTo, onFill, onRestore, onApprove, onUnapprove, showMask, onToggleMask } = props;
+  const state = approved ? "review.mask.approved" : corrected ? "review.mask.corrected" : "review.mask.proposed";
   return (
     <div className="mask-strip" aria-label={t("review.mask")}>
-      <span className={corrected ? "mask-strip__state mask-strip__state--corrected" : "mask-strip__state"} title={version && t("review.maskVersion", { v: version })}>
-        {t(corrected ? "review.mask.corrected" : "review.mask.proposed")}
+      <MaskToggle shown={showMask} onToggle={onToggleMask} />
+      <span className={corrected && !approved ? "mask-strip__state mask-strip__state--corrected" : "mask-strip__state"} title={version && t("review.maskVersion", { v: version })}>
+        {t(state)}
         {corrected && edited > 0 && <small> {t(edited === 1 ? "review.mask.onSlice" : "review.mask.onSlices", { n: edited })}</small>}
       </span>
-      {gaps.length > 0 && (
+      {!approved && gaps.length > 0 && (
         <span className="mask-strip__gap">
           {t(gaps.length === 1 ? "review.mask.gap" : "review.mask.gaps", { n: gaps.length })}{" "}
           <button type="button" className="link" onClick={() => onGoTo(gaps[0])}>
@@ -39,12 +47,22 @@ export default function MaskStrip({ corrected, edited, gaps, version, onGoTo, on
         </span>
       )}
       <span className="mask-strip__end">
-        {corrected && (
-          <button type="button" className="link" onClick={onRestore}>
-            {t("review.mask.restore")}
+        {approved ? (
+          <button type="button" className="btn" disabled={pending} onClick={onUnapprove}>
+            {t("review.mask.unapprove")}
           </button>
+        ) : (
+          <>
+            {corrected && (
+              <button type="button" className="link" onClick={onRestore}>
+                {t("review.mask.restore")}
+              </button>
+            )}
+            <button type="button" className="btn btn--confirm" disabled={pending} title={t("review.mask.approveTitle")} onClick={onApprove}>
+              {t("review.mask.approve")}
+            </button>
+          </>
         )}
-        <MaskToggle shown={showMask} onToggle={onToggleMask} />
       </span>
     </div>
   );

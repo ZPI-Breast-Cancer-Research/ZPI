@@ -5,7 +5,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
-import { formatDate, formatDecimal } from "../format";
+import { formatDate, formatDecimal, formatWhen } from "../format";
 import { t } from "../i18n";
 import ToolOptions, { RADIUS_MAX, RADIUS_MIN } from "../viewer/ToolOptions";
 import Viewer, { type MaskInfo } from "../viewer/Viewer";
@@ -15,7 +15,8 @@ import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
 import ViewerToolRail from "../viewer/ViewerToolRail";
 import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
-import { approveCase, type QueueEntry, type ReviewCase } from "./api";
+import { approveCase, approveForm, approveMask, reopenCase, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
+import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
 import { FIELDS, type FieldKey } from "./fields";
@@ -76,18 +77,38 @@ export default function CaseReview({ data, queue }: Props) {
   const [states, setStates] = useState<States>({});
 
   const stateOf = (key: FieldKey, value: string): FieldState => (value === data.proposals[key]?.value ? "confirmed" : "corrected");
+  // the case as it was left last time, if it was not approved
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const draftLoaded = useRef(false);
+  const pendingPatch = useRef<Draft["mask"]>(null);
+  // only the radiologist's own changes save a draft, not putting the old one back
+  const touched = useRef(false);
+  const touch = () => (touched.current = true);
+
   const change = (key: FieldKey, value: string) => {
+    touch();
     setValues((v) => ({ ...v, [key]: value }));
     setStates((s) => ({ ...s, [key]: stateOf(key, value) }));
   };
-  const confirm = (key: FieldKey) => setStates((s) => ({ ...s, [key]: stateOf(key, values[key] ?? "") }));
-  const confirmAll = () => setStates(Object.fromEntries(keys.map((key) => [key, states[key] ?? stateOf(key, values[key] ?? "")])));
+  const confirm = (key: FieldKey) => {
+    touch();
+    setStates((s) => ({ ...s, [key]: stateOf(key, values[key] ?? "") }));
+  };
+  const confirmAll = () => {
+    touch();
+    setStates(Object.fromEntries(keys.map((key) => [key, states[key] ?? stateOf(key, values[key] ?? "")])));
+  };
 
   const openFields = keys.filter((key) => !states[key]);
   const flagged = openFields.filter((key) => data.proposals[key]?.disagreement).length;
-  const ready = openFields.length === 0;
   // edits that all ended up undone or restored leave the model's mask as it was
   const corrected = mask.state === "corrected" && (maskInfo?.edited ?? 1) > 0;
+  // approved on its own, the mask is locked; the case still waits for the form
+  const [maskApproved, setMaskApproved] = useState(data.maskApproved);
+  const locked = maskApproved !== null;
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
 
   // the queue is ordered least certain first; the next case is the first other one unless picked
   const remaining = queue.filter((q) => q.studyId !== data.studyId);
@@ -103,27 +124,67 @@ export default function CaseReview({ data, queue }: Props) {
 
   const goOn = () => navigate(next ? `/weryfikacja/${next.studyId}` : VERIFIED_TODAY, { state: { from: backTo } });
 
-  const approve = useMutation({
-    mutationFn: () =>
-      approveCase(data.studyId, {
-        mask: corrected ? "corrected" : "confirmed",
-        edits: mask.edits,
-        fields: Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
-        editingSeconds: Math.round((Date.now() - startedAt.current) / 1000),
-      }),
+  const approveMaskNow = useMutation({
+    mutationFn: () => approveMask(data.studyId, { mask: corrected ? "corrected" : "confirmed", edits: mask.edits }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+      touch();
+      setMaskApproved(corrected ? "corrected" : "confirmed");
+      setTool((current) => (current === "pan" || current === "window" ? current : "pan"));
       queryClient.invalidateQueries({ queryKey: ["studies"] });
-      toast(t(corrected ? "review.approvedCorrected" : "review.approvedConfirmed", { n: data.studyNumber }), {
-        label: t("review.openOverview"),
-        to: `/badania/${data.studyId}`,
-      });
-      goOn();
+      // when the form is done too, the case is verified and that toast says it
+      if (openFields.length) toast(t("review.mask.approvedToast", { n: data.studyNumber }));
+    },
+  });
+  const unapproveMaskNow = useMutation({
+    mutationFn: () => unapproveMask(data.studyId),
+    onSuccess: () => {
+      touch();
+      setMaskApproved(null);
+      queryClient.invalidateQueries({ queryKey: ["studies"] });
     },
   });
 
-  const approveRef = useRef(() => {});
-  approveRef.current = () => ready && !approve.isPending && approve.mutate();
+  // every field confirmed or corrected counts as the form approved, no button of its own
+  const formSent = useRef(false);
+  // takes the form back to the model's proposals, all open again
+  function unconfirmForm() {
+    touch();
+    setValues(Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
+    setStates({});
+    formSent.current = false;
+    unapproveForm(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+  }
+  useEffect(() => {
+    if (!data.report || !keys.length || openFields.length || formSent.current) return;
+    formSent.current = true;
+    approveForm(
+      data.studyId,
+      Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
+    ).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+  }, [data.report, data.studyId, keys, openFields.length, values, states, queryClient]);
+
+  // verified = the mask approved and every field confirmed, in either order; leaving keeps it
+  const verified = maskApproved !== null && openFields.length === 0;
+  const wasVerified = useRef(verified);
+  useEffect(() => {
+    if (verified === wasVerified.current) return;
+    wasVerified.current = verified;
+    if (verified) {
+      approveCase(data.studyId, {
+        mask: maskApproved ?? "confirmed",
+        edits: mask.edits,
+        fields: Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
+        editingSeconds: Math.round((Date.now() - startedAt.current) / 1000),
+      }).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+      deleteDraft(data.studyId);
+      toast(t("review.verifiedToast", { n: data.studyNumber }), { label: t("review.openOverview"), to: `/badania/${data.studyId}` });
+    } else {
+      reopenCase(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+    }
+  }, [verified, data.studyId, data.studyNumber, maskApproved, mask.edits, keys, values, states, queryClient, toast]);
+
+  const nextRef = useRef(() => {});
+  nextRef.current = goOn;
 
   const showOpenField = () => {
     setFullView(false);
@@ -139,7 +200,7 @@ export default function CaseReview({ data, queue }: Props) {
 
   const fillRef = useRef(() => {});
   fillRef.current = async () => {
-    if (filling || (maskInfo?.slices ?? 0) < 2) return;
+    if (filling || !maskInfo?.gaps.length) return;
     setFilling(true);
     const done = await mask.viewer.current?.interpolate();
     setFilling(false);
@@ -155,13 +216,15 @@ export default function CaseReview({ data, queue }: Props) {
     const onKey = (event: KeyboardEvent) => {
       if ((event.target as HTMLElement).matches("input, select, textarea")) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && event.key === "Enter") return approveRef.current();
+      if (mod && event.key === "Enter") return nextRef.current();
       if (mod && event.key.toLowerCase() === "z") {
         event.preventDefault();
-        return undoMask();
+        return !lockedRef.current && undoMask();
       }
       if (mod || event.altKey) return;
       const tools: Record<string, Tool> = { b: "brush", t: "threshold", e: "eraser", p: "pan", w: "window" };
+      const painting = ["b", "t", "e", "i", "r"].includes(event.key);
+      if (painting && lockedRef.current) return;
       if (tools[event.key]) setTool(tools[event.key]);
       else if (event.key === "m") setShowMask((s) => !s);
       else if (event.key === "s") setBrushShape((s) => (s === "circle" ? "sphere" : "circle"));
@@ -178,6 +241,57 @@ export default function CaseReview({ data, queue }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undoMask]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadDraft(data.studyId).then((draft) => {
+      if (cancelled) return;
+      draftLoaded.current = true;
+      if (!draft) return;
+      setValues((v) => ({ ...v, ...draft.values }));
+      setStates(draft.states);
+      pendingPatch.current = draft.mask;
+      setRestoredAt(draft.savedAt);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data.studyId]);
+
+  // the mask part waits for the images and the model's mask to be on screen
+  useEffect(() => {
+    const patch = pendingPatch.current;
+    if (!maskInfo || !patch) return;
+    pendingPatch.current = null;
+    if (mask.viewer.current?.applyPatch(patch)) mask.addEdit();
+  }, [maskInfo, mask]);
+
+  // saved a moment after every change; nothing left to keep removes the draft
+  useEffect(() => {
+    if (!draftLoaded.current || !touched.current) return;
+    const timer = window.setTimeout(async () => {
+      // an approved mask is saved for real, so the draft keeps only the form
+      const patch = locked ? null : (mask.viewer.current?.getPatch() ?? null);
+      if (!patch && Object.keys(states).length === 0) {
+        await deleteDraft(data.studyId);
+        setSavedAt(null);
+      } else {
+        setSavedAt(await saveDraft(data.studyId, { values, states, mask: patch }));
+      }
+      setRestoredAt(null);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [data.studyId, values, states, maskInfo, mask.viewer, locked]);
+
+  function discardDraft() {
+    deleteDraft(data.studyId);
+    setValues(Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
+    setStates({});
+    mask.restoreModel();
+    touched.current = false;
+    setRestoredAt(null);
+    setSavedAt(null);
+  }
 
   return (
     <Page
@@ -204,24 +318,27 @@ export default function CaseReview({ data, queue }: Props) {
       }
       actions={
         <>
-          {next ? (
-            <button type="button" className="link" onClick={goOn}>
-              {t("review.skip")}
-            </button>
+          {restoredAt ? (
+            <span className="draft-note">
+              {t("review.draft.restored")} <b>{formatWhen(restoredAt)}</b>
+              <button type="button" className="link" onClick={discardDraft}>
+                {t("review.draft.discard")}
+              </button>
+            </span>
           ) : (
-            <span className="muted">{t("review.lastInQueue")}</span>
+            savedAt && <span className="muted">{t("review.draft.saved", { when: formatWhen(savedAt) })}</span>
           )}
           <ApproveButton
-            missingFields={openFields.length}
-            onMissingFields={showOpenField}
+            waiting={{ mask: maskApproved === null, fields: openFields.length }}
+            onShowMask={() => document.querySelector<HTMLButtonElement>(".mask-strip .btn")?.focus()}
+            onShowFields={showOpenField}
             next={next}
             upcoming={remaining.slice(0, UPCOMING)}
             total={remaining.length}
             open={picking}
             onOpen={togglePicking}
             onPickNext={(entry) => setPickedId(entry.studyId)}
-            onApprove={() => approve.mutate()}
-            pending={approve.isPending}
+            onNext={goOn}
           />
         </>
       }
@@ -231,10 +348,11 @@ export default function CaseReview({ data, queue }: Props) {
           <ViewerToolRail
             tool={tool === "threshold" && !gridMatch ? "brush" : tool}
             onTool={setTool}
-            onUndo={mask.undo}
+            locked={locked}
+            onUndo={() => (touch(), mask.undo())}
             canUndo={mask.edits > 0}
             thresholdOk={gridMatch}
-            canFill={(maskInfo?.slices ?? 0) >= 2}
+            canFill={!!maskInfo?.gaps.length}
             filling={filling}
             onFill={() => fillRef.current()}
             canRestoreSlice={!!maskInfo?.currentEdited}
@@ -271,13 +389,13 @@ export default function CaseReview({ data, queue }: Props) {
               studyUid={data.studyUid}
               mask={data.mask}
               series={series}
-              maskState={corrected ? "corrected" : "proposed"}
+              maskState={locked ? "confirmed" : corrected ? "corrected" : "proposed"}
               showMask={showMask}
               tool={tool === "threshold" && !gridMatch ? "brush" : tool}
-              editable
+              editable={!locked}
               brushShape={brushShape}
               brushRadius={brushRadius}
-              onEdit={mask.addEdit}
+              onEdit={() => (touch(), mask.addEdit())}
               onSeriesFound={setAvailable}
               onGridMatch={setGridMatch}
               onWindow={setWindowLevel}
@@ -287,12 +405,16 @@ export default function CaseReview({ data, queue }: Props) {
             />
             <MaskStrip
               corrected={corrected}
+              approved={locked}
+              pending={approveMaskNow.isPending || unapproveMaskNow.isPending}
+              onApprove={() => approveMaskNow.mutate()}
+              onUnapprove={() => unapproveMaskNow.mutate()}
               edited={maskInfo?.edited ?? 0}
               gaps={maskInfo?.gaps ?? []}
               version={data.segmentationVersion}
               onGoTo={(index) => mask.viewer.current?.goToSlice(index)}
               onFill={() => fillRef.current()}
-              onRestore={mask.restoreModel}
+              onRestore={() => (touch(), mask.restoreModel())}
               showMask={showMask}
               onToggleMask={() => setShowMask((s) => !s)}
             />
@@ -303,7 +425,7 @@ export default function CaseReview({ data, queue }: Props) {
           <button type="button" className="review__form-tab" title={t("review.showForm")} onClick={() => setFullView(false)}>
             <Icon name="showSide" />
             <span>{t("review.formTab")}</span>
-            {data.report && <b>{openFields.length ? t("review.left", { n: openFields.length }) : t("review.done")}</b>}
+            {data.report && <b>{openFields.length ? t("review.left", { n: openFields.length }) : t("review.formConfirmed")}</b>}
           </button>
         ) : (
           <section className="review__form" aria-label={t("review.form")}>
@@ -325,13 +447,14 @@ export default function CaseReview({ data, queue }: Props) {
                 </div>
               </Panel>
               <Panel
-                title={t("review.form")}
+                title={
+                  data.extractionVersion ? <span title={t("review.extractionVersion", { v: data.extractionVersion })}>{t("review.form")}</span> : t("review.form")
+                }
                 aux={
                   !data.report
                     ? t("review.formWaitsAux")
                     : [
-                        data.extractionVersion && `${t("models.version")} ${data.extractionVersion}`,
-                        openFields.length ? t("review.left", { n: openFields.length }) : t("review.done"),
+                        openFields.length ? t("review.left", { n: openFields.length }) : t("review.formConfirmed"),
                         flagged ? t("review.flagged", { n: flagged }) : null,
                       ]
                         .filter(Boolean)
@@ -349,9 +472,15 @@ export default function CaseReview({ data, queue }: Props) {
             </div>
             {data.report && (
               <div className="review__foot">
-                <button type="button" className="btn" disabled={openFields.length === 0} onClick={confirmAll}>
-                  {t("review.confirmAll")}
-                </button>
+                {openFields.length ? (
+                  <button type="button" className="btn btn--confirm" onClick={confirmAll}>
+                    {t("review.confirmAll")}
+                  </button>
+                ) : (
+                  <button type="button" className="btn" title={t("review.unconfirmFormTitle")} onClick={unconfirmForm}>
+                    {t("review.unconfirmForm")}
+                  </button>
+                )}
               </div>
             )}
           </section>

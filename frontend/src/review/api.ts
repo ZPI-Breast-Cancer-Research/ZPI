@@ -35,6 +35,8 @@ export interface ReviewCase {
   report: ReportPart[] | null;
   proposals: Partial<Record<FieldKey, Proposal>>;
   measurements: { volume: number | null; size: number | null; sizeInReport: number | null };
+  // the mask was approved on its own; the case still waits for the form
+  maskApproved: "confirmed" | "corrected" | null;
 }
 
 export interface ApprovalPayload {
@@ -71,6 +73,13 @@ const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10]
 
 // TODO: no review endpoints yet; approved cases leave the mock queue until the page reloads
 const approved = new Set<string>();
+const masksApproved = new Map<string, "confirmed" | "corrected">();
+const formsApproved = new Set<string>();
+
+// how far a case got, for the mock study list
+export function reviewProgress(studyId: string) {
+  return { mask: masksApproved.get(studyId) ?? null, form: formsApproved.has(studyId), done: approved.has(studyId) };
+}
 
 // least certain first, the order verification follows
 export async function fetchQueue(): Promise<QueueEntry[]> {
@@ -106,10 +115,42 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
           curve: { value: "Wash-out" },
         },
     measurements: { volume: null, size: null, sizeInReport: null },
+    maskApproved: masksApproved.get(studyId) ?? null,
   });
 }
 
-export async function approveCase(studyId: string, _payload: ApprovalPayload): Promise<void> {
+export async function approveCase(studyId: string, payload: ApprovalPayload): Promise<void> {
   approved.add(studyId);
+  if (!masksApproved.has(studyId)) masksApproved.set(studyId, payload.mask);
+  formsApproved.add(studyId);
   return mockDelay(undefined, 400);
+}
+
+// the mask on its own; the case stays in the queue for its form
+export async function approveMask(studyId: string, payload: Pick<ApprovalPayload, "mask" | "edits">): Promise<void> {
+  masksApproved.set(studyId, payload.mask);
+  return mockDelay(undefined, 300);
+}
+
+// back in the queue when its mask approval is taken back
+export async function reopenCase(studyId: string): Promise<void> {
+  approved.delete(studyId);
+  return mockDelay(undefined, 200);
+}
+
+export async function unapproveMask(studyId: string): Promise<void> {
+  masksApproved.delete(studyId);
+  return mockDelay(undefined, 200);
+}
+
+// called when every field is confirmed or corrected; the form needs no button of its own
+export async function approveForm(studyId: string, _fields: ApprovalPayload["fields"]): Promise<void> {
+  formsApproved.add(studyId);
+  return mockDelay(undefined, 200);
+}
+
+// TODO: the backend keeps the model's answers apart (generated_report), so this only drops the doctor's version
+export async function unapproveForm(studyId: string): Promise<void> {
+  formsApproved.delete(studyId);
+  return mockDelay(undefined, 200);
 }

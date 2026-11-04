@@ -100,20 +100,39 @@
   stroke-linejoin: round;
 }
 
-.approve--missing {
+/* the case's state in words next to the way on */
+.approve-state {
   display: flex;
   align-items: center;
-  gap: 0;
   white-space: pre;
-  height: 34px;
-  padding: 0 12px;
-  background: var(--color-strip);
-  border: 1px solid var(--color-rule-strong);
-  color: var(--color-strip-aux);
+  color: var(--color-ink-muted);
+  font-size: 14px;
 }
 
-.approve--missing .link {
+.approve-state .link {
   color: var(--color-ink);
+}
+
+.approve-state--done {
+  color: var(--color-confirmed);
+  font-weight: 600;
+}
+
+/* while something waits, Dalej only moves on and stays quiet */
+.approve--quiet .approve__main,
+.approve--quiet .approve__more {
+  background: #16243d;
+  color: var(--color-ink);
+  box-shadow: inset 0 0 0 1px var(--color-rule-strong);
+}
+
+.approve--quiet .approve__more {
+  border-left-color: var(--color-rule-strong);
+}
+
+.approve--quiet .approve__main:hover,
+.approve--quiet .approve__more:hover {
+  background: #1c2c49;
 }
 
 .approve__menu {
@@ -367,11 +386,8 @@
 }
 
 .field-select__list {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  right: 0;
-  z-index: 5;
+  position: fixed;
+  z-index: 30;
   margin: 0;
   padding: 3px 0;
   list-style: none;
@@ -530,4 +546,35 @@
   .review--full {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* back to a case with saved work: when it is from, and a way to start over */
+.draft-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: var(--radius);
+  color: var(--color-ink-muted);
+  font-size: 13.5px;
+}
+
+.draft-note .link {
+  margin-left: 4px;
+}
+
+/* the two decisions of a case: pink outline on a light pink tint, quieter than the pink Dalej */
+.btn.btn--confirm {
+  background: rgba(236, 111, 152, 0.16);
+  border: 1.5px solid var(--color-primary);
+  color: var(--color-corrected);
+  font-weight: 600;
+}
+
+.btn.btn--confirm:hover:not(:disabled) {
+  background: rgba(236, 111, 152, 0.26);
+  border-color: var(--color-primary);
+  color: #fff;
 }

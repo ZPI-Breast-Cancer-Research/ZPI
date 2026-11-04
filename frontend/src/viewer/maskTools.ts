@@ -93,6 +93,52 @@ export function restoreSlice(labelmap: Types.IImageVolume, original: ArrayLike<n
   return write;
 }
 
+// the box around everything that differs from the model's mask, small enough to keep as a draft
+export interface MaskPatch {
+  dims: [number, number, number];
+  from: [number, number, number];
+  size: [number, number, number];
+  data: Uint8Array;
+}
+
+export function maskPatch(labelmap: Types.IImageVolume, original: ArrayLike<number>): MaskPatch | null {
+  const data = labelmap.voxelManager!.getCompleteScalarDataArray!();
+  const [nx, ny, nz] = labelmap.dimensions;
+  const min = [nx, ny, nz];
+  const max = [-1, -1, -1];
+  for (let index = 0; index < data.length; index++) {
+    if (data[index] === original[index]) continue;
+    const ijk = [index % nx, Math.floor(index / nx) % ny, Math.floor(index / (nx * ny))];
+    for (let a = 0; a < 3; a++) {
+      if (ijk[a] < min[a]) min[a] = ijk[a];
+      if (ijk[a] > max[a]) max[a] = ijk[a];
+    }
+  }
+  if (max[0] < 0) return null;
+  const size = [0, 1, 2].map((a) => max[a] - min[a] + 1) as [number, number, number];
+  const box = new Uint8Array(size[0] * size[1] * size[2]);
+  let n = 0;
+  for (let k = 0; k < size[2]; k++)
+    for (let j = 0; j < size[1]; j++)
+      for (let i = 0; i < size[0]; i++) box[n++] = data[min[0] + i + (min[1] + j) * nx + (min[2] + k) * nx * ny];
+  return { dims: [nx, ny, nz], from: min as [number, number, number], size, data: box };
+}
+
+// writes a saved box back; false when the study's grid changed since it was saved
+export function applyPatch(labelmap: Types.IImageVolume, patch: MaskPatch): boolean {
+  const [nx, ny, nz] = labelmap.dimensions;
+  if (patch.dims[0] !== nx || patch.dims[1] !== ny || patch.dims[2] !== nz) return false;
+  const voxels = labelmap.voxelManager!;
+  const next = (voxels.getCompleteScalarDataArray!() as Uint8Array).slice();
+  const { from, size, data } = patch;
+  let n = 0;
+  for (let k = 0; k < size[2]; k++)
+    for (let j = 0; j < size[1]; j++)
+      for (let i = 0; i < size[0]; i++) next[from[0] + i + (from[1] + j) * nx + (from[2] + k) * nx * ny] = data[n++];
+  voxels.setCompleteScalarDataArray!(next);
+  return true;
+}
+
 // distance from every pixel of a 2D mask to its edge: negative inside, positive outside (chamfer 3-4, in pixels)
 function signedDistance(mask: Uint8Array, w: number, h: number) {
   const far = 1e6;

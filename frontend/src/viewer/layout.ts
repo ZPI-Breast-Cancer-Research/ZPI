@@ -5,6 +5,8 @@ import type { Plane } from "./types";
 export interface Layout {
   main: Plane;
   single: boolean;
+  // share of the width for the main view; none means the default split
+  split?: number;
 }
 
 const KEY = "maria.viewer.layout";
@@ -13,7 +15,8 @@ const PLANES: Plane[] = ["axial", "sagittal", "coronal"];
 function read(): Layout {
   try {
     const saved = JSON.parse(sessionStorage.getItem(KEY) ?? "{}");
-    return { main: PLANES.includes(saved.main) ? saved.main : "axial", single: saved.single === true };
+    const split = typeof saved.split === "number" && saved.split >= 0.3 && saved.split <= 0.85 ? saved.split : undefined;
+    return { main: PLANES.includes(saved.main) ? saved.main : "axial", single: saved.single === true, split };
   } catch {
     return { main: "axial", single: false };
   }

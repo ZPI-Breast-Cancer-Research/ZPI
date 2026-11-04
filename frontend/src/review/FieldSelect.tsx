@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { t } from "../i18n";
 
@@ -16,15 +16,29 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  // the form scrolls and would clip the list, so it floats above the page next to the field
+  const [place, setPlace] = useState<CSSProperties>({});
 
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => !box.current?.contains(event.target as Node) && setOpen(false);
+    const shut = () => setOpen(false);
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    window.addEventListener("scroll", shut, true);
+    window.addEventListener("resize", shut);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", shut, true);
+      window.removeEventListener("resize", shut);
+    };
   }, [open]);
 
   const show = () => {
+    const r = box.current!.getBoundingClientRect();
+    const height = options.length * 30 + 8;
+    // opens upwards when there is no room below the field
+    const up = window.innerHeight - r.bottom < height + 8 && r.top > height + 8;
+    setPlace({ left: r.left, width: r.width, ...(up ? { bottom: window.innerHeight - r.top + 2 } : { top: r.bottom + 2 }) });
     setActive(Math.max(0, options.indexOf(value)));
     setOpen(true);
   };
@@ -60,7 +74,7 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
         {value}
       </button>
       {open && (
-        <ul className="field-select__list" role="listbox" aria-labelledby={id}>
+        <ul className="field-select__list" role="listbox" aria-labelledby={id} style={place}>
           {options.map((option, i) => (
             <li
               key={option}
