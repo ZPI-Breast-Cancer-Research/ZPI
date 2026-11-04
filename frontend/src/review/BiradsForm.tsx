@@ -1,6 +1,7 @@
 import WarningIcon from "../components/WarningIcon";
 import { t } from "../i18n";
 import type { Proposal } from "./api";
+import FieldSelect from "./FieldSelect";
 import { FIELDS, type FieldKey } from "./fields";
 
 export type FieldState = "proposed" | "confirmed" | "corrected";
@@ -11,9 +12,11 @@ interface Props {
   states: Partial<Record<FieldKey, FieldState>>;
   onChange: (key: FieldKey, value: string) => void;
   onConfirm: (key: FieldKey) => void;
+  // the mask's own size, shown under Wymiar to compare with the report
+  maskSizeMm?: number | null;
 }
 
-export default function BiradsForm({ proposals, values, states, onChange, onConfirm }: Props) {
+export default function BiradsForm({ proposals, values, states, onChange, onConfirm, maskSizeMm }: Props) {
   return (
     <table className="birads">
       <thead>
@@ -39,14 +42,7 @@ export default function BiradsForm({ proposals, values, states, onChange, onConf
               </td>
               <td>
                 {field.options ? (
-                  <select id={id} className="select" value={value} onChange={(event) => onChange(field.key, event.target.value)}>
-                    {field.options.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                        {option === proposal.value ? ` · ${t("review.field.model")}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  <FieldSelect id={id} value={value} options={field.options} proposal={proposal.value} onChange={(next) => onChange(field.key, next)} />
                 ) : (
                   <span className="birads__num">
                     <input
@@ -58,6 +54,14 @@ export default function BiradsForm({ proposals, values, states, onChange, onConf
                     />
                     <span className="muted">{field.unit}</span>
                   </span>
+                )}
+                {field.key === "size" && maskSizeMm != null && (
+                  <p
+                    className={Math.abs(maskSizeMm - Number(value)) >= 3 ? "birads__mask birads__mask--off" : "birads__mask"}
+                    title={t("review.field.fromMaskTitle")}
+                  >
+                    {t("review.field.fromMask", { n: Math.round(maskSizeMm) })}
+                  </p>
                 )}
                 {flagged && <p className="birads__note">{t("review.field.disagree")}</p>}
               </td>

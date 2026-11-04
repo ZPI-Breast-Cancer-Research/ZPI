@@ -419,6 +419,8 @@ export const pl = {
   "review.field.confirm": "Potwierdź",
   "review.field.disagree": "Model i reguły się różnią.",
   "review.field.model": "model",
+  "review.field.fromMask": "z maski: {n} mm",
+  "review.field.fromMaskTitle": "Najdłuższy bok maski w płaszczyźnie głównego widoku",
   "review.field.choose": "Wartość",
   "review.confirmAll": "Potwierdź wszystkie",
   "review.unverified": "—",

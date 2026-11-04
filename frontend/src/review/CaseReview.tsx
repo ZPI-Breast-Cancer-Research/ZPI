@@ -340,7 +340,7 @@ export default function CaseReview({ data, queue }: Props) {
               >
                 <div className="review__section">
                   {data.report ? (
-                    <BiradsForm proposals={data.proposals} values={values} states={states} onChange={change} onConfirm={confirm} />
+                    <BiradsForm proposals={data.proposals} values={values} states={states} onChange={change} onConfirm={confirm} maskSizeMm={maskInfo?.sizeMm} />
                   ) : (
                     <div className="empty-box">{t("review.formWaits")}</div>
                   )}
