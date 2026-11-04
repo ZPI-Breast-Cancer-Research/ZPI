@@ -17,13 +17,17 @@ const AuthContext = createContext<AuthValue | null>(null);
 // TODO: kept in sessionStorage until there's a real session cookie from the backend
 const STORAGE_KEY = "maria.user";
 
+// dev only: VITE_SKIP_LOGIN=radiologist (or researcher, admin) signs in straight away with that role
+const SKIP_LOGIN = import.meta.env.DEV ? (import.meta.env.VITE_SKIP_LOGIN as Role | undefined) : undefined;
+
 function readUser(): User | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as User) : null;
+    if (raw) return JSON.parse(raw) as User;
   } catch {
-    return null;
+    // fall through to the dev user, if any
   }
+  return SKIP_LOGIN ? { login: "dev", name: "Dev", role: SKIP_LOGIN } : null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
