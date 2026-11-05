@@ -103,6 +103,7 @@ export const pl = {
   "api.unreachable": "Brak połączenia z serwerem aplikacji ({url}).",
   "api.badResponse": "Serwer aplikacji ({url}) nie zwrócił listy badań. Aplikację trzeba otwierać przez bramkę.",
   "api.http": "Serwer zwrócił błąd (HTTP {status}).",
+  "api.sendFailed": "Nie udało się wysłać badania.",
   "api.unknown": "Wystąpił nieoczekiwany błąd. Jeśli się powtarza, zgłoś go administratorowi.",
   "state.retrying": "Ponawianie…",
   "studies.all": "Wszystkie",

@@ -2,9 +2,10 @@ import axios from "axios";
 
 import { t } from "./i18n";
 
+// empty: same origin as the app, through the gateway; plain `npm run dev` sets VITE_API_URL
 export const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-const api = axios.create({ baseURL: API_URL, timeout: 15000 });
+export const api = axios.create({ baseURL: API_URL, timeout: 15000 });
 
 export interface Study {
   orthanc_id: string;
@@ -14,6 +15,9 @@ export interface Study {
   description: string | null;
   modalities: string[];
   series_count: number;
+  extraction_status: string;
+  segmentation_status: string;
+  uncertainty: number | null;
 }
 
 export class ApiError extends Error {
@@ -51,6 +55,23 @@ export function errorText(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (axios.isAxiosError(error)) return error.response ? t("api.http", { status: error.response.status }) : t("api.unreachable", { url: API_URL || window.location.origin });
   return t("api.unknown");
+}
+
+export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<unknown> {
+  const formData = new FormData();
+  if (archiveFile) formData.append("archives", archiveFile);
+  if (reportFile) formData.append("report", reportFile);
+
+  try {
+    const { data } = await api.post("/api/studies/import/", formData);
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const body = error.response?.data as { code?: string; detail?: string } | undefined;
+      throw new ApiError(body?.detail || t("api.sendFailed"), "unknown");
+    }
+    throw new ApiError(t("api.unknown"), "unknown");
+  }
 }
 
 export type PacsStatus = "ok" | "unauthorized" | "unreachable" | "unknown";

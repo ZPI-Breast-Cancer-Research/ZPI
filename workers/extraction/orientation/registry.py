@@ -1,6 +1,6 @@
-from importlib import import_module
 from typing import Any
 
+from ..plugins import load_class
 from .base import OrientationDetector
 
 DETECTORS = {
@@ -11,11 +11,5 @@ DETECTORS = {
 def get_orientation_detector(name: str, **options: Any) -> OrientationDetector | None:
     if name == "none":
         return None
-    try:
-        target = DETECTORS[name]
-    except KeyError:
-        available = ", ".join(["none", *DETECTORS])
-        raise ValueError(f"Unknown orientation detector {name!r}; available: {available}") from None
-    module_name, class_name = target.split(":")
-    cls = getattr(import_module(module_name, __package__), class_name)
+    cls = load_class(DETECTORS, name, "orientation detector", __package__, extra=("none",))
     return cls(**options)

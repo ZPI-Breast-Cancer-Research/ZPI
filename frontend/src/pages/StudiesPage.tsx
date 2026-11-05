@@ -14,9 +14,10 @@ import DropZone from "../studies/DropZone";
 import { FileTag, ImportTable, UnpairedReports } from "../studies/ImportReview";
 import ProcessingSteps from "../studies/ProcessingSteps";
 import StudiesTable, { matches, parseFilter, parsePart } from "../studies/StudiesTable";
-import { listStudies, listUnassignedReports, sendStudies, type StudyRow } from "../studies/api";
+import { listStudies, listUnassignedReports, sendStudy, type StudyRow } from "../studies/api";
 import { groupFiles, type GroupedFiles } from "../studies/files";
 import "../studies/studies.css";
+import JSZip from "jszip";
 
 function errorTitle(error: Error): string {
   const kind = error instanceof ApiError ? error.kind : "unknown";
@@ -55,13 +56,47 @@ export default function StudiesPage() {
     setAttachFor(row);
   };
 
-  const send = useMutation({
-    mutationFn: () => sendStudies(imported?.studies.length ?? 0),
-    onSuccess: () => {
-      toast(t("studies.import.sent"));
-      setImported(null);
-    },
-  });
+const send = useMutation({
+  mutationFn: async () => {
+    if (!imported || (imported.studies.length === 0 && imported.unpairedReports.length === 0)) {
+      throw new Error(t("api.sendFailed"));
+    }
+
+    const studyItem = imported.studies[0];
+    const dicomFiles: File[] = studyItem?.dicomFiles || [];
+
+    let archiveFile: File | undefined = undefined;
+
+    if (dicomFiles.length > 0) {
+      const isSingleZip = dicomFiles.length === 1 && dicomFiles[0].name.toLowerCase().endsWith(".zip");
+
+      if (isSingleZip) {
+        archiveFile = dicomFiles[0]; 
+      } else {
+        const zip = new JSZip();
+        for (const file of dicomFiles) {
+          const path = file.webkitRelativePath || file.name;
+          zip.file(path, file);
+        }
+        const zipBlob = await zip.generateAsync({ type: "blob" });
+        archiveFile = new File([zipBlob], `${studyItem?.folder && studyItem.folder !== "—" ? studyItem.folder : "study"}_archive.zip`, { type: "application/zip" });
+      }
+    }
+
+    const reportFile: File | undefined = studyItem?.report || imported.unpairedReports[0];
+
+    return await sendStudy(archiveFile, reportFile);
+  },
+  onSuccess: () => {
+    toast(t("studies.import.sent"));
+    setImported(null);
+    studies.refetch();
+    unassigned.refetch();
+  },
+  onError: (error: Error) => {
+    toast(error.message || t("api.sendFailed"));
+  },
+});
 
   const assign = (report: File, folder: string) =>
     setImported((current) =>
@@ -93,7 +128,7 @@ export default function StudiesPage() {
             <button
               type="button"
               className="btn btn--primary"
-              disabled={imported.studies.length === 0 || send.isPending}
+              disabled={(imported.studies.length === 0 && imported.unpairedReports.length === 0)|| send.isPending}
               onClick={() => send.mutate()}
             >
               {t("studies.import.send")} ({imported.studies.length})

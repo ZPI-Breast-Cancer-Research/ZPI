@@ -6,7 +6,7 @@ from common.storage import BUCKET_REPORTS, download_file
 from config.celery import app
 
 from .config import Settings
-from .llm import get_llm_client
+from .llm import LLMClient, get_llm_client
 from .ocr import OcrEngine, get_ocr_engine
 from .orientation import OrientationDetector, get_orientation_detector
 from .pipeline import extract_from_images, extract_from_text
@@ -15,6 +15,11 @@ from .pipeline import extract_from_images, extract_from_text
 @cache
 def _settings() -> Settings:
     return Settings.from_env()
+
+
+@cache
+def _llm() -> LLMClient:
+    return get_llm_client(_settings())
 
 
 @cache
@@ -31,7 +36,7 @@ def _orientation() -> OrientationDetector | None:
 @app.task(name="extraction.run")
 def run(keys: list[str], source: str | None = None) -> dict:
     settings = _settings()
-    llm = get_llm_client(settings)
+    llm = _llm()
     options = {
         "source": source or Path(keys[0]).name,
         "few_shot": settings.few_shot_examples,

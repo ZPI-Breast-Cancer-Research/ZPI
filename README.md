@@ -33,7 +33,7 @@ The project is part of a broader research plan (ZPI + TransMed/ABM): structuring
 ![database schema](docs/erd.svg)
 
 ---
-
+Detailed database schema, table definitions, and storage architecture (Orthanc PACS & MinIO) can be found in [docs/database.md](docs/database.md).
 ## 3. Application modules
 
 ### 3.1 Segmentation

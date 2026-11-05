@@ -1,5 +1,8 @@
 import os
 from dataclasses import dataclass, field
+from typing import TypeVar
+
+N = TypeVar("N", int, float)
 
 DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "host.docker.internal")
 
@@ -16,6 +19,16 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_number(name: str, default: N, kind: type[N]) -> N:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return kind(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from None
 
 
 @dataclass
@@ -42,12 +55,12 @@ class Settings:
             llm_provider=os.environ.get("LLM_PROVIDER", defaults.llm_provider),
             llm_base_url=os.environ.get("LLM_BASE_URL", defaults.llm_base_url),
             llm_model=os.environ.get("LLM_MODEL", defaults.llm_model),
-            llm_timeout=float(os.environ.get("LLM_TIMEOUT", defaults.llm_timeout)),
+            llm_timeout=_env_number("LLM_TIMEOUT", defaults.llm_timeout, float),
             llm_allowed_hosts=_env_list("LLM_ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS),
             llm_structured_output=_env_bool(
                 "LLM_STRUCTURED_OUTPUT", defaults.llm_structured_output
             ),
-            few_shot_examples=int(
-                os.environ.get("EXTRACTION_FEW_SHOT", defaults.few_shot_examples)
+            few_shot_examples=_env_number(
+                "EXTRACTION_FEW_SHOT", defaults.few_shot_examples, int
             ),
         )

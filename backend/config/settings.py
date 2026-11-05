@@ -39,6 +39,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "users",
     "patients",
+    "extraction",
+    "segmentation",
+    "mlops",
 ]
 
 MIDDLEWARE = [

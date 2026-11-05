@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ..ocr.base import OcrError
+from .base import OrientationError
 
 MODEL_NAME = "PP-LCNet_x1_0_doc_ori"
 
@@ -15,7 +15,7 @@ class PaddleOrientationDetector:
         try:
             from paddleocr import DocImgOrientationClassification
         except ImportError as exc:
-            raise OcrError(
+            raise OrientationError(
                 "PaddleOCR is not installed: pip install -r requirements-paddle.txt"
             ) from exc
         self._model = DocImgOrientationClassification(
@@ -26,4 +26,4 @@ class PaddleOrientationDetector:
         for res in self._model.predict(str(image), batch_size=1):
             data: Any = res.json.get("res", res.json) if hasattr(res, "json") else res
             return int(data["label_names"][0])
-        raise OcrError(f"Orientation model returned no result for {image.name}")
+        raise OrientationError(f"Orientation model returned no result for {image.name}")

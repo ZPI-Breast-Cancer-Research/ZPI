@@ -3,14 +3,14 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .checks import check_extraction
 from .llm.base import LLMClient, LLMError, Message
 from .normalize import normalize_text
 from .ocr.base import OcrEngine, OcrPage, OcrResult
-from .orientation import OrientationDetector, upright_copy
-from .parsing import ParseError, parse_response
-from .prompting import PROMPT_VERSION, build_messages
-from .schema import EkstrakcjaBadania, ExtractionResult, Provenance
+from .orientation import OrientationDetector, make_upright
+from .schema import ExtractionResult, Provenance, llm_json_schema
+from .structuring.checks import check_extraction
+from .structuring.parsing import ParseError, parse_response
+from .structuring.prompting import PROMPT_VERSION, build_messages
 
 MAX_ATTEMPTS = 2
 
@@ -35,8 +35,8 @@ def _read_upright(
 ) -> OcrPage:
     if orientation is None:
         return ocr.read_page(image)
-    angle = orientation.correction_angle(image)
-    page = ocr.read_page(upright_copy(image, tmp, angle))
+    upright, angle = make_upright(image, orientation, tmp)
+    page = ocr.read_page(upright)
     page.source = image.name
     page.rotation = angle
     return page
@@ -84,10 +84,10 @@ def extract_from_text(
 ) -> ExtractionResult:
     text = normalize_text(text)
     if not text:
-        return _error_result(source, "Pusty tekst opisu (OCR nic nie odczytał?)", text, llm)
+        return _error_result(source, "Empty report text (did OCR read nothing?)", text, llm)
 
     messages = build_messages(text, few_shot=few_shot)
-    schema = EkstrakcjaBadania.model_json_schema() if structured_output else None
+    schema = llm_json_schema() if structured_output else None
     llm_seconds = 0.0
     last_error = ""
 
@@ -117,7 +117,7 @@ def extract_from_text(
             created_at=datetime.now(UTC),
         )
 
-    result = _error_result(source, f"Parsowanie: {last_error}", text, llm, attempts=MAX_ATTEMPTS)
+    result = _error_result(source, f"Parsing: {last_error}", text, llm, attempts=MAX_ATTEMPTS)
     result.llm_seconds = round(llm_seconds, 2)
     return result
 

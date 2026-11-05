@@ -1,8 +1,15 @@
 import re
-import unicodedata
-from difflib import SequenceMatcher
 
-from .schema import Brzeg, Echogenicznosc, EkstrakcjaBadania, Ksztalt, Modalnosc, Obserwacja, Strona
+from ..normalize import fold, quote_similarity
+from ..schema import (
+    Brzeg,
+    Echogenicznosc,
+    EkstrakcjaBadania,
+    Ksztalt,
+    Modalnosc,
+    Obserwacja,
+    Strona,
+)
 
 QUOTE_MIN_SIMILARITY = 0.85
 VERBATIM_MIN_SIMILARITY = 0.9
@@ -21,16 +28,16 @@ STEMS = {
     Brzeg.KATOWY: ("katow",),
     Brzeg.SPIKULARNY: ("spikul", "promienist"),
     Echogenicznosc.BEZECHOWA: ("bezech",),
-    Echogenicznosc.HIPOECHOGENICZNA: ("hipoech", "hypoech"),
-    Echogenicznosc.IZOECHOGENICZNA: ("izoech", "isoech"),
+    Echogenicznosc.HIPOECHOGENICZNA: ("hipoech", "hypoech", "obnizonej echogenicz"),
+    Echogenicznosc.IZOECHOGENICZNA: ("izoech", "isoech", "normoech"),
     Echogenicznosc.HIPERECHOGENICZNA: ("hiperech", "hyperech"),
-    Echogenicznosc.ZLOZONA: ("zlozon", "torbielowato-lit", "lito-torbiel"),
+    Echogenicznosc.ZLOZONA: ("zlozon", "torbielowatolit", "litotorbiel"),
 }
 
 
 def check_extraction(data: EkstrakcjaBadania, text: str) -> list[str]:
     warnings = []
-    haystack = _fold(text)
+    haystack = fold(text)
 
     for name in ("lewa", "prawa"):
         piers = getattr(data.piersi, name)
@@ -93,7 +100,7 @@ def _check_observation(where: str, obs: Obserwacja, haystack: str) -> list[str]:
     if obs.godzina:
         warnings += _numbers(where, "godzina", _numbers_in(obs.godzina), obs.cytat)
 
-    quote = _fold(obs.cytat)
+    quote = fold(obs.cytat)
     for name in ("ksztalt", "brzeg", "echogenicznosc"):
         value = getattr(obs, name)
         if value is not None and not any(stem in quote for stem in STEMS[value]):
@@ -129,25 +136,3 @@ def _numbers_in(text: str) -> list[float]:
 
 def _sides(strona: Strona) -> tuple[str, ...]:
     return ("lewa", "prawa") if strona == Strona.OBUSTRONNIE else (strona.value,)
-
-
-def quote_similarity(quote: str, folded_text: str) -> float:
-    needle = _fold(quote)
-    if not needle:
-        return 0.0
-    if needle in folded_text:
-        return 1.0
-    size = len(needle)
-    step = max(1, size // 10)
-    best = 0.0
-    for start in range(0, max(1, len(folded_text) - size + 1), step):
-        window = folded_text[start : start + size]
-        best = max(best, SequenceMatcher(None, needle, window, autojunk=False).ratio())
-    return best
-
-
-def _fold(text: str) -> str:
-    text = text.lower().replace("ł", "l")
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.sub(r"\s+", " ", text).strip()

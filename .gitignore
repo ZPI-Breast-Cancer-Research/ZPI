@@ -20,6 +20,8 @@ data/**
 !data/**/.gitkeep
 # exception : split definition
 !data/splits/*.csv
+# report ground truth (real report text) – the whole folder, no exceptions
+data/ground_truth/
 *.dcm
 *.nii
 *.nii.gz

@@ -154,6 +154,114 @@ flowchart TB
     style dane fill:none,stroke:#888
 ```
 
+## Dataflows
+
+Którędy płyną dane i gdzie zostają. Kolejność wywołań i obsługa błędów są w sekcji Sequences.
+Diagramy pokazują stan docelowy. Linia przerywana to ścieżka opcjonalna albo przypadek błędu.
+
+### Inferencja
+
+```mermaid
+flowchart LR
+    pacs["PACS szpitala /<br/>upload w aplikacji"]
+
+    subgraph dane["Dane"]
+        orthanc[("Orthanc")]
+        s3[("MinIO")]
+        pg[("PostgreSQL")]
+        mlflow[("MLflow")]
+    end
+
+    subgraph worker["Worker segmentacji"]
+        conversion["Konwersja<br/>DICOM → NIfTI"]
+        model["Model<br/>(wagi ładowane raz)"]
+        seg["Konwersja<br/>maska → DICOM SEG"]
+    end
+
+    ui["Aplikacja webowa"]
+    api["API"]
+
+    pacs -- "serie DICOM" --> orthanc
+    orthanc -- "serie DICOM" --> conversion
+    conversion -- "NIfTI pre, post1, post2<br/>(tylko status ok)" --> model
+    conversion -- "NIfTI" --> s3
+    conversion -- "manifest serii, status" --> pg
+    conversion -. "status inny niż ok:<br/>powód, bez NIfTI" .-> pg
+
+    mlflow -- "wersja modelu @champion" --> model
+    s3 -- "wagi, plans.json,<br/>dataset.json, model.json" --> model
+
+    model -- "maska, prawdopodobieństwa" --> s3
+    model -- "wynik, wersja modelu" --> pg
+    model -- "maska" --> seg
+    seg -- "DICOM SEG" --> orthanc
+
+    orthanc -- "serie, DICOM SEG" --> ui
+    pg -- "statusy, wyniki" --> api
+    api -- "statusy, wyniki" --> ui
+    ui -- "poprawiona maska" --> api
+    api -- "zatwierdzona maska" --> s3
+```
+
+### Trening
+
+```mermaid
+flowchart TB
+    subgraph zespol["Zespół: trening bazowy, offline"]
+        mamamia[("MAMA-MIA<br/>NIfTI, maski ekspertów")]
+        split["frozen_split_official.csv"]
+    end
+
+    subgraph szpital["Szpital: dotrenowanie (P2)"]
+        pool[("MinIO: NIfTI i zatwierdzone maski")]
+        champion["Wagi @champion"]
+        hospital_test[("Szpitalny zbiór testowy")]
+    end
+
+    subgraph pipeline["Wspólny kod treningu"]
+        manifest["dataset.py<br/>manifest przypadków"]
+        build["build_nnunet_dataset.py"]
+        raw[("nnUNet_raw<br/>Dataset501_DCE3")]
+        preprocess["nnUNetv2_plan_and_preprocess"]
+        train["nnUNetv2_train"]
+        evaluate["evaluate.py<br/>Dice, HD95"]
+    end
+
+    subgraph rejestr["Rejestr modeli"]
+        mlflow[("MLflow<br/>parametry, metryki, wersje")]
+        artifacts[("MinIO: s3://mlflow<br/>wagi, plans.json, dataset.json, model.json")]
+    end
+
+    gate{"Bramka jakości"}
+    admin["Administrator modeli"]
+    inference["Inferencja"]
+
+    mamamia -- "fazy, maski" --> manifest
+    split -- "train / test" --> manifest
+    pool -. "próbki z poprawek" .-> manifest
+    manifest -- "case_id, split, role, maska" --> build
+    build -- "układ nnU-Net, dataset.json" --> raw
+    raw -- "imagesTr, labelsTr" --> preprocess
+    preprocess -- "dane po preprocessingu, plan" --> train
+    champion -. "wagi startowe" .-> train
+    train -- "checkpoint, plans.json" --> evaluate
+    raw -- "imagesTs, labelsTs:<br/>zamrożony test" --> evaluate
+    hospital_test -. "przypadki testowe" .-> evaluate
+    train -- "parametry, wersja danych,<br/>wagi" --> mlflow
+    mlflow -- "artefakty" --> artifacts
+    evaluate -- "metryki" --> mlflow
+
+    evaluate -. "metryki kandydata" .-> gate
+    gate -. "alias @challenger" .-> mlflow
+    admin -. "zatwierdza: alias @champion" .-> mlflow
+    mlflow -- "wersja @champion" --> inference
+    artifacts -- "wagi" --> inference
+```
+
+Rysunki łączy rejestr modeli: trening zapisuje do niego wersje, a inferencja czyta wersję oznaczoną
+aliasem `@champion`. Model bazowy trafia do rejestru szpitala jako dostarczona wersja (wagi i
+manifest), więc dane pacjentek nie opuszczają szpitala.
+
 ## Sequences
 
 ### P1
