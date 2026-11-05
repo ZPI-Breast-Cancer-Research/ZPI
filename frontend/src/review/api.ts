@@ -1,4 +1,5 @@
 import { mockDelay, mockStudyUid } from "../mock";
+import { record } from "../settings/audit";
 import type { MaskSource } from "../viewer/types";
 import type { FieldKey } from "./fields";
 
@@ -77,6 +78,10 @@ const masksApproved = new Map<string, "confirmed" | "corrected">();
 const formsApproved = new Set<string>();
 
 // how far a case got, for the mock study list
+function label(studyId: string) {
+  return `#${QUEUE.find((entry) => entry.studyId === studyId)?.studyNumber ?? studyId}`;
+}
+
 export function reviewProgress(studyId: string) {
   return { mask: masksApproved.get(studyId) ?? null, form: formsApproved.has(studyId), done: approved.has(studyId) };
 }
@@ -123,12 +128,15 @@ export async function approveCase(studyId: string, payload: ApprovalPayload): Pr
   approved.add(studyId);
   if (!masksApproved.has(studyId)) masksApproved.set(studyId, payload.mask);
   formsApproved.add(studyId);
+  record("mask_approved", label(studyId));
+  record("form_approved", label(studyId));
   return mockDelay(undefined, 400);
 }
 
 // the mask on its own; the case stays in the queue for its form
 export async function approveMask(studyId: string, payload: Pick<ApprovalPayload, "mask" | "edits">): Promise<void> {
   masksApproved.set(studyId, payload.mask);
+  record("mask_approved", label(studyId));
   return mockDelay(undefined, 300);
 }
 
@@ -140,17 +148,20 @@ export async function reopenCase(studyId: string): Promise<void> {
 
 export async function unapproveMask(studyId: string): Promise<void> {
   masksApproved.delete(studyId);
+  record("mask_unapproved", label(studyId));
   return mockDelay(undefined, 200);
 }
 
 // called when every field is confirmed or corrected; the form needs no button of its own
 export async function approveForm(studyId: string, _fields: ApprovalPayload["fields"]): Promise<void> {
   formsApproved.add(studyId);
+  record("form_approved", label(studyId));
   return mockDelay(undefined, 200);
 }
 
 // TODO: the backend keeps the model's answers apart (generated_report), so this only drops the doctor's version
 export async function unapproveForm(studyId: string): Promise<void> {
   formsApproved.delete(studyId);
+  record("form_unapproved", label(studyId));
   return mockDelay(undefined, 200);
 }

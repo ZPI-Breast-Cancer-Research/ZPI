@@ -1,5 +1,7 @@
 import type { Role, User } from "../auth/api";
 import { mockDelay } from "../mock";
+import { t } from "../i18n";
+import { record } from "./audit";
 
 // set by the admin; the person only sees it
 export interface Profile {
@@ -64,23 +66,29 @@ export async function fetchUsers(): Promise<UserRow[]> {
 export async function createUser(draft: UserDraft): Promise<{ password: string }> {
   if (users.some((user) => user.login === draft.login)) throw new Error("login-taken");
   users = [...users, { ...draft, id: `u${Date.now()}`, state: "temporary", lastLogin: null }];
+  record("account_created", draft.login, `${t("settings.role").toLowerCase()}: ${t(`role.${draft.role}`)}`);
   return mockDelay({ password: temporaryPassword() }, 300);
 }
 
 export async function updateUser(id: string, draft: Omit<UserDraft, "login">): Promise<void> {
+  const before = users.find((u) => u.id === id)!;
   change(id, draft);
+  const role = before.role !== draft.role ? `${t("settings.role").toLowerCase()}: ${t(`role.${before.role}`)} → ${t(`role.${draft.role}`)}` : null;
+  record("account_changed", before.login, role);
   return mockDelay(undefined, 300);
 }
 
 export async function setBlocked(id: string, blocked: boolean): Promise<void> {
   const user = users.find((u) => u.id === id);
   change(id, { state: blocked ? "blocked" : user?.lastLogin ? "active" : "temporary" });
+  record(blocked ? "account_blocked" : "account_unblocked", user?.login ?? id);
   return mockDelay(undefined, 300);
 }
 
 // the old password stops working at once; the person has to change the new one at first login
 export async function resetPassword(id: string): Promise<{ password: string }> {
   change(id, { state: "temporary" });
+  record("password_reset", users.find((u) => u.id === id)?.login ?? id);
   return mockDelay({ password: temporaryPassword() }, 300);
 }
 

@@ -159,3 +159,41 @@
 .table .users__blocked .cell-strong {
   color: var(--color-ink-faint);
 }
+
+/* audit log and system status */
+.audit__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.audit__filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 200px)) minmax(0, 220px) repeat(2, minmax(0, 150px)) auto;
+  align-items: end;
+  gap: 0 14px;
+  padding: 12px 18px 2px;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.audit__filters .field {
+  margin-bottom: 12px;
+}
+
+.audit__clear {
+  margin-bottom: 20px;
+  justify-self: start;
+}
+
+.audit__when {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.audit__login {
+  color: var(--color-ink-faint);
+}
+
+.table .audit__alert {
+  color: var(--color-warning);
+}

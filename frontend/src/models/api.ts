@@ -1,4 +1,5 @@
 import { mockDelay, mockScenario } from "../mock";
+import { record } from "../settings/audit";
 
 export type VersionStatus = "candidate" | "production" | "archived" | "rejected" | "training";
 
@@ -118,17 +119,21 @@ export async function fetchExtraction(): Promise<ExtractionOverview> {
 
 // TODO: wire to POST /models/{id}/promote, /reject, /rollback once they exist
 export async function promote(version: string): Promise<string> {
+  record("model_promoted", version);
   return mockDelay(version, 400);
 }
 
-export async function reject(version: string, _reason: string): Promise<string> {
+export async function reject(version: string, reason: string): Promise<string> {
+  record("model_rejected", version, reason);
   return mockDelay(version, 400);
 }
 
 export async function rollback(version: string): Promise<string> {
+  record("model_rolled_back", version);
   return mockDelay(version, 400);
 }
 
 export async function startTraining(): Promise<void> {
+  record("training_started", "");
   return mockDelay(undefined, 400);
 }

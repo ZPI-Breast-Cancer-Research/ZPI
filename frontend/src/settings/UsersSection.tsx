@@ -64,7 +64,10 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
   const [taken, setTaken] = useState(false);
   const wrong = problems(draft);
   const set = (change: Partial<UserDraft>) => setDraft({ ...draft, ...change });
-  const refresh = () => client.invalidateQueries({ queryKey: ["users"] });
+  const refresh = () => {
+    client.invalidateQueries({ queryKey: ["users"] });
+    client.invalidateQueries({ queryKey: ["audit"] });
+  };
   // the only admin keeps the role, or nobody could manage accounts
   const roleLocked = self && lastAdmin;
 
