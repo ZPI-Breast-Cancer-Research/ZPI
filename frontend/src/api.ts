@@ -14,7 +14,6 @@ export interface Study {
   description: string | null;
   modalities: string[];
   series_count: number;
-  viewer_url: string | null;
 }
 
 export class ApiError extends Error {
