@@ -16,6 +16,7 @@ import { FIELDS } from "../review/fields";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
 import type { Series, Tool } from "../viewer/types";
+import { usePreferences } from "../settings/preferences";
 import { useViewerLayout } from "../viewer/layout";
 import Viewer from "../viewer/Viewer";
 import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
@@ -26,9 +27,10 @@ export default function LesionOverviewPage() {
   // back to the list the overview was opened from
   const backTo = (state as { from?: string } | null)?.from ?? "/badania?filtr=verified";
   const [showModel, setShowModel] = useState(false);
-  const [showMask, setShowMask] = useState(true);
+  const [preferred] = usePreferences();
+  const [showMask, setShowMask] = useState(preferred.maskShown);
   const [tool, setTool] = useState<Tool>("pan");
-  const [series, setSeries] = useState<Series>("post");
+  const [series, setSeries] = useState<Series>(preferred.series);
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [layout, setLayout] = useViewerLayout();
   const reviews = useCan()("review");
@@ -111,7 +113,11 @@ export default function LesionOverviewPage() {
             showMask={showMask}
             tool={tool}
             modelOutline={showModel}
-            onSeriesFound={setAvailable}
+            onSeriesFound={(found) => {
+              setAvailable(found);
+              // the preferred series may be missing from this study
+              if (!found.includes(series)) setSeries("post");
+            }}
             layout={layout}
             onLayout={setLayout}
           />

@@ -1,14 +1,13 @@
-import type { Role } from "../auth/api";
+import type { Role, User } from "../auth/api";
 import { mockDelay } from "../mock";
 
-export type Series = "post" | "sub" | "pre";
-
+// set by the admin; the person only sees it
 export interface Profile {
   name: string;
+  login: string;
   email: string;
-  pwz: string;
-  language: "pl" | "en";
-  defaultSeries: Series;
+  role: Role;
+  pwz: string | null;
 }
 
 export interface UserRow {
@@ -21,8 +20,14 @@ export interface UserRow {
 }
 
 // TODO: no profile/users endpoints in the backend yet
-export async function fetchProfile(): Promise<Profile> {
-  return mockDelay({ name: "", email: "", pwz: "", language: "pl", defaultSeries: "post" });
+export async function fetchProfile(user: User): Promise<Profile> {
+  return mockDelay({
+    name: user.name,
+    login: user.login,
+    email: `${user.login}@szpital.pl`,
+    role: user.role,
+    pwz: user.role === "radiologist" ? "1234567" : null,
+  });
 }
 
 export async function fetchUsers(): Promise<UserRow[]> {
@@ -32,10 +37,6 @@ export async function fetchUsers(): Promise<UserRow[]> {
     { id: "u3", name: "Radiolog 2", login: "radiolog2", role: "radiologist", state: "invited", lastLogin: null },
     { id: "u4", name: "Administrator", login: "admin", role: "admin", state: "blocked", lastLogin: "2026-09-30" },
   ]);
-}
-
-export async function saveProfile(profile: Profile): Promise<Profile> {
-  return mockDelay(profile, 300);
 }
 
 export async function changePassword(_current: string, _next: string): Promise<void> {

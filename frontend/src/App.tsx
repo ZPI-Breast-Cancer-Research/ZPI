@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth, RequireRole } from "./auth/AuthProvider";
 import AppShell from "./components/layout/AppShell";
 import { t } from "./i18n";
+import AccountPage from "./pages/AccountPage";
 import DashboardPage from "./pages/DashboardPage";
 import LesionOverviewPage from "./pages/LesionOverviewPage";
 import LoginPage from "./pages/LoginPage";
@@ -46,7 +47,15 @@ export default function App() {
               </RequireRole>
             }
           />
-          <Route path="ustawienia" element={<SettingsPage />} />
+          <Route path="konto" element={<AccountPage />} />
+          <Route
+            path="ustawienia"
+            element={
+              <RequireRole permission="administer" title={t("nav.settings")}>
+                <SettingsPage />
+              </RequireRole>
+            }
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

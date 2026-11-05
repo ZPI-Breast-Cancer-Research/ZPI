@@ -1,9 +1,10 @@
-import { Link, NavLink } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 
 import logo from "../../assets/logo.png";
-import { useAuth, useCan } from "../../auth/AuthProvider";
+import { useCan } from "../../auth/AuthProvider";
 import type { Permission } from "../../auth/api";
 import { t, type MessageKey } from "../../i18n";
+import AccountMenu from "./AccountMenu";
 
 const MODULES: { to: string; label: MessageKey; permission?: Permission }[] = [
   { to: "/pulpit", label: "nav.dashboard" },
@@ -13,9 +14,7 @@ const MODULES: { to: string; label: MessageKey; permission?: Permission }[] = [
 ];
 
 export default function TopBar() {
-  const { user } = useAuth();
   const can = useCan();
-  const initial = user?.name.charAt(0).toUpperCase() ?? "";
 
   return (
     <header className="topbar">
@@ -41,13 +40,15 @@ export default function TopBar() {
       </label>
 
       <div className="topbar__util">
-        <NavLink to="/ustawienia">{t("nav.settings")}</NavLink>
-        <Link to="/ustawienia" aria-label={t("nav.account")}>
-          <span className="topbar__avatar" aria-hidden="true">
-            {initial}
-          </span>
-          {user?.name}
-        </Link>
+        {can("administer") && (
+          <NavLink to="/ustawienia" className="topbar__icon" aria-label={t("nav.settings")} title={t("nav.settings")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          </NavLink>
+        )}
+        <AccountMenu />
       </div>
     </header>
   );

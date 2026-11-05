@@ -10,6 +10,7 @@ import { t } from "../i18n";
 import ToolOptions, { RADIUS_MAX, RADIUS_MIN } from "../viewer/ToolOptions";
 import Viewer, { type MaskInfo } from "../viewer/Viewer";
 import Icon from "../viewer/icons";
+import { usePreferences } from "../settings/preferences";
 import { useViewerLayout } from "../viewer/layout";
 import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
 import ViewerToolRail from "../viewer/ViewerToolRail";
@@ -54,9 +55,10 @@ export default function CaseReview({ data, queue }: Props) {
   const startedAt = useRef(Date.now());
   // looking comes first, so a case opens with the hand
   const [tool, setTool] = useState<Tool>("pan");
+  const [preferred] = usePreferences();
   const [layout, setLayout] = useViewerLayout();
-  const [series, setSeries] = useState<Series>("post");
-  const [showMask, setShowMask] = useState(true);
+  const [series, setSeries] = useState<Series>(preferred.series);
+  const [showMask, setShowMask] = useState(preferred.maskShown);
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [brushShape, setBrushShape] = useState<BrushShape>("circle");
   const [brushRadius, setBrushRadius] = useState(5);
@@ -396,7 +398,11 @@ export default function CaseReview({ data, queue }: Props) {
               brushShape={brushShape}
               brushRadius={brushRadius}
               onEdit={() => (touch(), mask.addEdit())}
-              onSeriesFound={setAvailable}
+              onSeriesFound={(found) => {
+                setAvailable(found);
+                // the preferred series may be missing from this study
+                if (!found.includes(series)) setSeries("post");
+              }}
               onGridMatch={setGridMatch}
               onWindow={setWindowLevel}
               onMaskInfo={setMaskInfo}

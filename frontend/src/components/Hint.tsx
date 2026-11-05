@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { usePreferences } from "../settings/preferences";
+
 interface Props {
   name: string;
   shortcut?: string;
@@ -17,6 +19,7 @@ export default function Hint({ name, shortcut, text, place = "right", children }
   const box = useRef<HTMLDivElement>(null);
   const timer = useRef(0);
   const [open, setOpen] = useState(false);
+  const [{ hints }] = usePreferences();
 
   const hide = () => {
     window.clearTimeout(timer.current);
@@ -41,6 +44,7 @@ export default function Hint({ name, shortcut, text, place = "right", children }
       className="hint-anchor"
       onPointerEnter={() => {
         window.clearTimeout(timer.current);
+        if (!hints) return;
         timer.current = window.setTimeout(() => setOpen(true), DELAY);
       }}
       onPointerLeave={hide}
