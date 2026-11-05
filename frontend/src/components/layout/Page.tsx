@@ -8,12 +8,14 @@ interface PageProps {
   back?: { to: string; label: string };
   context?: ReactNode;
   actions?: ReactNode;
+  // a row of tabs under the banner, for screens with more than one part
+  tabs?: ReactNode;
   children: ReactNode;
 }
 
-export default function Page({ title, back, context, actions, children }: PageProps) {
+export default function Page({ title, back, context, actions, tabs, children }: PageProps) {
   return (
-    <div className="page">
+    <div className={tabs ? "page page--tabs" : "page"}>
       <section className="banner">
         {back && (
           <>
@@ -30,6 +32,7 @@ export default function Page({ title, back, context, actions, children }: PagePr
         {context}
         {actions && <div className="banner__actions">{actions}</div>}
       </section>
+      {tabs}
       <main className="page__body">{children}</main>
     </div>
   );

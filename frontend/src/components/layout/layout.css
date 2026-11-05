@@ -10,6 +10,68 @@
   min-height: 0;
 }
 
+.page--tabs {
+  grid-template-rows: var(--banner-height) auto minmax(0, 1fr);
+}
+
+/* tabs under the banner: the parts of one screen, each with its state in words */
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 8px 18px 0;
+  background: var(--color-banner);
+  border-bottom: 1px solid var(--color-rule-strong);
+}
+
+/* the active tab is a folder tab: page ground, open at the bottom, so it runs into the content */
+.tabs a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: -1px;
+  padding: 9px 18px 10px;
+  border: 1px solid transparent;
+  border-top-width: 2px;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  color: var(--color-ink-muted);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  background: var(--color-hover);
+  color: var(--color-ink);
+}
+
+.tabs a.active {
+  padding-bottom: 11px;
+  background: var(--color-ground);
+  border-color: var(--color-rule-strong);
+  border-top-color: var(--color-primary);
+  color: var(--color-ink);
+}
+
+.page--tabs .page__body {
+  padding-top: 12px;
+}
+
+.tabs__state {
+  color: var(--color-ink-faint);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.tabs__state--waiting {
+  color: var(--color-warning);
+}
+
+.tabs__state--running {
+  color: var(--color-running);
+}
+
 .page__body {
   min-height: 0;
   overflow: auto;

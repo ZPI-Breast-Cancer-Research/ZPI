@@ -18,76 +18,45 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
   const actions = useModelActions();
   const manages = useCan()("manageModels");
 
-  const segmentation = useQuery({
-    queryKey: ["models", "segmentation", search],
-    queryFn: fetchSegmentation,
-    enabled: module === "segmentation",
-  });
+  // segmentation always loads, its tab says when a version waits for a decision
+  const segmentation = useQuery({ queryKey: ["models", "segmentation", search], queryFn: fetchSegmentation });
   const extraction = useQuery({ queryKey: ["models", "extraction"], queryFn: fetchExtraction, enabled: module === "extraction" });
   const query = module === "segmentation" ? segmentation : extraction;
   const seg = segmentation.data;
 
-  const switcher = (
-    <nav className="segmented" aria-label={t("models.module")}>
+  // a tab speaks only when its model needs attention; the panels below give the details
+  const segState = seg?.candidate ? (
+    <span className="tabs__state tabs__state--waiting">{t("models.tab.waiting")}</span>
+  ) : seg?.training ? (
+    <span className="tabs__state tabs__state--running">{t("models.trainingNow")}</span>
+  ) : null;
+
+  const tabs = (
+    <nav className="tabs" aria-label={t("models.module")}>
       <NavLink to={`/modele${search}`} end>
         {t("models.segmentation")}
+        {segState}
       </NavLink>
-      <NavLink to="/modele/ekstrakcja">{t("models.extraction")}</NavLink>
+      <NavLink to={`/modele/ekstrakcja${search}`}>{t("models.extraction")}</NavLink>
     </nav>
   );
 
-  let context = null;
-  let buttons = null;
-  if (module === "segmentation" && seg) {
-    if (seg.candidate) {
-      context = (
-        <span>
-          {t("models.candidate")} <b>{t("models.version")} {seg.candidate.version}</b>{" "}
-          {t("models.candidateWaits")}
-        </span>
-      );
-      buttons = manages && (
-        <>
-          <button type="button" className="btn" onClick={() => setRejecting(true)}>
-            {t("models.reject")}
-          </button>
-          <button
-            type="button"
-            className="btn btn--primary"
-            disabled={actions.promote.isPending}
-            onClick={() => actions.promote.mutate(seg.candidate!.version)}
-          >
-            {t("models.promote", { v: seg.candidate.version })}
-          </button>
-        </>
-      );
-    } else {
-      context = (
-        <span>
-          {t("models.inProduction")} <b>{t("models.version")} {seg.production.version}</b>
-          {seg.training && <span className="status status--running"> · {t("models.trainingNow")}</span>}
-        </span>
-      );
-    }
-  } else if (module === "extraction" && extraction.data) {
-    context = (
-      <span>
-        {t("models.inUse")} <b>{t("models.version")} {extraction.data.version}</b>
-      </span>
+  const buttons =
+    module === "segmentation" &&
+    seg?.candidate &&
+    manages && (
+      <>
+        <button type="button" className="btn" onClick={() => setRejecting(true)}>
+          {t("models.reject")}
+        </button>
+        <button type="button" className="btn btn--primary" disabled={actions.promote.isPending} onClick={() => actions.promote.mutate(seg.candidate!.version)}>
+          {t("models.promote", { v: seg.candidate.version })}
+        </button>
+      </>
     );
-  }
 
   return (
-    <Page
-      title={t("nav.models")}
-      context={
-        <>
-          {switcher}
-          {context}
-        </>
-      }
-      actions={buttons}
-    >
+    <Page title={t("nav.models")} actions={buttons} tabs={tabs}>
       {query.isPending ? (
         <LoadingState label={t("models.loading")} />
       ) : query.error ? (
