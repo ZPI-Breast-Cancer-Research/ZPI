@@ -83,3 +83,57 @@ nnU-Net identifies datasets by number. Pick a new ID for any change of channels 
 ```bash
 pytest workers/segmentation workers/training/segmentation
 ```
+
+## Downloading a subset from Synapse
+
+`download_mamamia.py` downloads the 400 training cases listed in
+`data/splits/mamamia_train_400.csv`. The list is in git, so every machine gets the same cases.
+
+| Collection | Training cases | Selected | Share taken |
+|---|---|---|---|
+| DUKE | 200 | 125 | 63% |
+| ISPY1 | 104 | 104 | all |
+| ISPY2 | 849 | 124 | 15% |
+| NACT | 47 | 47 | all |
+
+How the list was made:
+
+- Only `split=train` cases from `frozen_split_official.csv`, which stays unchanged. Test cases are
+  not downloaded here; the frozen test set is used once, for the final evaluation.
+- Balanced between collections, not proportional: a proportional subset would be 71% ISPY2, and the
+  target hospital differs from all of them, so variety of scanners and protocols matters more.
+- Within a collection, cases are drawn to keep its distribution of `size_bin_eval`.
+- The 67 training cases already used locally stay in the list, so earlier runs remain comparable.
+- The draw is seeded, so the same inputs give an identical file.
+
+Because the subset is balanced, results on it do not describe the full dataset's collection mix.
+Report metrics per collection.
+
+Masks come from the `expert` folder on Synapse (`syn64871175`), never from `automatic`
+(`syn64874864`). All 400 cases were checked to exist on Synapse.
+
+### Run
+
+Create a [Synapse personal access token](https://www.synapse.org/#!PersonalAccessTokens:) and accept
+the MAMA-MIA data conditions. Keep the token out of the repo.
+
+```bash
+pip install synapseclient
+export SYNAPSE_AUTH_TOKEN=...       # or use ~/.synapseConfig
+
+python -m workers.training.segmentation.download_mamamia download --out data/mamamia --limit 2
+python -m workers.training.segmentation.download_mamamia download --out data/mamamia
+```
+
+Start with `--limit 2` to check the login and access. The second command downloads about 30 GB
+(estimated from a few cases). It can be rerun at any time: existing files are skipped, a failed case
+does not stop the others, and the exit code is 1 if any case failed. All phases of a case are
+downloaded, for later experiments with other channels.
+
+`--out` is the `--root` for `dataset.py`. Afterwards follow the commands in [Run](#run).
+
+To change the list, run `select` with `--overwrite`, then commit the file:
+
+```bash
+python -m workers.training.segmentation.download_mamamia select --keep-from data/mamamia --overwrite
+```

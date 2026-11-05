@@ -1,11 +1,13 @@
 import csv
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
 from workers.segmentation.channels import CHANNELS
 from workers.training.segmentation import build_nnunet_dataset as nnunet
+from workers.training.segmentation import download_mamamia as mamamia
 from workers.training.segmentation.dataset import (
     MAMAMIA_PHASES,
     MANIFEST_COLUMNS,
@@ -228,3 +230,137 @@ def test_unknown_split_is_rejected_before_writing(tmp_path):
     with pytest.raises(ValueError, match="tset"):
         nnunet.build_nnunet_dataset(source, manifest, tmp_path / "raw")
     assert not (tmp_path / "raw").exists()
+
+
+def split_rows(collection: str, count: int, split: str = "train") -> list[dict[str, str]]:
+    bins = ("<5 ml", "5–20 ml", ">20 ml")
+    return [
+        {
+            "patient_id": f"{collection}_{i:03d}",
+            "collection": collection,
+            "split": split,
+            "size_bin_eval": bins[i % 3],
+        }
+        for i in range(count)
+    ]
+
+
+def test_select_cases_meets_quotas_and_uses_train_only():
+    rows = split_rows("A", 30) + split_rows("B", 9) + split_rows("A", 30, split="test")
+    rows[-30:] = [{**row, "patient_id": f"T_{i}"} for i, row in enumerate(rows[-30:])]
+
+    selected = mamamia.select_cases(rows, quotas={"A": 12, "B": 9})
+
+    assert Counter(row["collection"] for row in selected) == {"A": 12, "B": 9}
+    assert all(row["split"] == "train" for row in selected)
+
+
+def test_select_cases_keeps_size_distribution():
+    selected = mamamia.select_cases(split_rows("A", 30), quotas={"A": 12})
+
+    assert Counter(row["size_bin_eval"] for row in selected) == {
+        "<5 ml": 4,
+        "5–20 ml": 4,
+        ">20 ml": 4,
+    }
+
+
+def test_select_cases_is_deterministic_and_seed_dependent():
+    rows = split_rows("A", 50)
+    ids = [row["patient_id"] for row in mamamia.select_cases(rows, quotas={"A": 10})]
+    same = [row["patient_id"] for row in mamamia.select_cases(rows[::-1], quotas={"A": 10})]
+    other = mamamia.select_cases(rows, quotas={"A": 10}, seed=7)
+
+    assert ids == same
+    assert ids != [row["patient_id"] for row in other]
+
+
+def test_select_cases_keeps_requested_cases():
+    keep = frozenset({"A_000", "A_003", "A_006"})  # all from one size bin
+
+    selected = mamamia.select_cases(split_rows("A", 30), quotas={"A": 9}, keep=keep)
+
+    ids = {row["patient_id"] for row in selected}
+    assert keep <= ids
+    assert len(ids) == 9
+
+
+def test_select_cases_rejects_too_large_quota():
+    with pytest.raises(ValueError, match="A"):
+        mamamia.select_cases(split_rows("A", 3), quotas={"A": 4})
+
+
+class FakeSynapse:
+    """Serves children and writes small files, as Synapse does for syn.get."""
+
+    def __init__(self, tree: dict[str, dict[str, str]], broken: frozenset[str] = frozenset()):
+        self.tree = tree
+        self.broken = broken
+        self.names = {entity: name for files in tree.values() for name, entity in files.items()}
+        self.downloads: list[str] = []
+
+    def getChildren(self, parent):  # noqa: N802 - name from synapseclient
+        return [{"name": name, "id": entity} for name, entity in self.tree[parent].items()]
+
+    def get(self, entity, downloadLocation, ifcollision):  # noqa: N803 - names from synapseclient
+        if entity in self.broken:
+            raise ConnectionError("network")
+        self.downloads.append(entity)
+        (Path(downloadLocation) / self.names[entity]).write_bytes(b"x")
+
+
+def fake_synapse(broken: frozenset[str] = frozenset()) -> FakeSynapse:
+    return FakeSynapse(
+        {
+            mamamia.IMAGES_FOLDER: {"A_1": "folder_a", "B_2": "folder_b"},
+            mamamia.EXPERT_LABELS_FOLDER: {"A_1.nii.gz": "label_a", "B_2.nii.gz": "label_b"},
+            "folder_a": {
+                "A_1_0000.nii.gz": "a0",
+                "A_1_0001.nii.gz": "a1",
+                "manifest.csv": "a_manifest",
+            },
+            "folder_b": {"B_2_0000.nii.gz": "b0"},
+        },
+        broken,
+    )
+
+
+def test_download_writes_the_layout_dataset_py_reads(tmp_path):
+    failed = mamamia.download_all(fake_synapse(), ["A_1"], tmp_path)
+
+    assert failed == {}
+    assert (tmp_path / "images" / "A_1" / "A_1_0001.nii.gz").exists()
+    assert (tmp_path / "segmentations" / "A_1.nii.gz").exists()
+    assert not (tmp_path / "images" / "A_1" / "manifest.csv").exists()
+    assert discover_mamamia(tmp_path) == ["A_1"]
+
+
+def test_download_skips_existing_files_on_rerun(tmp_path):
+    mamamia.download_all(fake_synapse(), ["A_1"], tmp_path)
+    second = fake_synapse()
+
+    mamamia.download_all(second, ["A_1"], tmp_path)
+
+    assert second.downloads == []
+
+
+def test_download_reports_failed_and_missing_cases_and_continues(tmp_path):
+    syn = fake_synapse(broken=frozenset({"a0"}))
+
+    failed = mamamia.download_all(syn, ["A_1", "NONE_9", "B_2"], tmp_path)
+
+    assert set(failed) == {"A_1", "NONE_9"}
+    assert "network" in failed["A_1"]
+    assert (tmp_path / "segmentations" / "B_2.nii.gz").exists()
+
+
+def test_download_fails_when_synapse_saves_no_file(tmp_path):
+    class NoAccessSynapse(FakeSynapse):
+        def get(self, entity, downloadLocation, ifcollision):  # noqa: N803 - synapseclient names
+            return None
+
+    syn = NoAccessSynapse(fake_synapse().tree)
+
+    failed = mamamia.download_all(syn, ["A_1"], tmp_path)
+
+    assert "not saved" in failed["A_1"]
