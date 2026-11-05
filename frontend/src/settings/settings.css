@@ -92,3 +92,70 @@
   color: var(--color-ink);
   font: 500 12px var(--font-sans);
 }
+
+/* accounts: the form and the issued password open as a band above the table */
+.users__band {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--color-banner);
+  border-bottom: 1px solid var(--color-rule-strong);
+}
+
+.users__fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 280px));
+  gap: 0 24px;
+}
+
+.users__fields .field {
+  margin-bottom: 4px;
+}
+
+.users__fields .select:disabled {
+  color: var(--color-ink-muted);
+  cursor: not-allowed;
+}
+
+.users__row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* the actions that change access stay apart from saving */
+.users__danger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.users__issued {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.users__issued code {
+  padding: 4px 10px;
+  background: var(--color-field);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 2px;
+  color: var(--color-ink);
+  font: 600 15px var(--font-mono, monospace);
+  letter-spacing: 0.06em;
+  user-select: all;
+}
+
+.users__me {
+  color: var(--color-ink-faint);
+  font-weight: 400;
+}
+
+.users__blocked td,
+.table .users__blocked .cell-strong {
+  color: var(--color-ink-faint);
+}
