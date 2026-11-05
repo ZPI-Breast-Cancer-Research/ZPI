@@ -53,7 +53,7 @@ Jako administrator modeli chcę, żeby system dotrenowywał model na poprawkach 
 1. Gdy liczba nowych zweryfikowanych badań przekroczy próg ustalony przez administratora modeli, system uruchamia dotrenowanie w najbliższym oknie, w którym nie jest używany (np. w nocy). Administrator może też uruchomić trening ręcznie.
 2. System dotrenowuje obecny model produkcyjny na poprawkach z domieszką danych MAMA-MIA. Na ekranie modeli widać status treningu i szacowany pozostały czas.
 3. Po zakończeniu treningu system ocenia nową wersję na stałym zbiorze testowym szpitala i na zbiorze testowym MAMA-MIA, a następnie sprawdza bramkę jakości: nowa wersja musi być lepsza od obecnej na danych szpitala, nie gorsza na MAMA-MIA i bez drastycznego pogorszenia na pojedynczych badaniach.
-4. Administrator modeli widzi porównanie metryk (Dice, HD95) obecnej i nowej wersji, wynik bramki jakości oraz kilka badań testowych, w których obie wersje różnią się najbardziej, z nałożonymi maskami: obecnego modelu, nowej wersji i zatwierdzoną przez lekarza.
+4. Administrator modeli widzi porównanie metryk (Dice, IoU, HD95) obecnej i nowej wersji, wynik bramki jakości oraz kilka badań testowych, w których obie wersje różnią się najbardziej, z nałożonymi maskami: obecnego modelu, nowej wersji i zatwierdzoną przez lekarza.
 5. Administrator modeli promuje nową wersję albo ją odrzuca, podając powód.
 6. Po promocji nowe badania są przetwarzane nową wersją; badania już przetwarzane kończą się na poprzedniej. Dotychczasowe wyniki zachowują informację, którą wersją powstały. Poprzednia wersja trafia do archiwum i można do niej wrócić.
 
@@ -172,7 +172,7 @@ Pytanie · od czego zależy · kto rozstrzyga.
 - Czy obrazy i opis mogą dochodzić osobno i w dowolnej kolejności? Czy opis można dołączyć do badania później? Kiedy startuje przetwarzanie? · stany badania, reguła startu przetwarzania · zespół (Patrycja – makiety)
 - Czy w jednym badaniu może być więcej niż jedna zmiana? · model danych (PR #33), pomiary, interfejs · zespół + opiekunka
 - Czy użytkownik może odrzucić wynik modelu w całości (maska zupełnie błędna, brak zmiany)? · statusy badania, dane do treningu · zespół
-- Gdzie i w jakim formacie zapisujemy poprawioną maskę (DICOM SEG w Orthanc czy plik w backendzie)? · edycja w OHIF, trening, pomiary · ARCH-1
+- Gdzie i w jakim formacie zapisujemy poprawioną maskę (DICOM SEG w Orthanc czy plik w backendzie)? · edycja w przeglądarce obrazów, trening, pomiary · ARCH-1
 - Kto w szpitalu będzie administratorem modeli (fizyk medyczny, dział nauki, IT, nikt)? · czy P2 jest w MVP · opiekunka + szpital
 - Czy ktoś potrzebuje dwóch ról naraz (radiolog i administrator)? Na razie jedna rola na konto: administrator nie weryfikuje badań, badacz ma tylko odczyt · uprawnienia, model użytkownika · zespół + szpital
 - Czy promocja modelu wymaga akceptacji klinicznej (radiolog lub kierownik)? · role, kroki P2 · szpital

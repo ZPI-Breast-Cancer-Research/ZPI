@@ -52,7 +52,8 @@ flowchart TB
 
     subgraph szpital["Szpital (dane pacjentek nie opuszczają tej granicy)"]
         radiolog["<b>Radiolog</b><br/>[Osoba]<br/>Dodaje badania, weryfikuje<br/>i poprawia maski oraz dane z opisu"]
-        admin["<b>Administrator modeli</b><br/>[Osoba]<br/>Uruchamia dotrenowanie,<br/>promuje lub odrzuca wersje modelu"]
+        admin["<b>Administrator</b><br/>[Osoba]<br/>Zarządza kontami i wersjami modeli,<br/>przegląda dziennik zdarzeń i stan systemu"]
+        badacz["<b>Badacz</b><br/>[Osoba]<br/>Przegląda wyniki<br/>i metryki modeli (odczyt)"]
         maria["<b>MARIA</b><br/>[System]<br/>Segmentacja zmian w MRI piersi,<br/>ekstrakcja danych z opisów,<br/>weryfikacja i dotrenowanie modeli"]
         pacs["<b>PACS szpitala</b><br/>[System zewnętrzny]<br/>Archiwum badań obrazowych"]
     end
@@ -60,7 +61,8 @@ flowchart TB
     mamamia["<b>MAMA-MIA</b><br/>[Zbiór danych zewnętrzny]<br/>Publiczny zbiór MRI piersi<br/>z maskami ekspertów"]
 
     radiolog -- "Dodaje badania i opisy,<br/>weryfikuje wyniki [HTTPS]" --> maria
-    admin -- "Zarządza wersjami modeli [HTTPS]" --> maria
+    admin -- "Zarządza kontami i wersjami modeli [HTTPS]" --> maria
+    badacz -- "Przegląda wyniki [HTTPS]" --> maria
     pacs -- "Przesyła badania DICOM<br/>[DICOM C-STORE]" --> maria
     zespol -- "Dostarcza wersje modelu<br/>(wagi + manifest)" --> maria
     zespol -. "Trenuje model bazowy<br/>(offline, poza MARIĄ)" .-> mamamia
@@ -68,7 +70,7 @@ flowchart TB
     classDef person fill:#08427b,stroke:#052e56,color:#fff
     classDef system fill:#1168bd,stroke:#0b4884,color:#fff
     classDef external fill:#999999,stroke:#6b6b6b,color:#fff
-    class radiolog,admin,zespol person
+    class radiolog,admin,badacz,zespol person
     class maria system
     class pacs,mamamia external
     style szpital fill:none,stroke:#444,stroke-dasharray: 5 5
@@ -79,7 +81,8 @@ flowchart TB
 ```mermaid
 flowchart TB
     radiolog["<b>Radiolog</b><br/>[Osoba]"]
-    admin["<b>Administrator modeli</b><br/>[Osoba]"]
+    admin["<b>Administrator</b><br/>[Osoba]"]
+    badacz["<b>Badacz</b><br/>[Osoba]"]
     pacs["<b>PACS szpitala</b><br/>[System zewnętrzny]"]
 
     subgraph maria["MARIA [System]"]
@@ -109,6 +112,7 @@ flowchart TB
 
     radiolog -- "Używa [HTTPS]" --> ui
     admin -- "Używa [HTTPS]" --> ui
+    badacz -- "Używa [HTTPS]" --> ui
     pacs -- "Przesyła badania [DICOM C-STORE]" --> orthanc
 
     ui -- "API i obrazy [HTTPS]" --> proxy
@@ -141,7 +145,7 @@ flowchart TB
     classDef container fill:#438dd5,stroke:#2e6295,color:#fff
     classDef store fill:#2e6295,stroke:#1f4466,color:#fff
     classDef external fill:#999999,stroke:#6b6b6b,color:#fff
-    class radiolog,admin person
+    class radiolog,admin,badacz person
     class ui,proxy,api,wseg,wext,wtrain,beat,llm,mlflow container
     class redis,orthanc,pg,s3 store
     class pacs external

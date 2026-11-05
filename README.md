@@ -20,16 +20,18 @@ The project is part of a broader research plan (ZPI + TransMed/ABM): structuring
 - Form for verifying and correcting data extracted from the report
 - **Review queue** sorted by model uncertainty (active learning)
 - **Lesion overview** — an integrated view: image + mask, quantitative metrics (volume, dimensions) and data from the report
-- Model fine-tuning pipeline on corrections, with a quality gate and a version registry (MLflow)
-- Admin panel: cases, model versions, metrics
+- Model fine-tuning pipeline on corrections, with a quality gate and a version registry (MLflow); the admin compares versions and promotes, rejects or rolls back one
 
 ---
 
 ## 2. System architecture
 
 ![System architecture](docs/architecture.svg)
+
 ### 2.1 Entity-Relationship Diagram
+
 ![database schema](docs/erd.svg)
+
 ---
 
 ## 3. Application modules
@@ -97,7 +99,7 @@ The radiologist does not review cases in random order — the system shows first
 **Segmentation**
 - Export of verified cases to the nnU-Net format (`imagesTr` / `labelsTr`).
 - Fine-tuning from the weights of the current production model (`-pretrained_weights`, reduced number of epochs).
-- Metrics: Dice, HD95 on the frozen test set.
+- Metrics: Dice, IoU, HD95 on the frozen test set.
 
 **Extraction** — two stages:
 - *From the start:* corrections feed a pool of few-shot examples; the most similar reports (embeddings) are selected for the prompt. The prompt + example set is versioned.
@@ -129,11 +131,13 @@ Activating a version moves the alias; the previous champion stays in the registr
 ## 5. Component description
 
 ### Frontend
-- **React + OHIF Viewer / Cornerstone3D** — MRI visualisation with the mask, segmentation tools (brush, eraser) for correcting masks.
+- **React + Cornerstone3D (own viewer)** — MRI visualisation with the mask, segmentation tools (brush, eraser) for correcting masks.
 - DICOM and report upload, study list, review queue, extraction form, lesion overview, model versions panel.
+- Each role sees only its screens: the radiologist adds and verifies studies, the researcher reads results and model metrics, the admin manages accounts and model versions and sees the audit log and system status.
 
 ### Backend — Django + Django REST Framework
-- Business logic, authentication, roles: radiologist, admin, researcher.
+- Business logic, authentication, roles: radiologist, researcher, admin.
+- Audit log: every approval, correction and model decision with who and when; read-only.
 - ORM: Patient → Study → DICOM Series / Report → Prediction → Correction; model versions.
 - Django Admin as a data review panel.
 - DRF exposes the REST API for the frontend.
@@ -182,7 +186,7 @@ Activating a version moves the alias; the previous champion stays in the registr
 | DICOM conversion | pydicom, nibabel |
 | DICOM server (PACS) | Orthanc (DICOMweb) |
 | Database | PostgreSQL |
-| Frontend | React, OHIF Viewer / Cornerstone3D |
+| Frontend | React, Cornerstone3D (own viewer) |
 | Containerisation | Docker / docker-compose |
 | GPU | dev: RTX 4050 (6 GB); training and prod: GPU with more memory (to be decided) |
 
@@ -216,16 +220,24 @@ mri-breast-analysis/
 │   ├── llm-server/          # llama.cpp server, GGUF fetched from Minio
 │   ├── minio/               # buckets: studies, masks, reports, models, mlflow
 │   ├── mlflow/              # MLflow image with Postgres + S3 drivers
-│   └── orthanc/orthanc.json
+│   └── orthanc/             # orthanc.json, load-test-study.sh (sample MRI)
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # upload, study list, queue, extraction form
-│   │   ├── viewer/          # OHIF/Cornerstone3D, mask editing
-│   │   └── lesion-overview/ # lesion overview
+│   │   ├── pages/           # one file per screen
+│   │   ├── components/      # app shell, top bar, shared pieces
+│   │   ├── auth/            # sign-in, roles and permissions
+│   │   ├── dashboard/       # dashboard panels
+│   │   ├── studies/         # study list, upload, report pairing
+│   │   ├── review/          # verification: mask, BI-RADS form, drafts
+│   │   ├── viewer/          # Cornerstone3D viewer, mask editing
+│   │   ├── lesion-overview/ # lesion overview
+│   │   ├── models/          # model versions, quality gate, metrics
+│   │   ├── settings/        # account settings; accounts, audit log, system status for the admin
+│   │   └── i18n/            # Polish UI texts
 │   └── package.json
 ├── notebook/                # EDA
 ├── docker-compose.yml       # one service per box of docs/architecture.svg
-├── docs/                    # architecture diagram, ZPI documentation
+├── docs/                    # architecture diagram, ZPI documentation, adr/
 └── README.md
 ```
 
@@ -257,31 +269,30 @@ docker compose --profile ml up --build               # + workers (LLM: LM Studio
 docker compose --profile ml --profile llm up --build # + llama.cpp server with the GGUF from Minio
 ```
 
-To create an admin account:
+To create a Django superuser (for the Django admin panel):
 
 ```bash
 docker compose exec backend python manage.py createsuperuser
 ```
 
-Open the app through the gateway – it serves the UI, the API and the viewer on one origin:
+Open the app through the gateway – it serves the UI, the API and the images (DICOMweb) on one origin:
 
 | Service | URL |
 |---|---|
-| **App (study list)** | **http://localhost:8080** |
+| **App** | **http://localhost:8080** |
 | Backend API – health | http://localhost:8080/api/health |
 | Backend API – studies | http://localhost:8080/api/studies |
-| OHIF viewer | http://localhost:8080/ohif/ |
 | Django admin | http://localhost:8000/admin/ |
 | MLflow UI | http://localhost:5000 |
 | Minio console | http://localhost:9001 |
 
 If ports `5432`, `8000` or `8080` are already taken on your machine, change `POSTGRES_HOST_PORT` / `BACKEND_HOST_PORT` / `GATEWAY_HOST_PORT` in `.env` (and keep `ORTHANC_PUBLIC_URL` in sync with the gateway port).
 
-The UI calls `/api` on its own origin (`VITE_API_URL` empty). Requests to `/ohif` and `/dicom-web` are allowed by Django (`/api/auth/orthanc`, nginx `auth_request`) and the gateway logs in to Orthanc itself (`ORTHANC_GATEWAY_AUTH`), so the browser never gets the Orthanc credentials. The direct ports (`5173`, `8000`, `8042`) are for development only.
+The UI calls `/api` on its own origin (`VITE_API_URL` empty). Requests to `/dicom-web` are allowed by Django (`/api/auth/orthanc`, nginx `auth_request`) and the gateway logs in to Orthanc itself (`ORTHANC_GATEWAY_AUTH`), so the browser never gets the Orthanc credentials. The direct ports (`5173`, `8000`, `8042`) are for development only.
 
-### Orthanc / OHIF
+### Orthanc
 
-Orthanc runs with the DICOMweb and OHIF plugins enabled (config in `infra/orthanc/orthanc.json`). It is also started by `docker compose up`; to run only the viewer:
+Orthanc runs with the DICOMweb plugin (config in `infra/orthanc/orthanc.json`). It is also started by `docker compose up`; to run only Orthanc:
 
 ```bash
 cp .env.example .env      # if not done yet
@@ -290,29 +301,32 @@ docker compose up -d orthanc
 
 | Service | URL |
 |---|---|
-| Orthanc UI (upload studies, direct – dev only) | http://localhost:8042/ui/app/ |
-| OHIF viewer (through the gateway) | http://localhost:8080/ohif/ |
+| Orthanc UI (direct – dev only) | http://localhost:8042/ui/app/ |
 | DICOMweb (through the gateway) | http://localhost:8080/dicom-web/studies |
 
 Local credentials: `orthanc` / `orthanc` (development only). DICOM C-STORE is available on port `4242` (AET `ORTHANC`).
 
-#### Run the viewer with sample data
-
-1. Download a breast MRI study, e.g. one patient from [Duke-Breast-Cancer-MRI](https://www.cancerimagingarchive.net/collection/duke-breast-cancer-mri/) (TCIA, use the NBIA Data Retriever).
-2. Open http://localhost:8042/ui/app/, click *Upload* and drop the DICOM folder.
-3. Open http://localhost:8080/ohif/ (or click the study in the app) and select the study.
-
-Never commit DICOM or patient data — everything under `data/` is git-ignored.
-
 The backend treats Orthanc as an external service reached via `ORTHANC_URL` (from inside the Docker network) and builds viewer links with `ORTHANC_PUBLIC_URL` (as seen from the browser). If both `ORTHANC_USER` and `ORTHANC_PASSWORD` are set, the backend sends them as HTTP basic auth.
 
 `/api/health` always returns `200` while the API and database are up, and reports Orthanc as `"ok"`, `"unauthorized"` (credentials rejected) or `"unreachable"`. `/api/studies` returns `503` with an explanatory message when Orthanc is unreachable or rejects the credentials.
+
+### Sample data (development)
+
+Orthanc starts empty. `infra/orthanc/load-test-study.sh` downloads one breast MRI from the public Duke Breast Cancer MRI collection (NCI Imaging Data Commons, CC BY-NC 4.0) into `data/duke` and uploads it to the local Orthanc only. It needs `uv` and the stack running:
+
+```bash
+infra/orthanc/load-test-study.sh                  # Breast_MRI_001
+infra/orthanc/load-test-study.sh Breast_MRI_002   # another patient
+```
+
+Duke has no subtraction series and no report, so those parts can't be tried on it.
 
 ### Tests
 
 ```bash
 docker compose run --rm backend python manage.py test
 ```
+
 ## Git workflow
 
 `master` is protected: all changes go through a pull request with at least 1 approval. No direct pushes, no force pushes.
