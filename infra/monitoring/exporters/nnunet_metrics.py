@@ -37,6 +37,7 @@ def parse_log(text: str) -> Progress | None:
         if not match:
             continue
         timestamp, message = match.groups()
+        message = message.strip()  # nnU-Net ends log lines with a space
 
         if found := re.fullmatch(r"Epoch (\d+)", message):
             epoch = int(found.group(1))

@@ -31,6 +31,13 @@ def test_parse_log_returns_last_finished_epoch():
     assert progress.finished_at == datetime(2026, 11, 4, 23, 46, 54, 577962).timestamp()
 
 
+def test_parse_log_handles_trailing_spaces_of_real_logs():
+    log = "".join(f"{line} \n" for line in LOG.splitlines())
+
+    assert parse_log(log) == parse_log(LOG)
+    assert parse_log(log).epoch == 0
+
+
 def test_parse_log_without_a_finished_epoch():
     assert parse_log("2026-11-04 23:44:08.267104: Epoch 0\n") is None
     assert parse_log("") is None
