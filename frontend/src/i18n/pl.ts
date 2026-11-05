@@ -263,7 +263,7 @@ export const pl = {
   "models.reject.done": "Wersja {v} odrzucona",
   "models.versions": "Wersje",
   "models.versions.note": "wszystkie zostają w rejestrze",
-  "models.versions.testNote": "Dice i HD95 na szpitalnym zbiorze testowym (zamrożony, nie trafia do treningu).",
+  "models.versions.testNote": "Dice, IoU i HD95 na szpitalnym zbiorze testowym (zamrożony, nie trafia do treningu).",
   "models.col.version": "Wersja",
   "models.col.status": "Status",
   "models.col.inProduction": "W produkcji",

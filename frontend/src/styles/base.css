@@ -337,11 +337,6 @@ textarea {
   color: var(--color-ink-faint);
 }
 
-.alias {
-  color: var(--color-ink-faint);
-  font: 400 12.5px var(--font-mono);
-}
-
 /* toast */
 .toast {
   position: fixed;

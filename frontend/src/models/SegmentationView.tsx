@@ -79,7 +79,7 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
           <Panel
             title={
               <>
-                {t("models.decision")} · {t("models.version")} {data.candidate.version} <span className="alias">@candidate</span>{" "}
+                {t("models.decision")} · {t("models.version")} {data.candidate.version}{" "}
                 {t("models.decision.vs")} {data.production.version}
               </>
             }
@@ -143,7 +143,7 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
       <Panel
         title={
           <>
-            {t("models.inProduction")} · {t("models.version")} {data.production.version} <span className="alias">@production</span>
+            {t("models.inProduction")} · {t("models.version")} {data.production.version}
           </>
         }
         aux={`${t("models.since")} ${formatDate(data.production.since)} · ${t("models.approvedBy")} ${data.production.approvedBy}`}
@@ -260,6 +260,7 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
               <th>{t("models.col.status")}</th>
               <th>{t("models.col.inProduction")}</th>
               <th className="cell-right">Dice</th>
+              <th className="cell-right">IoU</th>
               <th className="cell-right">HD95</th>
               <th className="cell-right">Dice MAMA-MIA</th>
               <th>{t("models.col.decision")}</th>
@@ -277,6 +278,7 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
                 </td>
                 <td>{period(v)}</td>
                 <td className="cell-right">{formatMetric(v.dice)}</td>
+                <td className="cell-right">{formatMetric(v.iou)}</td>
                 <td className="cell-right">{formatMetric(v.hd95, " mm")}</td>
                 <td className="cell-right">{formatMetric(v.diceMamaMia)}</td>
                 <td>

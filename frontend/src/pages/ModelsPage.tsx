@@ -42,7 +42,7 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
     if (seg.candidate) {
       context = (
         <span>
-          {t("models.candidate")} <b>{t("models.version")} {seg.candidate.version}</b> <span className="alias">@candidate</span>{" "}
+          {t("models.candidate")} <b>{t("models.version")} {seg.candidate.version}</b>{" "}
           {t("models.candidateWaits")}
         </span>
       );
@@ -64,7 +64,7 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
     } else {
       context = (
         <span>
-          {t("models.inProduction")} <b>{t("models.version")} {seg.production.version}</b> <span className="alias">@production</span>
+          {t("models.inProduction")} <b>{t("models.version")} {seg.production.version}</b>
           {seg.training && <span className="status status--running"> · {t("models.trainingNow")}</span>}
         </span>
       );

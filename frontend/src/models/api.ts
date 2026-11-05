@@ -9,6 +9,7 @@ export interface ModelVersion {
   from: string | null;
   to: string | null;
   dice: number | null;
+  iou: number | null;
   hd95: number | null;
   diceMamaMia: number | null;
   decision: "promoted" | "replaced" | "rejected_gate" | "rejected" | "pending" | "baseline";
@@ -51,20 +52,20 @@ export interface ExtractionOverview {
 
 const WEEKS = ["2026-08-31", "2026-09-07", "2026-09-14", "2026-09-21", "2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19"];
 
-// Dice/HD95/F1 come from MLflow, keep them null here
+// Dice/IoU/HD95/F1 come from MLflow, keep them null here
 export async function fetchSegmentation(): Promise<SegmentationOverview> {
   const scenario = mockScenario();
   const candidate = scenario === "candidate";
   const training = scenario === "training";
 
   const versions: ModelVersion[] = [
-    { version: "7", status: "production", from: "2026-10-05", to: null, dice: null, hd95: null, diceMamaMia: null, decision: "promoted", decidedBy: "Użytkownik", canRestore: false },
-    { version: "6", status: "archived", from: "2026-09-01", to: "2026-10-05", dice: null, hd95: null, diceMamaMia: null, decision: "replaced", decidedBy: null, canRestore: true },
-    { version: "5", status: "rejected", from: null, to: null, dice: null, hd95: null, diceMamaMia: null, decision: "rejected_gate", decidedBy: null, canRestore: false },
-    { version: "bazowa", status: "archived", from: "2026-06-15", to: "2026-09-01", dice: null, hd95: null, diceMamaMia: null, decision: "baseline", decidedBy: null, canRestore: true },
+    { version: "7", status: "production", from: "2026-10-05", to: null, dice: null, iou: null, hd95: null, diceMamaMia: null, decision: "promoted", decidedBy: "Użytkownik", canRestore: false },
+    { version: "6", status: "archived", from: "2026-09-01", to: "2026-10-05", dice: null, iou: null, hd95: null, diceMamaMia: null, decision: "replaced", decidedBy: null, canRestore: true },
+    { version: "5", status: "rejected", from: null, to: null, dice: null, iou: null, hd95: null, diceMamaMia: null, decision: "rejected_gate", decidedBy: null, canRestore: false },
+    { version: "bazowa", status: "archived", from: "2026-06-15", to: "2026-09-01", dice: null, iou: null, hd95: null, diceMamaMia: null, decision: "baseline", decidedBy: null, canRestore: true },
   ];
   if (candidate) {
-    versions.unshift({ version: "8", status: "candidate", from: null, to: null, dice: null, hd95: null, diceMamaMia: null, decision: "pending", decidedBy: null, canRestore: false });
+    versions.unshift({ version: "8", status: "candidate", from: null, to: null, dice: null, iou: null, hd95: null, diceMamaMia: null, decision: "pending", decidedBy: null, canRestore: false });
   }
 
   return mockDelay({
