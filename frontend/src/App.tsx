@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth, RequireRole } from "./auth/AuthProvider";
 import AppShell from "./components/layout/AppShell";
 import { t } from "./i18n";
+import AccountPage from "./pages/AccountPage";
 import DashboardPage from "./pages/DashboardPage";
 import LesionOverviewPage from "./pages/LesionOverviewPage";
 import LoginPage from "./pages/LoginPage";
@@ -22,11 +23,18 @@ export default function App() {
           <Route path="pulpit" element={<DashboardPage />} />
           <Route path="badania" element={<StudiesPage />} />
           <Route path="badania/:studyId" element={<LesionOverviewPage />} />
-          <Route path="weryfikacja/:studyId?" element={<ReviewPage />} />
+          <Route
+            path="weryfikacja/:studyId?"
+            element={
+              <RequireRole permission="review" title={t("nav.review")}>
+                <ReviewPage />
+              </RequireRole>
+            }
+          />
           <Route
             path="modele"
             element={
-              <RequireRole role="admin" title={t("nav.models")}>
+              <RequireRole permission="viewModels" title={t("nav.models")}>
                 <ModelsPage module="segmentation" />
               </RequireRole>
             }
@@ -34,12 +42,20 @@ export default function App() {
           <Route
             path="modele/ekstrakcja"
             element={
-              <RequireRole role="admin" title={t("nav.models")}>
+              <RequireRole permission="viewModels" title={t("nav.models")}>
                 <ModelsPage module="extraction" />
               </RequireRole>
             }
           />
-          <Route path="ustawienia" element={<SettingsPage />} />
+          <Route path="konto" element={<AccountPage />} />
+          <Route
+            path="ustawienia"
+            element={
+              <RequireRole permission="administer" title={t("nav.settings")}>
+                <SettingsPage />
+              </RequireRole>
+            }
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

@@ -2,6 +2,17 @@ import { mockDelay, mockScenario } from "../mock";
 
 export type Role = "radiologist" | "researcher" | "admin";
 
+// one role per account; the admin runs the system and the models but doesn't verify cases
+export const PERMISSIONS = {
+  review: ["radiologist"],
+  addStudies: ["radiologist"],
+  viewModels: ["researcher", "admin"],
+  manageModels: ["admin"],
+  administer: ["admin"],
+} satisfies Record<string, Role[]>;
+
+export type Permission = keyof typeof PERMISSIONS;
+
 export interface User {
   login: string;
   name: string;

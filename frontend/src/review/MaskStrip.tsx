@@ -1,53 +1,79 @@
-import { formatMetric } from "../format";
+import Hint from "../components/Hint";
 import { t } from "../i18n";
-import type { MaskState } from "../viewer/types";
-import type { ReviewCase } from "./api";
+import Icon from "../viewer/icons";
 
 interface Props {
-  state: MaskState;
-  measurements: ReviewCase["measurements"];
-  onConfirm: () => void;
+  corrected: boolean;
+  // approved on its own: locked until the approval is taken back
+  approved: boolean;
+  // slices that differ from the model's mask in the main view
+  edited: number;
+  // empty slices between drawn ones, numbered from 0
+  gaps: number[];
+  version?: string;
+  pending: boolean;
+  onGoTo: (index: number) => void;
+  onFill: () => void;
   onRestore: () => void;
+  onApprove: () => void;
+  onUnapprove: () => void;
+  showMask: boolean;
+  onToggleMask: () => void;
 }
 
-export default function MaskStrip({ state, measurements, onConfirm, onRestore }: Props) {
+// only what is about the mask itself: its state, a gap to fill, the way back to the model's, approving it
+export default function MaskStrip(props: Props) {
+  const { corrected, approved, edited, gaps, version, pending, onGoTo, onFill, onRestore, onApprove, onUnapprove, showMask, onToggleMask } = props;
+  const state = approved ? "review.mask.approved" : corrected ? "review.mask.corrected" : "review.mask.proposed";
   return (
     <div className="mask-strip" aria-label={t("review.mask")}>
-      <span className="mask-strip__label">{t("review.mask")}</span>
-      {state === "corrected" ? (
-        <span className="muted">{t("review.mask.recalc")}</span>
-      ) : (
-        <>
-          <span>
-            {t("review.mask.volume")} <b>{formatMetric(measurements.volume, " cm³")}</b>
-          </span>
-          <span>
-            {t("review.mask.size")} <b>{formatMetric(measurements.size, " mm")}</b>
-          </span>
-        </>
-      )}
-      <span>
-        {t("review.mask.inReport")} <b>{formatMetric(measurements.sizeInReport, " mm")}</b>
+      <MaskToggle shown={showMask} onToggle={onToggleMask} />
+      <span className={corrected && !approved ? "mask-strip__state mask-strip__state--corrected" : "mask-strip__state"} title={version && t("review.maskVersion", { v: version })}>
+        {t(state)}
+        {corrected && edited > 0 && <small> {t(edited === 1 ? "review.mask.onSlice" : "review.mask.onSlices", { n: edited })}</small>}
       </span>
-      <span className="mask-strip__end">
-        {state === "proposed" && (
-          <>
-            <span className="status">{t("review.mask.proposed")}</span>
-            <button type="button" className="btn" onClick={onConfirm}>
-              {t("review.mask.confirm")}
+      {!approved && gaps.length > 0 && (
+        <span className="mask-strip__gap">
+          {t(gaps.length === 1 ? "review.mask.gap" : "review.mask.gaps", { n: gaps.length })}{" "}
+          <button type="button" className="link" onClick={() => onGoTo(gaps[0])}>
+            {gaps[0] + 1}
+          </button>
+          {" · "}
+          <Hint name={t("viewer.fill")} shortcut="I" text={t("viewer.hint.fill")} place="top">
+            <button type="button" className="link" onClick={onFill}>
+              {t(gaps.length === 1 ? "review.mask.fillGap" : "review.mask.fillGaps")}
             </button>
-          </>
-        )}
-        {state === "confirmed" && <span className="status status--confirmed">{t("review.mask.confirmed")}</span>}
-        {state === "corrected" && (
+          </Hint>
+        </span>
+      )}
+      <span className="mask-strip__end">
+        {approved ? (
+          <button type="button" className="btn" disabled={pending} onClick={onUnapprove}>
+            {t("review.mask.unapprove")}
+          </button>
+        ) : (
           <>
-            <span className="status status--corrected">{t("review.mask.corrected")}</span>
-            <button type="button" className="link" onClick={onRestore}>
-              {t("review.mask.restore")}
+            {corrected && (
+              <button type="button" className="link" onClick={onRestore}>
+                {t("review.mask.restore")}
+              </button>
+            )}
+            <button type="button" className="btn btn--confirm" disabled={pending} title={t("review.mask.approveTitle")} onClick={onApprove}>
+              {t("review.mask.approve")}
             </button>
           </>
         )}
       </span>
     </div>
+  );
+}
+
+export function MaskToggle({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" className="mask-strip__eye" aria-pressed={shown} title={t("viewer.maskShown")} onClick={onToggle}>
+      <Icon name="eye" />
+      {!shown && t("viewer.maskHidden")}
+      <kbd>M</kbd>
+    </button>
   );
 }

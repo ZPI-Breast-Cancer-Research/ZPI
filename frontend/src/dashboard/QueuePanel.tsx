@@ -6,9 +6,10 @@ import { formatDate, formatDecimal } from "../format";
 import { t } from "../i18n";
 import type { QueueItem } from "./api";
 
-export default function QueuePanel({ items }: { items: QueueItem[] }) {
+// only a radiologist opens cases; the others see the queue as it stands
+export default function QueuePanel({ items, canOpen }: { items: QueueItem[]; canOpen: boolean }) {
   const navigate = useNavigate();
-  const open = (item: QueueItem) => navigate(`/weryfikacja/${item.studyId}`);
+  const open = (item: QueueItem) => canOpen && navigate(`/weryfikacja/${item.studyId}`);
 
   return (
     <Panel title={t("dashboard.queue")} aux={t("dashboard.queue.hint")}>
@@ -37,8 +38,8 @@ export default function QueuePanel({ items }: { items: QueueItem[] }) {
             {items.map((item) => (
               <tr
                 key={item.studyId}
-                className="is-clickable"
-                tabIndex={0}
+                className={canOpen ? "is-clickable" : undefined}
+                tabIndex={canOpen ? 0 : undefined}
                 onClick={() => open(item)}
                 onKeyDown={(event) => event.key === "Enter" && open(item)}
               >
@@ -47,9 +48,11 @@ export default function QueuePanel({ items }: { items: QueueItem[] }) {
                 <td>{formatDate(item.studyDate)}</td>
                 <td className="cell-right">{formatDecimal(item.uncertainty)}</td>
                 <td className="cell-right">
-                  <Link className="link" to={`/weryfikacja/${item.studyId}`} onClick={(event) => event.stopPropagation()}>
-                    {t("dashboard.review")}
-                  </Link>
+                  {canOpen && (
+                    <Link className="link" to={`/weryfikacja/${item.studyId}`} onClick={(event) => event.stopPropagation()}>
+                      {t("dashboard.review")}
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}

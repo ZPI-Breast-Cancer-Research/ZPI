@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { errorText } from "../api";
+import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import { ErrorState, LoadingState } from "../components/State";
 import AttentionPanel from "../dashboard/AttentionPanel";
@@ -13,6 +15,8 @@ import { t } from "../i18n";
 
 export default function DashboardPage() {
   const { data, error, isPending, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: fetchDashboard });
+  const can = useCan();
+  const reviews = can("review");
 
   const counts = data && (
     <>
@@ -33,20 +37,22 @@ export default function DashboardPage() {
       title={t("nav.dashboard")}
       context={counts}
       actions={
-        <Link className="btn btn--primary" to="/weryfikacja">
-          {t("dashboard.start")}
-        </Link>
+        reviews && (
+          <Link className="btn btn--primary" to="/weryfikacja">
+            {t("dashboard.start")}
+          </Link>
+        )
       }
     >
       {isPending ? (
         <LoadingState label={t("dashboard.loading")} />
       ) : error ? (
-        <ErrorState title={t("dashboard.error")} body={error.message} onRetry={() => refetch()} />
+        <ErrorState title={t("dashboard.error")} body={errorText(error)} onRetry={() => refetch()} />
       ) : (
         <div className="dashboard">
-          <QueuePanel items={data.queue} />
+          <QueuePanel items={data.queue} canOpen={reviews} />
           <div className="dashboard__side">
-            <AttentionPanel items={data.attention} />
+            <AttentionPanel items={data.attention.filter((item) => item.kind !== "model_candidate" || can("viewModels"))} />
             <ProcessingPanel items={data.inProgress} />
             <VerifiedChart days={data.verifiedLastWeek} />
           </div>

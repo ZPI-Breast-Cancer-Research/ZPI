@@ -1,5 +1,7 @@
-import { fetchStudies, sendStudy as apiSendStudy, api } from "../api";
+import { api, fetchStudies, sendStudy as apiSendStudy } from "../api";
+import { toIsoDate } from "../format";
 import { MOCK_API, mockDelay } from "../mock";
+import { reviewProgress } from "../review/api";
 
 export type ImageStatus =
   | "queued"
@@ -20,7 +22,8 @@ export interface StudyRow {
   image: ImageStatus | null;
   report: ReportStatus | null;
   uncertainty: number | null;
-  viewerUrl: string | null;
+  // ISO date and time the image was verified
+  verifiedAt: string | null;
 }
 
 export interface UnassignedReport {
@@ -41,6 +44,10 @@ function dicomDateToIso(value: string | null): string | null {
   return value && /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : null;
 }
 
+const todayAt = (time: string) => `${toIsoDate(new Date())}T${time}`;
+
+const VERIFIED_AT: Record<string, string> = { s6: todayAt("09:12"), s7: todayAt("08:47"), s8: todayAt("10:40") };
+
 const MOCK_ROWS: StudyRow[] = (
   [
     ["processing", "missing", null],
@@ -60,26 +67,58 @@ const MOCK_ROWS: StudyRow[] = (
   image,
   report,
   uncertainty,
-  viewerUrl: null,
+  verifiedAt: VERIFIED_AT[`s${i + 1}`] ?? null,
 }));
 
-// the backend doesn't return image/report statuses yet, so those stay empty for real data
+// mock rows follow what was approved on the review screen in this session
+function withReview(row: StudyRow): StudyRow {
+  const { mask, form, done } = reviewProgress(row.id);
+  if (!mask && !form) return row;
+  return {
+    ...row,
+    image: mask === "corrected" ? "verified_corrected" : mask ? "verified_unchanged" : row.image,
+    report: form ? "verified" : row.report,
+    verifiedAt: done ? toIsoDate(new Date()) + "T" + new Date().toTimeString().slice(0, 5) : row.verifiedAt,
+  };
+}
+
+// the backend uses its own status words (PENDING, COMPLETED…); the list speaks in the stages of the review
+const IMAGE_FROM_BACKEND: Record<string, ImageStatus> = {
+  PENDING: "queued",
+  PROCESSING: "processing",
+  COMPLETED: "to_review",
+  APPROVED: "verified_unchanged",
+  CORRECTED: "verified_corrected",
+  REJECTED: "error",
+  queued: "queued",
+};
+
+const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
+  PENDING: "extracting",
+  PROCESSING: "extracting",
+  COMPLETED: "to_review",
+  APPROVED: "verified",
+  CORRECTED: "verified",
+  REJECTED: "to_review",
+  missing: "missing",
+};
+
 export async function listStudies(): Promise<StudyRow[]> {
-  if (MOCK_API) return mockDelay(MOCK_ROWS);
-    const studies = await fetchStudies();
-    return studies.map((study, i) => ({
-      id: study.orthanc_id,
-      number: String(i + 1).padStart(4, "0"), 
-      patientId: study.patient_id ?? "—",
-      studyDate: dicomDateToIso(study.study_date),
-      image: study.segmentation_status as ImageStatus,
-      report: study.extraction_status as ReportStatus,
-      uncertainty: study.uncertainty,
-      viewerUrl: study.viewer_url,
+  if (MOCK_API) return mockDelay(MOCK_ROWS.map(withReview));
+  const studies = await fetchStudies();
+  // TODO: no study number from the backend yet
+  return studies.map((study) => ({
+    id: study.orthanc_id,
+    number: null,
+    patientId: study.patient_id ?? "—",
+    studyDate: dicomDateToIso(study.study_date),
+    image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
+    report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
+    uncertainty: study.uncertainty,
+    verifiedAt: null,
   }));
 }
 
-// TODO: no backend endpoints for the rest of this file yet
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
   if (MOCK_API) {
     return mockDelay([
@@ -87,17 +126,16 @@ export async function listUnassignedReports(): Promise<UnassignedReport[]> {
       { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22" },
     ]);
   }
-  
-  // Pobieranie danych z prawdziwego backendu
-  const reports = await api.get('/api/reports/unassigned/');;
-  return reports.data.map((report: any) => ({
+  const reports = await api.get<{ id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string }[]>("/api/reports/unassigned/");
+  return reports.data.map((report) => ({
     id: report.id,
-    fileName: report.file_name ?? report.fileName,
+    fileName: report.file_name ?? report.fileName ?? "",
     kind: report.kind,
-    addedAt: report.added_at ?? report.addedAt,
+    addedAt: report.added_at ?? report.addedAt ?? "",
   }));
 }
 
+// TODO: no backend endpoint for the processing steps yet
 export async function getProcessingSteps(study: StudyRow): Promise<ProcessingStep[]> {
   const done = study.image !== "queued" && study.image !== "processing" && study.image !== "error";
   return mockDelay([
@@ -111,14 +149,14 @@ export async function getProcessingSteps(study: StudyRow): Promise<ProcessingSte
   ]);
 }
 
-export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<any> {
-  return await apiSendStudy(archiveFile, reportFile);
+export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<unknown> {
+  if (MOCK_API) return mockDelay(null, 400);
+  return apiSendStudy(archiveFile, reportFile);
 }
-export const sendStudies = sendStudy;
 
 export async function attachReport(studyId: string, source: File | string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 400);
   const formData = new FormData();
-  
   if (source instanceof File) {
     formData.append("report", source);
     await api.post(`/api/studies/${studyId}/attach-report/`, formData, {

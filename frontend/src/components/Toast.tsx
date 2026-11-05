@@ -1,22 +1,36 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
-const ToastContext = createContext<(message: string) => void>(() => {});
+// an optional link next to the message, e.g. to what was just saved
+interface ToastLink {
+  label: string;
+  to: string;
+}
+
+type ShowToast = (message: string, link?: ToastLink) => void;
+
+const ToastContext = createContext<ShowToast>(() => {});
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [message, setMessage] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; link?: ToastLink } | null>(null);
   const timer = useRef<number>();
 
-  const show = useCallback((text: string) => {
-    setMessage(text);
+  const show = useCallback<ShowToast>((message, link) => {
+    setToast({ message, link });
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setMessage(null), 2800);
+    timer.current = window.setTimeout(() => setToast(null), link ? 5000 : 2800);
   }, []);
 
   return (
     <ToastContext.Provider value={show}>
       {children}
-      <div className={message ? "toast toast--on" : "toast"} role="status" aria-live="polite">
-        {message}
+      <div className={toast ? "toast toast--on" : "toast"} role="status" aria-live="polite">
+        {toast?.message}
+        {toast?.link && (
+          <Link className="toast__link" to={toast.link.to} onClick={() => setToast(null)}>
+            {toast.link.label}
+          </Link>
+        )}
       </div>
     </ToastContext.Provider>
   );

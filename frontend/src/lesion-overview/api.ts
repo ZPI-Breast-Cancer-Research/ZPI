@@ -1,6 +1,6 @@
-import { mockDelay, mockScenario } from "../mock";
+import { mockDelay, mockScenario, mockStudyUid } from "../mock";
 import type { FieldKey } from "../review/fields";
-import type { Lesion } from "../viewer/types";
+import type { MaskSource } from "../viewer/types";
 
 export interface Overview {
   studyId: string;
@@ -10,7 +10,9 @@ export interface Overview {
   studyDate: string;
   description: string;
   status: "verified" | "saving";
-  lesion: Lesion;
+  studyUid: string | null;
+  // approved mask and the model's original one
+  masks: { approved: MaskSource; model: MaskSource };
   mask: { corrected: boolean; version: number; date: string; by: string };
   measurements: { volume: number | null; dimensions: [number, number, number] | null; intensity: number | null };
   report: { field: FieldKey; value: string; corrected: boolean }[] | null;
@@ -23,6 +25,7 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
   const scenario = mockScenario();
   const saving = scenario === "saving";
   const noReport = scenario === "no-report";
+  const studyUid = await mockStudyUid(0);
   return mockDelay({
     studyId,
     studyNumber: "0007",
@@ -31,7 +34,11 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
     studyDate: "2026-10-20",
     description: "MR piersi z kontrastem",
     status: saving ? "saving" : "verified",
-    lesion: { x: 330, y: 170, slices: [36, 50] },
+    studyUid,
+    masks: {
+      approved: { center: [0.69, 0.585, 0.53], radius: [13, 11, 12] },
+      model: { center: [0.685, 0.58, 0.53], radius: [11, 9, 10] },
+    },
     mask: { corrected: true, version: 1, date: "2026-10-21", by: "Użytkownik" },
     measurements: { volume: null, dimensions: null, intensity: null },
     report: noReport

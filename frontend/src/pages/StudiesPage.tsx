@@ -1,18 +1,19 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 
-import { ApiError } from "../api";
+import { ApiError, errorText } from "../api";
+import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import AttachReport from "../studies/AttachReport";
 import DropZone from "../studies/DropZone";
 import { FileTag, ImportTable, UnpairedReports } from "../studies/ImportReview";
 import ProcessingSteps from "../studies/ProcessingSteps";
-import StudiesTable, { parseFilter } from "../studies/StudiesTable";
+import StudiesTable, { matches, parseFilter, parsePart } from "../studies/StudiesTable";
 import { listStudies, listUnassignedReports, sendStudy, type StudyRow } from "../studies/api";
 import { groupFiles, type GroupedFiles } from "../studies/files";
 import "../studies/studies.css";
@@ -27,9 +28,16 @@ function errorTitle(error: Error): string {
 
 export default function StudiesPage() {
   const toast = useToast();
+  const adds = useCan()("addStudies");
   const [params, setParams] = useSearchParams();
   const [imported, setImported] = useState<GroupedFiles | null>(null);
   const [attachFor, setAttachFor] = useState<StudyRow | null>(null);
+  const notice = (useLocation().state as { notice?: MessageKey } | null)?.notice;
+
+  // e.g. the review queue ran out on the way here
+  useEffect(() => {
+    if (notice) toast(t(notice));
+  }, [notice, toast]);
 
   const studies = useQuery({ queryKey: ["studies"], queryFn: listStudies, retry: false });
   const unassigned = useQuery({ queryKey: ["unassigned-reports"], queryFn: listUnassignedReports });
@@ -38,12 +46,20 @@ export default function StudiesPage() {
   const selected = studies.data?.find((row) => row.id === selectedId) ?? null;
   const filter = parseFilter(params.get("filtr"));
   const updateParams = (changes: Record<string, string>) => setParams({ ...Object.fromEntries(params), ...changes });
-  const select = (row: StudyRow) => updateParams({ badanie: row.id });
+  const select = (row: StudyRow) => {
+    updateParams({ badanie: row.id });
+    // attaching a report belongs to the row it was opened for
+    if (attachFor && attachFor.id !== row.id) setAttachFor(null);
+  };
+  const attach = (row: StudyRow) => {
+    updateParams({ badanie: row.id });
+    setAttachFor(row);
+  };
 
 const send = useMutation({
   mutationFn: async () => {
     if (!imported || (imported.studies.length === 0 && imported.unpairedReports.length === 0)) {
-      throw new Error("Brak danych do wysłania.");
+      throw new Error(t("api.sendFailed"));
     }
 
     const studyItem = imported.studies[0];
@@ -78,7 +94,7 @@ const send = useMutation({
     unassigned.refetch();
   },
   onError: (error: Error) => {
-    toast(error.message || "Błąd podczas wysyłania badania.");
+    toast(error.message || t("api.sendFailed"));
   },
 });
 
@@ -139,13 +155,13 @@ const send = useMutation({
         {t("studies.all")} <b>{rows.length}</b>
       </span>
       <span>
-        {t("studies.processing")} <b>{rows.filter((r) => r.image === "processing" || r.image === "queued").length}</b>
+        {t("studies.processing")} <b>{rows.filter((r) => matches(r, "processing")).length}</b>
       </span>
       <span>
-        {t("studies.toReview")} <b>{rows.filter((r) => r.image === "to_review").length}</b>
+        {t("studies.toReview")} <b>{rows.filter((r) => matches(r, "to_review")).length}</b>
       </span>
       <span>
-        {t("studies.noReport")} <b>{rows.filter((r) => r.report === "missing").length}</b>
+        {t("studies.noReport")} <b>{rows.filter((r) => matches(r, "no_report")).length}</b>
       </span>
     </>
   );
@@ -157,7 +173,7 @@ const send = useMutation({
           {studies.isPending ? (
             <LoadingState label={t("studies.loading")} />
           ) : studies.error ? (
-            <ErrorState title={errorTitle(studies.error)} body={studies.error.message} onRetry={() => studies.refetch()} retrying={studies.isFetching} />
+            <ErrorState title={errorTitle(studies.error)} body={errorText(studies.error)} onRetry={() => studies.refetch()} retrying={studies.isFetching} />
           ) : rows.length === 0 ? (
             <EmptyState title={t("studies.empty.title")} body={t("studies.empty.body")} />
           ) : (
@@ -165,9 +181,18 @@ const send = useMutation({
               rows={rows}
               selectedId={selectedId}
               onSelect={select}
-              onAttach={setAttachFor}
+              onAttach={attach}
               filter={filter}
               onFilter={(next) => updateParams({ filtr: next })}
+              today={params.get("dzis") !== "0"}
+              onToday={(today) => updateParams({ dzis: today ? "1" : "0" })}
+              part={parsePart(params.get("czeka"))}
+              onPart={(part) => {
+                const next = new URLSearchParams(params);
+                if (part === "all") next.delete("czeka");
+                else next.set("czeka", part === "mask" ? "maska" : "opis");
+                setParams(next);
+              }}
             />
           )}
         </Panel>
@@ -177,46 +202,51 @@ const send = useMutation({
             <AttachReport study={attachFor} unassigned={unassigned.data ?? []} onClose={() => setAttachFor(null)} />
           ) : (
             <>
-              <Panel title={t("studies.add")}>
-                <div className="pad">
-                  <DropZone
-                    title={t("studies.drop.title")}
-                    body={t("studies.drop.body")}
-                    folderLabel={t("studies.drop.folder")}
-                    filesLabel={t("studies.drop.files")}
-                    onFiles={(files) => setImported(groupFiles(files))}
-                  />
-                  <p className="field__help">{t("studies.drop.hint")}</p>
-                </div>
-              </Panel>
-              <Panel title={t("studies.unassigned")} aux={unassigned.data?.length ?? ""}>
-                {unassigned.data && unassigned.data.length > 0 ? (
-                  <table className="table">
-                    <tbody>
-                      {unassigned.data.map((report) => (
-                        <tr key={report.id}>
-                          <td>
-                            <FileTag file={{ name: report.fileName }} />
-                          </td>
-                          <td className="cell-right">
-                            {selected?.report === "missing" ? (
-                              <button type="button" className="link" onClick={() => setAttachFor(selected)}>
-                                {t("studies.unassigned.assign")}
-                              </button>
-                            ) : (
-                              <button type="button" className="link" onClick={() => updateParams({ filtr: "no_report" })}>
-                                {t("studies.unassigned.assign")}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="note">{t("studies.unassigned.none")}</p>
-                )}
-              </Panel>
+              {/* adding studies and pairing reports is the radiologist's job */}
+              {adds && (
+                <>
+                  <Panel title={t("studies.add")}>
+                    <div className="pad">
+                      <DropZone
+                        title={t("studies.drop.title")}
+                        body={t("studies.drop.body")}
+                        folderLabel={t("studies.drop.folder")}
+                        filesLabel={t("studies.drop.files")}
+                        onFiles={(files) => setImported(groupFiles(files))}
+                      />
+                      <p className="field__help">{t("studies.drop.hint")}</p>
+                    </div>
+                  </Panel>
+                  <Panel title={t("studies.unassigned")} aux={unassigned.data?.length ?? ""}>
+                    {unassigned.data && unassigned.data.length > 0 ? (
+                      <table className="table">
+                        <tbody>
+                          {unassigned.data.map((report) => (
+                            <tr key={report.id}>
+                              <td>
+                                <FileTag file={{ name: report.fileName }} />
+                              </td>
+                              <td className="cell-right">
+                                {selected?.report === "missing" ? (
+                                  <button type="button" className="link" onClick={() => attach(selected)}>
+                                    {t("studies.unassigned.assign")}
+                                  </button>
+                                ) : (
+                                  <button type="button" className="link" onClick={() => updateParams({ filtr: "no_report" })}>
+                                    {t("studies.unassigned.assign")}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="note">{t("studies.unassigned.none")}</p>
+                    )}
+                  </Panel>
+                </>
+              )}
               <ProcessingSteps study={selected} />
             </>
           )}

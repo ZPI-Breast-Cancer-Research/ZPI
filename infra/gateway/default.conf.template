@@ -27,6 +27,8 @@ server {
         proxy_pass http://backend:8000/api/auth/orthanc;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
+        # DICOMweb clients send Accept: application/dicom+json, which DRF would answer with 406
+        proxy_set_header Accept "*/*";
         proxy_set_header Host $host;
         proxy_set_header X-Original-URI $request_uri;
     }

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 import WarningIcon from "../components/WarningIcon";
 import Panel from "../components/layout/Panel";
-import { t } from "../i18n";
+import { plural, t } from "../i18n";
 import type { AttentionItem } from "./api";
 
 function row(item: AttentionItem) {
@@ -26,7 +26,7 @@ function row(item: AttentionItem) {
     case "missing_report":
       return {
         subject: t("dashboard.attention.noReport"),
-        what: `${item.count ?? 0} ${t("dashboard.attention.missing_report")}`,
+        what: plural(item.count ?? 0, "dashboard.attention.missing_report.one", "dashboard.attention.missing_report.few", "dashboard.attention.missing_report.many"),
         action: t("dashboard.attention.show"),
       };
   }

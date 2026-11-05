@@ -4,7 +4,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import Page from "../components/layout/Page";
 import { ForbiddenState } from "../components/State";
 import { t } from "../i18n";
-import { signOut as apiSignOut, type Role, type User } from "./api";
+import { PERMISSIONS, signOut as apiSignOut, type Permission, type Role, type User } from "./api";
 
 interface AuthValue {
   user: User | null;
@@ -17,13 +17,17 @@ const AuthContext = createContext<AuthValue | null>(null);
 // TODO: kept in sessionStorage until there's a real session cookie from the backend
 const STORAGE_KEY = "maria.user";
 
+// dev only: VITE_SKIP_LOGIN=radiologist (or researcher, admin) signs in straight away with that role
+const SKIP_LOGIN = import.meta.env.DEV ? (import.meta.env.VITE_SKIP_LOGIN as Role | undefined) : undefined;
+
 function readUser(): User | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as User) : null;
+    if (raw) return JSON.parse(raw) as User;
   } catch {
-    return null;
+    // fall through to the dev user, if any
   }
+  return SKIP_LOGIN ? { login: "dev", name: "Dev", role: SKIP_LOGIN } : null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -56,12 +60,17 @@ export function RequireAuth() {
   return <Outlet />;
 }
 
-export function RequireRole({ role, title, children }: { role: Role; title: string; children: ReactNode }) {
+export function useCan() {
   const { user } = useAuth();
-  if (user?.role !== role) {
+  return (permission: Permission) => !!user && (PERMISSIONS[permission] as Role[]).includes(user.role);
+}
+
+export function RequireRole({ permission, title, children }: { permission: Permission; title: string; children: ReactNode }) {
+  const can = useCan();
+  if (!can(permission)) {
     return (
       <Page title={title}>
-        <ForbiddenState role={t(`role.${role}`)} />
+        <ForbiddenState role={PERMISSIONS[permission].map((role) => t(`role.${role}`)).join(", ")} />
       </Page>
     );
   }

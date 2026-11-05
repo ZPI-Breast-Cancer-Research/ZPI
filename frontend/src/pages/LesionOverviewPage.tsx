@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
+import { errorText } from "../api";
+import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
@@ -11,18 +13,33 @@ import { fetchOverview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
 import { FIELDS } from "../review/fields";
+import { MaskToggle } from "../review/MaskStrip";
+import Icon from "../viewer/icons";
+import type { Series, Tool } from "../viewer/types";
+import { usePreferences } from "../settings/preferences";
+import { useViewerLayout } from "../viewer/layout";
 import Viewer from "../viewer/Viewer";
+import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
 
 export default function LesionOverviewPage() {
   const { studyId = "" } = useParams();
-  const { search } = useLocation();
+  const { search, state } = useLocation();
+  // back to the list the overview was opened from
+  const backTo = (state as { from?: string } | null)?.from ?? "/badania?filtr=verified";
   const [showModel, setShowModel] = useState(false);
+  const [preferred] = usePreferences();
+  const [showMask, setShowMask] = useState(preferred.maskShown);
+  const [tool, setTool] = useState<Tool>("pan");
+  const [series, setSeries] = useState<Series>(preferred.series);
+  const [available, setAvailable] = useState<Series[]>(["post"]);
+  const [layout, setLayout] = useViewerLayout();
+  const reviews = useCan()("review");
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
   if (error) {
     return (
       <Page title={t("overview.title")}>
-        <ErrorState title={t("review.error")} body={error.message} onRetry={() => refetch()} />
+        <ErrorState title={t("review.error")} body={errorText(error)} onRetry={() => refetch()} />
       </Page>
     );
   }
@@ -42,6 +59,7 @@ export default function LesionOverviewPage() {
   return (
     <Page
       title={data.patientId}
+      back={{ to: backTo, label: t("nav.studies") }}
       context={
         <>
           <span>
@@ -59,21 +77,53 @@ export default function LesionOverviewPage() {
         </>
       }
       actions={
-        <>
-          <Link className="btn" to="/badania">
-            {t("overview.back")}
-          </Link>
+        reviews && (
           <Link className="btn" to={`/weryfikacja/${data.studyId}`}>
             {t("overview.openReview")}
           </Link>
-        </>
+        )
       }
     >
       <div className="overview">
         <section className="overview__view" aria-label={t("viewer.image")}>
-          <Viewer lesion={data.lesion} series="post" mask="confirmed" strokes={[]} showMask modelOutline={showModel} />
+          {/* read only: no rail, just looking around */}
+          <ViewerBar series={series} onSeries={setSeries} available={available} corner={<LayoutButton layout={layout} onLayout={setLayout} />}>
+            <div className="segmented" role="group" aria-label={t("viewer.tools")}>
+              {(["pan", "window"] as Tool[]).map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="viewer-bar__icon"
+                  aria-pressed={tool === name}
+                  aria-label={t(name === "pan" ? "viewer.pan" : "viewer.window")}
+                  title={name === "pan" ? t("viewer.panTitle") : `${t("viewer.window")} (W)`}
+                  onClick={() => setTool(name)}
+                >
+                  <Icon name={name} />
+                </button>
+              ))}
+            </div>
+          </ViewerBar>
+          <Viewer
+            studyUid={data.studyUid}
+            mask={data.masks.approved}
+            modelMask={data.masks.model}
+            series={series}
+            maskState="confirmed"
+            showMask={showMask}
+            tool={tool}
+            modelOutline={showModel}
+            onSeriesFound={(found) => {
+              setAvailable(found);
+              // the preferred series may be missing from this study
+              if (!found.includes(series)) setSeries("post");
+            }}
+            layout={layout}
+            onLayout={setLayout}
+          />
           <div className="mask-strip">
-            <span className="mask-strip__label">{t("overview.approvedMask")}</span>
+            <MaskToggle shown={showMask} onToggle={() => setShowMask((s) => !s)} />
+            <span className="mask-strip__state">{t("overview.approvedMask")}</span>
             <span className={data.mask.corrected ? "status status--corrected" : "status"}>
               {t(data.mask.corrected ? "overview.correctedBy" : "overview.confirmedBy")}
             </span>

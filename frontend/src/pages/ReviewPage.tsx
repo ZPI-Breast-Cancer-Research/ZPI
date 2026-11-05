@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 
+import { errorText } from "../api";
 import Page from "../components/layout/Page";
-import { EmptyState, ErrorState, LoadingState } from "../components/State";
+import { ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
 import { fetchCase, fetchQueue } from "../review/api";
 import CaseReview from "../review/CaseReview";
@@ -14,27 +15,15 @@ export default function ReviewPage() {
   const current = useQuery({ queryKey: ["review-case", studyId], queryFn: () => fetchCase(studyId!), enabled: !!studyId });
 
   if (!studyId && queue.data) {
-    const first = queue.data.queue[0];
+    const first = queue.data[0];
     if (first) return <Navigate to={`/weryfikacja/${first.studyId}`} replace />;
-    return (
-      <Page title={t("nav.review")}>
-        <EmptyState
-          title={t("review.queueEmpty")}
-          body={t("review.queueEmptyBody")}
-          action={
-            <Link className="btn" to="/badania">
-              {t("review.goToStudies")}
-            </Link>
-          }
-        />
-      </Page>
-    );
+    return <Navigate to="/badania?filtr=verified&dzis=1" replace state={{ notice: "review.allDone" }} />;
   }
 
   if (current.error || queue.error) {
     return (
       <Page title={t("nav.review")}>
-        <ErrorState title={t("review.error")} body={(current.error ?? queue.error)?.message} onRetry={() => (current.refetch(), queue.refetch())} />
+        <ErrorState title={t("review.error")} body={errorText(current.error ?? queue.error)} onRetry={() => (current.refetch(), queue.refetch())} />
       </Page>
     );
   }
@@ -47,5 +36,5 @@ export default function ReviewPage() {
     );
   }
 
-  return <CaseReview key={current.data.studyId} data={current.data} queue={queue.data.queue} done={queue.data.done} />;
+  return <CaseReview key={current.data.studyId} data={current.data} queue={queue.data} />;
 }

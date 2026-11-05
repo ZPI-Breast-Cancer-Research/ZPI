@@ -13,14 +13,6 @@
   background: var(--color-image);
 }
 
-.overview__view .viewer {
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-}
-
-.overview__view .viewer__planes {
-  display: none;
-}
-
 .overview__info {
   overflow: auto;
   border-left: 1px solid var(--color-rule);
