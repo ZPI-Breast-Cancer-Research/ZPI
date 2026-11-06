@@ -57,6 +57,7 @@ Stop with `docker compose down`. Add `-v` to also delete the stored metrics.
 | `nnunet_epoch` | last finished epoch |
 | `nnunet_train_loss`, `nnunet_val_loss` | losses of that epoch |
 | `nnunet_pseudo_dice` | pseudo Dice on patches, not the final validation Dice |
+| `nnunet_pseudo_dice_ema` | its moving average, as nnU-Net computes it to pick `checkpoint_best.pth` |
 | `nnunet_epoch_seconds` | time of that epoch |
 | `nnunet_last_epoch_timestamp_seconds` | when that epoch finished |
 

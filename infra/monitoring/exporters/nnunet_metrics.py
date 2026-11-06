@@ -23,6 +23,7 @@ class Progress:
     train_loss: float | None
     val_loss: float | None
     pseudo_dice: float | None
+    pseudo_dice_ema: float | None
     epoch_seconds: float
     finished_at: float
 
@@ -32,6 +33,7 @@ def parse_log(text: str) -> Progress | None:
     current: dict[str, float | None] = {}
     epoch = None
     finished = None
+    ema = None
     for line in text.splitlines():
         match = TIMESTAMPED.match(line)
         if not match:
@@ -51,11 +53,16 @@ def parse_log(text: str) -> Progress | None:
             values = [float(value) for value in re.findall(FLOAT, message)]
             current["pseudo_dice"] = sum(values) / len(values) if values else None
         elif (found := re.fullmatch(rf"Epoch time: ({FLOAT}) s", message)) and epoch is not None:
+            dice = current.get("pseudo_dice")
+            if dice is not None:
+                # Same smoothing as nnU-Net, which picks checkpoint_best.pth by it.
+                ema = dice if ema is None else 0.9 * ema + 0.1 * dice
             finished = Progress(
                 epoch=epoch,
                 train_loss=current.get("train_loss"),
                 val_loss=current.get("val_loss"),
-                pseudo_dice=current.get("pseudo_dice"),
+                pseudo_dice=dice,
+                pseudo_dice_ema=ema,
                 epoch_seconds=float(found.group(1)),
                 finished_at=datetime.fromisoformat(timestamp).timestamp(),
             )
@@ -89,6 +96,7 @@ def render(progress: Progress | None, labels: dict[str, str], running: bool) -> 
         "nnunet_train_loss": progress.train_loss,
         "nnunet_val_loss": progress.val_loss,
         "nnunet_pseudo_dice": progress.pseudo_dice,
+        "nnunet_pseudo_dice_ema": progress.pseudo_dice_ema,
         "nnunet_epoch_seconds": progress.epoch_seconds,
         "nnunet_last_epoch_timestamp_seconds": progress.finished_at,
     }

@@ -38,6 +38,20 @@ def test_parse_log_handles_trailing_spaces_of_real_logs():
     assert parse_log(log).epoch == 0
 
 
+def test_parse_log_smooths_pseudo_dice_like_nnunet():
+    log = "".join(
+        f"2026-11-04 23:44:0{i}.000000: Epoch {i}\n"
+        f"2026-11-04 23:44:0{i}.100000: Pseudo dice [np.float32({dice})]\n"
+        f"2026-11-04 23:44:0{i}.200000: Epoch time: 1.0 s\n"
+        for i, dice in enumerate((0.3, 0.5, 0.4))
+    )
+
+    progress = parse_log(log)
+
+    assert progress.pseudo_dice == 0.4
+    assert round(progress.pseudo_dice_ema, 6) == round(0.9 * (0.9 * 0.3 + 0.1 * 0.5) + 0.1 * 0.4, 6)
+
+
 def test_parse_log_without_a_finished_epoch():
     assert parse_log("2026-11-04 23:44:08.267104: Epoch 0\n") is None
     assert parse_log("") is None

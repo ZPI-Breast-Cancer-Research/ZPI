@@ -5,7 +5,7 @@
     "zpi"
   ],
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "time": {
     "from": "now-6h",
     "to": "now"
@@ -267,7 +267,16 @@
         {
           "refId": "A",
           "expr": "nnunet_pseudo_dice",
-          "legendFormat": "{{trainer}} fold {{fold}}",
+          "legendFormat": "per epoch {{trainer}} fold {{fold}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "nnunet_pseudo_dice_ema",
+          "legendFormat": "EMA {{trainer}} fold {{fold}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
