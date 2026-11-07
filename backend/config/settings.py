@@ -111,17 +111,9 @@ REST_FRAMEWORK = {
 }
 CORS_ALLOW_CREDENTIALS = True
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://172.21.0.8:5173",
-]
+CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://172.21.0.8:5173",
-]
+CSRF_TRUSTED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 
 # Orthanc is an external service (separate setup); the backend only talks to it over HTTP.
 ORTHANC_URL = env("ORTHANC_URL").rstrip("/")
