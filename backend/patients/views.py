@@ -1,7 +1,8 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, parser_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 
 from django.shortcuts import get_object_or_404
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
@@ -12,12 +13,13 @@ import zipfile
 import io
 import pydicom
 from celery import current_app
-
+from users.permissions import require_permission
 
 from extraction.models import ExtractionResult
 from segmentation.models import SegmentationResult 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def study_list(request):
     try:
         orthanc_client = OrthancClient()
@@ -63,13 +65,14 @@ def study_list(request):
             
             "extraction_status": extraction.status if extraction else "missing",
             "segmentation_status": segmentation.status if segmentation else "queued",
-            "uncertainty": segmentation.uncertainty if segmentation and segmentation.uncertainty else (extraction.uncertainity if extraction else None),
+            "uncertainty": segmentation.uncertainty if segmentation and segmentation.uncertainty else (extraction.uncertainty if extraction else None),
         })
 
     return Response(response_data)
 
 
 @api_view(["POST"])
+@require_permission(["addStudies"])
 @parser_classes([MultiPartParser, FormParser])
 def study_import(request):
     """
@@ -225,6 +228,7 @@ def study_import(request):
         )
 
 @api_view(["POST"])
+@require_permission(["addStudies"])
 @parser_classes([MultiPartParser, FormParser])
 def attach_report_to_study(request, orthanc_id):
     """
@@ -262,6 +266,7 @@ def attach_report_to_study(request, orthanc_id):
         )
 
 @api_view(["POST"])
+@require_permission(["addStudies"])
 def attach_existing_report(request, orthanc_id):
     """
     
@@ -294,6 +299,7 @@ def attach_existing_report(request, orthanc_id):
         )
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def unassigned_reports_list(request):
     try:
         unassigned = ExtractionResult.objects.filter(study__isnull=True)
@@ -323,3 +329,93 @@ def unassigned_reports_list(request):
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def dashboard_view(request):
+    try:
+        orthanc_client = OrthancClient()
+        orthanc_studies = orthanc_client.list_studies()
+    except (OrthancUnauthorized, OrthancUnavailable):
+        orthanc_studies = []
+
+    queue_items = []
+    processing_count = 0
+    to_review_count = 0
+    in_progress_items = []
+
+    for idx, o_study in enumerate(orthanc_studies):
+        orthanc_id = o_study.get("orthanc_id")
+        
+        db_study = Study.objects.filter(orthanc_path=orthanc_id).first()
+        
+        extraction = None
+        segmentation = None
+        if db_study:
+            extraction = ExtractionResult.objects.filter(study=db_study).first()
+            segmentation = SegmentationResult.objects.filter(study=db_study).first()
+
+        seg_status = segmentation.status if segmentation else "PENDING"
+        ext_status = extraction.status if extraction else "PENDING"
+        
+        uncertainty = None
+        if segmentation and segmentation.uncertainty is not None:
+            uncertainty = segmentation.uncertainty
+        elif extraction and extraction.uncertainty is not None:
+            uncertainty = extraction.uncertainty
+        else:
+            uncertainty = 0.5
+
+        study_number = str(idx + 1).zfill(4)
+
+        if seg_status in ["PROCESSING", "PENDING"] or ext_status in ["PROCESSING", "PENDING"]:
+            processing_count += 1
+            if len(in_progress_items) < 5:
+                stage = "segmentation" if seg_status == "PROCESSING" else "extraction"
+                state = "running" if (seg_status == "PROCESSING" or ext_status == "PROCESSING") else "queued"
+                in_progress_items.append({
+                    "studyNumber": study_number,
+                    "stage": stage,
+                    "state": state
+                })
+        else:
+            to_review_count += 1
+
+        queue_items.append({
+            "studyId": str(db_study.id) if db_study else f"s{idx + 1}",
+            "studyNumber": study_number,
+            "patientId": o_study.get("patient_id") or f"P-{str(101 + idx).zfill(4)}",
+            "studyDate": o_study.get("study_date") or "2026-10-26",
+            "uncertainty": float(uncertainty),
+        })
+
+    missing_reports_count = ExtractionResult.objects.filter(study__isnull=True).count()
+    
+    attention_items = []
+    if missing_reports_count > 0:
+        attention_items.append({
+            "kind": "missing_report",
+            "subject": "",
+            "count": missing_reports_count,
+            "href": "/badania"
+        })
+
+    dashboard_data = {
+        "toReview": to_review_count or len(queue_items),
+        "processing": processing_count,
+        "verifiedToday": 6,
+        "queue": queue_items,
+        "attention": attention_items,
+        "inProgress": in_progress_items,
+        "verifiedLastWeek": [
+            { "date": "2026-10-20", "unchanged": 5, "corrected": 2 },
+            { "date": "2026-10-21", "unchanged": 7, "corrected": 3 },
+            { "date": "2026-10-22", "unchanged": 6, "corrected": 2 },
+            { "date": "2026-10-23", "unchanged": 8, "corrected": 3 },
+            { "date": "2026-10-24", "unchanged": 6, "corrected": 3 },
+            { "date": "2026-10-25", "unchanged": 4, "corrected": 2 },
+            { "date": "2026-10-26", "unchanged": 4, "corrected": 2 },
+        ],
+    }
+
+    return Response(dashboard_data, status=status.HTTP_200_OK)

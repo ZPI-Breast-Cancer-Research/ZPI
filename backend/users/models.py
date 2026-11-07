@@ -1,5 +1,25 @@
 from django.contrib.auth.models import AbstractUser
+from django.db import models
 
+class Role(models.TextChoices):
+    RADIOLOGIST = "radiologist", "Radiologist"
+    RESEARCHER = "researcher", "Researcher"
+    ADMIN = "admin", "Admin"
 
 class User(AbstractUser):
-    """Custom user model – defined up front so it can be extended later (roles etc.)."""
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.RADIOLOGIST
+    )
+    is_first_login = models.BooleanField(default=False)
+    pwz = models.CharField(
+        max_length=20, 
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name="Numer PWZ"
+    )
+
+    def __str__(self):
+        return f"{self.username} ({self.role})"
