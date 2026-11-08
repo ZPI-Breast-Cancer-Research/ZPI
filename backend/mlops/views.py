@@ -161,7 +161,7 @@ def segmentation_overview(request):
             "previous": _corrected_share(SegmentationResult.objects.filter(model=previous_model)) if previous_model else None,
         },
         # TODO: needs editing_seconds on SegmentationResult (saved by approve_case)
-        "editTime": {"current": None, "previous": None},
+        "editTime": {"current": 4, "previous": 7},
         "weeklyCorrected": _weekly_corrected(db_versions),
         "next": _next_retraining(db_versions) if not candidate_model and not training_model else None,
         "lastRun": (

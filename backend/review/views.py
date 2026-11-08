@@ -280,12 +280,18 @@ def reopen_case(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
     
     with transaction.atomic():
-        SegmentationResult.objects.filter(study=study).update(
-            status=StatusChoices.COMPLETED, accepted_by=None, accepted_at=None
-        )
-        ExtractionResult.objects.filter(study=study).update(
-            status=StatusChoices.COMPLETED, accepted_by=None, accepted_at=None
-        )
+        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        if segmentation and segmentation.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
+            segmentation.status = StatusChoices.COMPLETED
+            segmentation.accepted_by = None
+            segmentation.accepted_at = None
+            segmentation.save()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        if extraction and extraction.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
+            extraction.status = StatusChoices.COMPLETED
+            extraction.accepted_by = None
+            extraction.accepted_at = None
+            extraction.save()
 
     return Response(status=status.HTTP_200_OK)
 

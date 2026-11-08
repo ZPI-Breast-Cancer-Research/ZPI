@@ -21,5 +21,10 @@ class User(AbstractUser):
         verbose_name="Numer PWZ"
     )
 
+    def save(self, *args, **kwargs):
+        if self.is_superuser:
+            self.role = Role.ADMIN
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.username} ({self.role})"
