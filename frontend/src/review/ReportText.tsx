@@ -3,6 +3,10 @@ import type { FieldState } from "./BiradsForm";
 import type { FieldKey } from "./fields";
 
 export default function ReportText({ parts, states }: { parts: ReportPart[]; states: Partial<Record<FieldKey, FieldState>> }) {
+  if (typeof parts === "string") {
+    return <p className="report-text">{parts}</p>;
+  }
+
   return (
     <p className="report-text">
       {parts.map((part, i) =>

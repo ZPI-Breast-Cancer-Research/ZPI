@@ -48,7 +48,9 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
   const restore = (version: string) => {
     if (window.confirm(t("models.restore.confirm", { v: version }))) actions.rollback.mutate(version);
   };
-
+  const training = data.training;
+  const trainingPct =
+    training && training.epoch !== null && training.epochs ? (training.epoch / training.epochs) * 100 : 0;
   return (
     <div className="models">
       {data.candidate && (
@@ -91,8 +93,8 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
                   {data.candidate.gate.map((g) => (
                     <li key={g.rule}>
                       {t(`models.gate.${g.rule}`)}
-                      <span className={g.passed ? "status status--confirmed" : "status status--warning"}>
-                        {t(g.passed ? "models.gate.passed" : "models.gate.failed")}
+                      <span className={g.passed === null ? "status" : g.passed ? "status status--confirmed" : "status status--warning"}>
+                        {g.passed === null ? "—" : t(g.passed ? "models.gate.passed" : "models.gate.failed")}
                       </span>
                     </li>
                   ))}
@@ -101,7 +103,9 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
                   <tbody>
                     <tr>
                       <th>{t("models.trainingData")}</th>
-                      <td className="cell-right">{t("models.trainingData.value", { n: data.candidate.trainingData })}</td>
+                      <td className="cell-right">
+                        {data.candidate.trainingData !== null ? t("models.trainingData.value", { n: data.candidate.trainingData }) : "—"}
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -202,13 +206,13 @@ export default function SegmentationView({ data, rejecting, onCancelReject }: { 
               <span>
                 {t("models.version")} {data.training.version} · {t("models.training.epoch")}{" "}
                 <b>
-                  {data.training.epoch} / {data.training.epochs}
+                  {data.training.epoch ?? "—"} / {data.training.epochs ?? "—"}
                 </b>
               </span>
               <div className="progress progress--running">
-                <i style={{ width: `${(data.training.epoch / data.training.epochs) * 100}%` }} />
+                <i style={{ width: `${trainingPct}%` }} />
               </div>
-              <span>{t("models.training.eta", { h: data.training.etaHours })}</span>
+              {data.training.etaHours !== null && <span>{t("models.training.eta", { h: data.training.etaHours })}</span>}
               {manages && (
                 <button type="button" className="btn btn--small line__end">
                   {t("models.training.stop")}

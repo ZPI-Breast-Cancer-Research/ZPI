@@ -18,11 +18,6 @@ export interface ModelVersion {
   canRestore: boolean;
 }
 
-export interface GateRule {
-  rule: "better_hospital" | "not_worse_mamamia" | "no_large_drop";
-  passed: boolean;
-}
-
 export interface DiffCase {
   studyId: string;
   studyNumber: string;
@@ -31,23 +26,28 @@ export interface DiffCase {
   candidate: number | null;
 }
 
+export interface GateRule {
+  rule: "better_hospital" | "not_worse_mamamia" | "no_large_drop";
+  passed: boolean | null; // null = brak danych do oceny
+}
+
 export interface SegmentationOverview {
-  production: { version: string; since: string; approvedBy: string };
+  production: { version: string; since: string | null; approvedBy: string };
   previous: string | null;
-  correctedShare: { current: number; previous: number | null };
-  editTime: { current: number; previous: number | null };
+  correctedShare: { current: number | null; previous: number | null };
+  editTime: { current: number | null; previous: number | null };
   weeklyCorrected: { week: string; share: number; versionChange?: string }[];
   next: { corrections: number; threshold: number; window: string } | null;
-  lastRun: { date: string; version: string; outcome: "rejected_gate" | "promoted" } | null;
-  training: { version: string; epoch: number; epochs: number; etaHours: number } | null;
-  candidate: { version: string; gate: GateRule[]; cases: DiffCase[]; trainingData: number } | null;
+  lastRun: { date: string; version: string; outcome: "rejected_gate" | "rejected_manual" | "promoted" } | null;
+  training: { version: string; epoch: number | null; epochs: number | null; etaHours: number | null } | null;
+  candidate: { version: string; gate: GateRule[]; cases: DiffCase[]; trainingData: number | null } | null;
   versions: ModelVersion[];
 }
 
 export interface ExtractionOverview {
-  version: string;
-  since: string;
-  fields: { field: string; f1: number | null; correctedShare: number }[];
+  version: string | null;
+  since: string | null;
+  fields: { field: string; f1: number | null; correctedShare: number | null }[];
   examplePool: number;
 }
 

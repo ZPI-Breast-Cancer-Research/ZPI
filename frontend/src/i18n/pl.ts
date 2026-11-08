@@ -231,6 +231,7 @@ export const pl = {
   "models.next.started": "Trening w kolejce",
   "models.lastRun.rejected_gate": "Ostatni trening {date}: wersja {v} odrzucona automatycznie (bramka jakości niespełniona).",
   "models.lastRun.promoted": "Ostatni trening {date}: wersja {v} trafiła do produkcji.",
+  "models.lastRun.rejected_manual": "Wersja {v} odrzucona ręcznie ({date})",
   "models.training": "Następna wersja · trening w toku",
   "models.training.queue": "kolejka treningu · GPU",
   "models.training.epoch": "epoka",

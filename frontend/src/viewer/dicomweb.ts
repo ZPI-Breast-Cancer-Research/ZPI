@@ -35,9 +35,9 @@ interface SeriesInfo {
 // TODO: guessed from SeriesDescription; the backend should say which series is which once ingest tags them
 function kindOf(description: string): Series | null {
   const d = description.toLowerCase();
-  if (/sub/.test(d)) return "sub";
-  if (/\bpre\b|pre[-_ ]|przed|native|bez kontr/.test(d)) return "pre";
-  if (/post|1st|ph1|dyn|\+c|kontr|contrast/.test(d)) return "post";
+  if (/sub|0000/.test(d)) return "sub";
+  if (/\bpre\b|pre[-_ ]|przed|native|bez kontr|0001/.test(d)) return "pre";
+  if (/post|1st|ph1|dyn|\+c|kontr|contrast|0002/.test(d)) return "post";
   return null;
 }
 
