@@ -16,6 +16,26 @@ VERIFIED = (StatusChoices.APPROVED, StatusChoices.CORRECTED)
 REPORT_FIELDS = ["birads", "location", "size", "shape", "margin", "curve"]  # = FieldKey on the frontend
 BIRADS_ORDER = ["0", "1", "2", "3", "4", "4a", "4b", "4c", "5", "6"]
 
+LOCATION_VALUES = {
+    "kwadrant górny-zewnętrzny": "KGZ",
+    "kwadrant górny-wewnętrzny": "KGW",   # sprawdź
+    "kwadrant dolny-zewnętrzny": "KDZ",   # sprawdź
+    "kwadrant dolny-wewnętrzny": "KDW",   # sprawdź
+}
+SHAPE_VALUES = {}
+MARGIN_VALUES = {}
+
+
+def _option(mapping: dict, raw) -> str:
+    raw = str(raw)
+    return mapping.get(raw.lower(), raw.capitalize())
+
+
+def _size_value(wymiary) -> str | None:
+    """Samo liczba (pole ma osobną jednostkę); kwalifikator „około/do” się gubi."""
+    if not wymiary or not wymiary.get("wartosci"):
+        return None
+    return f"{max(wymiary['wartosci']):g}"
 
 def _dicom_date(value):
     return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else ""
@@ -38,7 +58,10 @@ def _main_lesion(report: dict):
         return BIRADS_ORDER.index(birads) if birads in BIRADS_ORDER else -1
  
     return max(lesions, key=rank)
- 
+
+def _proposals(report) -> dict:
+    """{"birads": "4C"} -> {"birads": {"value": "4C"}} (kształt, którego oczekuje front)."""
+    return {key: {"value": value} for key, value in _as_fields(report).items()}
  
 def _size_text(wymiary) -> str | None:
     if not wymiary or not wymiary.get("wartosci"):
@@ -61,13 +84,14 @@ def _fields_from_schema(report: dict) -> dict:
     obs = next((o for o in observations if o.get("wymiary")), observations[0] if observations else None)
     if obs:
         if obs.get("lokalizacje"):
-            fields["location"] = ", ".join(obs["lokalizacje"])
-        if (size := _size_text(obs.get("wymiary"))):
+            first = obs["lokalizacje"][0]
+            fields["location"] = LOCATION_VALUES.get(first, first)
+        if (size := _size_value(obs.get("wymiary"))):
             fields["size"] = size
         if obs.get("ksztalt"):
-            fields["shape"] = str(obs["ksztalt"]).capitalize()
+            fields["shape"] = _option(SHAPE_VALUES, obs["ksztalt"])
         if obs.get("brzeg"):
-            fields["margin"] = str(obs["brzeg"]).capitalize()
+            fields["margin"] = _option(MARGIN_VALUES, obs["brzeg"])
     return fields
  
  
@@ -98,6 +122,17 @@ def _report_rows(extraction):
         for key in REPORT_FIELDS
         if key in accepted
     ]
+
+def _apply_form(extraction, submitted, user):
+    new_status = StatusChoices.APPROVED
+    if isinstance(submitted, dict) and submitted:
+        extraction.accepted_report = _as_fields(submitted)  # obsługuje {"value": ...}
+        if any(isinstance(v, dict) and v.get("state") == "corrected" for v in submitted.values()):
+            new_status = StatusChoices.CORRECTED
+    extraction.status = new_status
+    extraction.accepted_by = user
+    extraction.accepted_at = timezone.now().date()
+    extraction.save()
 
 
 @api_view(["GET"])
@@ -204,13 +239,12 @@ def review_case_detail(request, study_id):
     
     proposals = {}
     if extraction and extraction.status not in (StatusChoices.PENDING, StatusChoices.PROCESSING):
-        proposals = _as_fields(extraction.generated_report)
-
+        proposals = _proposals(extraction.generated_report)
 
     case_data = {
         "studyId": study.orthanc_path,
         "studyNumber": str(study.id).zfill(4),
-        "patientId": o_study.get("patient_id") or "P-0101",
+        "patientId": o_study.get("patient_id") or "---",
         "age": None,
         "studyDate": formatted_date,
         "description": o_study.get("description") or "MR piersi z kontrastem",
@@ -240,17 +274,14 @@ def approve_case(request, study_id):
         segmentation = SegmentationResult.objects.select_for_update().filter(study=study).first()
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).first()
 
-        if segmentation and segmentation.status == StatusChoices.COMPLETED:
+        if segmentation and segmentation.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
             segmentation.status = new_status
             segmentation.accepted_by = request.user
             segmentation.accepted_at = timezone.now().date()
             segmentation.save()
 
-        if extraction and extraction.status == StatusChoices.COMPLETED:
-            extraction.status = StatusChoices.APPROVED
-            extraction.accepted_by = request.user
-            extraction.accepted_at = timezone.now().date()
-            extraction.save()
+        if extraction and extraction.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
+            _apply_form(extraction, payload.get("fields"), request.user)
 
     return Response(status=status.HTTP_200_OK)
 
@@ -265,7 +296,7 @@ def approve_mask(request, study_id):
 
     with transaction.atomic():
         segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
-        if segmentation and segmentation.status == StatusChoices.COMPLETED:
+        if segmentation and segmentation.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
             segmentation.status = new_status
             segmentation.accepted_by = request.user
             segmentation.accepted_at = timezone.now().date()
@@ -316,14 +347,12 @@ def unapprove_mask(request, study_id):
 @require_permission(["review"])
 def approve_form(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
+    submitted = request.data.get("fields")
     
     with transaction.atomic():
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
-        if extraction and extraction.status == StatusChoices.COMPLETED:
-            extraction.status = StatusChoices.APPROVED
-            extraction.accepted_by = request.user
-            extraction.accepted_at = timezone.now().date()
-            extraction.save()
+        if extraction and extraction.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
+            _apply_form(extraction, submitted, request.user)
 
     return Response(status=status.HTTP_200_OK)
 

@@ -407,7 +407,7 @@ def dashboard_view(request):
                 {
                     "studyId": str(db_study.id) if db_study else f"s{idx + 1}",
                     "studyNumber": study_number,
-                    "patientId": o_study.get("patient_id") or f"P-{str(101 + idx).zfill(4)}",
+                    "patientId": o_study.get("patient_id") or "---",
                     "studyDate": o_study.get("study_date") or "----------",
                     "uncertainty": float(uncertainty),
                 }
