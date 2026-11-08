@@ -275,6 +275,11 @@ To create a Django superuser (for the Django admin panel):
 docker compose exec backend python manage.py createsuperuser
 ```
 
+For database seeding(with synthetic data)
+```bash
+docker compose exec backend python manage.py seed_demo_data --reset --count 20
+```
+
 Open the app through the gateway – it serves the UI, the API and the images (DICOMweb) on one origin:
 
 | Service | URL |
