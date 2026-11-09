@@ -84,3 +84,35 @@ and manifest bytes.
 - `RescaleSlope` / `RescaleIntercept` handling has not been run on real data: the checked series do
   not have these tags.
 - The synthetic Plastimatch DICOMs (`CT`, `DERIVED`) do not pass the series filter.
+
+# Segmentation model
+
+`models/registry.py` picks an adapter by `backend` in the `model.json` of a model directory, so the
+worker does not depend on nnU-Net directly.
+
+```json
+{"backend": "nnunet", "name": "dce3-50ep", "version": "1", "channels": ["pre", "post1", "post2"],
+ "options": {"folds": [0], "disable_tta": false, "tile_step_size": 0.5}}
+```
+
+`options.folds` lists the folds to load: one fold now, several for an ensemble.
+
+## Check a model
+
+The geometry test runs a real prediction, so it needs weights from outside the repository:
+
+```bash
+SEGMENTATION_TEST_MODEL_DIR=data/models/<model> \
+SEGMENTATION_TEST_INPUTS=<case>_0000.nii.gz:<case>_0001.nii.gz:<case>_0002.nii.gz \
+pytest workers/segmentation/tests.py
+```
+
+## Measured
+
+Time is the whole `predict` call (inputs and outputs included), median over cases without the
+first one, which also pays for one-off setup. Peak memory is what `nvidia-smi` shows for the
+process, CUDA context included, so it is what has to fit on the card.
+
+| model | device | case | seconds | process peak |
+|---|---|---|---|---|
+| MAMA-MIA baseline, 1 channel, fold 0, no TTA | CPU (laptop) | ISPY1_1013 | 47 | – |
