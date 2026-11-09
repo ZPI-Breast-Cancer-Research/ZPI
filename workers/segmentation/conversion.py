@@ -6,10 +6,19 @@ import subprocess
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-
+from pathlib import Path
+import nibabel as nib
+import numpy as np
 import nibabel as nib
 import numpy as np
 import pydicom
+from highdicom.seg import (
+    Segmentation,
+    SegmentAlgorithmTypeValues,
+    SegmentDescription,
+    SegmentationTypeValues,
+)
+from highdicom.sr.coding import CodedConcept
 from pydicom.errors import InvalidDicomError
 
 from workers.segmentation.channels import CHANNELS, channel_suffix
@@ -319,6 +328,83 @@ def convert_study(study_dir: Path, case_id: str, out_dir: Path) -> ConversionRes
     )
     return ConversionResult(status, nifti, manifest)
 
+def convert_nifti_to_dicom_seg(
+    ref_dicom_dir: Path,
+    mask_nifti_path: Path,
+    output_seg_path: Path,
+    segment_label: str = "Corrected Breast Lesion",
+) -> Path:
+    """Konwertuje poprawioną maskę NIfTI na format DICOM SEG przy użyciu geometrii
+
+    oryginalnych serii DICOM pobranych z Orthanca.
+    """
+    dicom_paths = sorted(
+        [p for p in ref_dicom_dir.rglob("*") if p.is_file()],
+        key=lambda p: p.name,
+    )
+    dicom_files = []
+    for p in dicom_paths:
+        try:
+            ds = pydicom.dcmread(p, stop_before_pixels=False)
+            if hasattr(ds, "ImagePositionPatient") and hasattr(ds, "ImageOrientationPatient"):
+                dicom_files.append(ds)
+        except pydicom.errors.InvalidDicomError:
+            continue
+
+    if not dicom_files:
+        raise GeometryError(f"Brak prawidłowych plików DICOM z geometrią w {ref_dicom_dir}")
+
+    orientation = np.array(dicom_files[0].ImageOrientationPatient, dtype=float)
+    normal = np.cross(orientation[:3], orientation[3:])
+    dicom_files.sort(key=lambda f: float(np.dot(f.ImagePositionPatient, normal)))
+
+    mask_img = nib.load(mask_nifti_path)
+    mask_data = mask_img.get_fdata().astype(np.uint8)
+
+    mask_binary = (mask_data > 0).astype(np.uint8)
+
+    pixel_array = np.transpose(mask_binary, (2, 1, 0))
+
+    if pixel_array.shape[0] != len(dicom_files):
+        raise GeometryError(
+            f"Liczba plasterków w masce NIfTI ({pixel_array.shape[0]}) "
+            f"nie zgadza się z liczbą plików DICOM ({len(dicom_files)})"
+        )
+
+    segment_description = SegmentDescription(
+        segment_number=1,
+        segment_label=segment_label,
+        property_category=CodedConcept(
+            value="418363000",
+            scheme_designator="SCT",
+            meaning="Morphological Alteration",
+        ),
+        property_type=CodedConcept(
+            value="108369006",
+            scheme_designator="SCT",
+            meaning="Tumor",
+        ),
+        algorithm_type=SegmentAlgorithmTypeValues.MANUAL,
+    )
+
+    seg = Segmentation(
+        source_images=dicom_files,
+        pixel_array=pixel_array,
+        segmentation_type=SegmentationTypeValues.BINARY,
+        segment_descriptions=[segment_description],
+        series_instance_uid=pydicom.uid.generate_uid(),
+        series_number=1000,
+        sop_instance_uid=pydicom.uid.generate_uid(),
+        instance_number=1,
+        manufacturer="MARIA Project",
+        manufacturer_model_name="NIfTI to DICOM SEG Converter",
+        device_serial_number="1.0",
+        software_versions="1.0",
+    )
+
+    output_seg_path.parent.mkdir(parents=True, exist_ok=True)
+    seg.save_as(str(output_seg_path))
+    return output_seg_path
 
 def _phase_entry(
     phase: Phase,
