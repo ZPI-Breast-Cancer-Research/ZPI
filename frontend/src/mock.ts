@@ -1,4 +1,4 @@
-import { fetchStudies } from "./api";
+
 
 // VITE_MOCK_API=true uses fake data even where a real endpoint exists
 export const MOCK_API = import.meta.env.VITE_MOCK_API === "true";
@@ -14,12 +14,13 @@ export function mockScenario(): string | null {
 
 // mock cases borrow a real MR study from Orthanc (if there is one) so the viewer has images to show
 export async function mockStudyUid(index: number): Promise<string | null> {
-  try {
-    const studies = (await fetchStudies())
-      .filter((s) => s.study_instance_uid && s.modalities.includes("MR"))
-      .sort((a, b) => b.series_count - a.series_count);
-    return studies.length ? studies[index % studies.length].study_instance_uid : null;
-  } catch {
-    return null;
-  }
+  // try {
+  //   const studies = (await fetchStudies())
+  //     .filter((s) => s.study_instance_uid && s.modalities.includes("MR"))
+  //     .sort((a, b) => b.series_count - a.series_count);
+  //   return studies.length ? studies[index % studies.length].study_instance_uid : null;
+  // } catch {
+  //   return null;
+  // }
+  return null;
 }

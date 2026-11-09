@@ -20,7 +20,7 @@ services:
       retries: 10
 
   minio:
-    image: pgsty/minio:latest
+    image: pgsty/silo:latest
     env_file: .env
     command: server /data --console-address ":9001"
     volumes: [minio-data:/data]
@@ -140,7 +140,7 @@ services:
     # TODO: GPU reservation
 
   llm-model:
-    image: minio/mc:latest
+    image: amazon/aws-cli:latest
     profiles: ["llm"]
     env_file: .env
     depends_on:

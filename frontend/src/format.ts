@@ -5,7 +5,8 @@ export function formatDecimal(value: number): string {
 }
 
 // ISO date (YYYY-MM-DD) -> DD.MM.YYYY
-export function formatDate(iso: string): string {
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
   const [year, month, day] = iso.split("-");
   return day && month && year ? `${day}.${month}.${year}` : iso;
 }
@@ -34,12 +35,14 @@ export function formatOneDecimal(value: number): string {
 
 const percent = new Intl.NumberFormat("pl-PL", { style: "percent", maximumFractionDigits: 0 });
 
-export function formatPercent(share: number): string {
-  return percent.format(share);
+export function formatPercent(value: number | null | undefined): string {
+  if (value == null) return "—";
+  return percent.format(value);
 }
 
 // seconds -> m:ss
-export function formatDuration(seconds: number): string {
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null) return "—";
   const s = Math.round(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }

@@ -1,5 +1,6 @@
 import type { Role, User } from "../auth/api";
-import { mockDelay } from "../mock";
+import {api, handleApiError} from "../api";
+import { mockDelay, MOCK_API } from "../mock";
 import { t } from "../i18n";
 import { record } from "./audit";
 
@@ -30,13 +31,22 @@ export type UserDraft = Pick<UserRow, "name" | "login" | "email" | "role" | "pwz
 
 // TODO: no profile endpoint in the backend yet
 export async function fetchProfile(user: User): Promise<Profile> {
-  return mockDelay({
-    name: user.name,
-    login: user.login,
-    email: `${user.login}@szpital.pl`,
-    role: user.role,
-    pwz: user.role === "radiologist" ? "1234567" : null,
-  });
+  if(MOCK_API){
+    return mockDelay({
+      name: user.name,
+      login: user.login,
+      email: `${user.login}@szpital.pl`,
+      role: user.role,
+      pwz: user.role === "radiologist" ? "1234567" : null,
+    });
+  }
+
+  try {
+    const { data } = await api.get<Profile>("/api/profile/");
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 let users: UserRow[] = [
@@ -60,38 +70,87 @@ function change(id: string, patch: Partial<UserRow>) {
 
 // TODO: no users endpoints in the backend yet
 export async function fetchUsers(): Promise<UserRow[]> {
-  return mockDelay(users);
+  if (MOCK_API) return mockDelay(users);
+
+  try {
+    const { data } = await api.get<UserRow[]>("/api/users/");
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 export async function createUser(draft: UserDraft): Promise<{ password: string }> {
-  if (users.some((user) => user.login === draft.login)) throw new Error("login-taken");
-  users = [...users, { ...draft, id: `u${Date.now()}`, state: "temporary", lastLogin: null }];
-  record("account_created", draft.login, `${t("settings.role").toLowerCase()}: ${t(`role.${draft.role}`)}`);
-  return mockDelay({ password: temporaryPassword() }, 300);
+  if(MOCK_API){
+    if (users.some((user) => user.login === draft.login)) throw new Error("login-taken");
+    users = [...users, { ...draft, id: `u${Date.now()}`, state: "temporary", lastLogin: null }];
+    record("account_created", draft.login, `${t("settings.role").toLowerCase()}: ${t(`role.${draft.role}`)}`);
+    return mockDelay({ password: temporaryPassword() }, 300);
+  }
+  try {
+    const { data } = await api.post<{ password: string }>("/api/users/", draft);
+    record("account_created", draft.login, `${t("settings.role").toLowerCase()}: ${t(`role.${draft.role}`)}`);
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 export async function updateUser(id: string, draft: Omit<UserDraft, "login">): Promise<void> {
-  const before = users.find((u) => u.id === id)!;
-  change(id, draft);
-  const role = before.role !== draft.role ? `${t("settings.role").toLowerCase()}: ${t(`role.${before.role}`)} → ${t(`role.${draft.role}`)}` : null;
-  record("account_changed", before.login, role);
-  return mockDelay(undefined, 300);
+  if(MOCK_API){
+    const before = users.find((u) => u.id === id)!;
+    change(id, draft);
+    const role = before.role !== draft.role ? `${t("settings.role").toLowerCase()}: ${t(`role.${before.role}`)} → ${t(`role.${draft.role}`)}` : null;
+    record("account_changed", before.login, role);
+    return mockDelay(undefined, 300);
+  }
+
+  try {
+    await api.patch(`/api/users/${id}/`, draft);
+  } catch (error) {
+    handleApiError(error);
+  }
+  
 }
 
 export async function setBlocked(id: string, blocked: boolean): Promise<void> {
-  const user = users.find((u) => u.id === id);
-  change(id, { state: blocked ? "blocked" : user?.lastLogin ? "active" : "temporary" });
-  record(blocked ? "account_blocked" : "account_unblocked", user?.login ?? id);
-  return mockDelay(undefined, 300);
+  if(MOCK_API){
+    const user = users.find((u) => u.id === id);
+    change(id, { state: blocked ? "blocked" : user?.lastLogin ? "active" : "temporary" });
+    record(blocked ? "account_blocked" : "account_unblocked", user?.login ?? id);
+    return mockDelay(undefined, 300);
+  }
+
+  try {
+    await api.post(`/api/users/${id}/block/`, { blocked });
+  } catch (error) {
+    handleApiError(error);
+  }
+  
 }
 
 // the old password stops working at once; the person has to change the new one at first login
 export async function resetPassword(id: string): Promise<{ password: string }> {
-  change(id, { state: "temporary" });
-  record("password_reset", users.find((u) => u.id === id)?.login ?? id);
-  return mockDelay({ password: temporaryPassword() }, 300);
+  if(MOCK_API){
+    change(id, { state: "temporary" });
+    record("password_reset", users.find((u) => u.id === id)?.login ?? id);
+    return mockDelay({ password: temporaryPassword() }, 300);
+  }
+
+  try {
+    const { data } = await api.post<{ password: string }>(`/api/users/${id}/reset-password/`);
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 export async function changePassword(_current: string, _next: string): Promise<void> {
-  return mockDelay(undefined, 300);
+  if(MOCK_API)  return mockDelay(undefined, 300);
+  
+  try {
+    await api.post("/api/auth/change-password/", { _current, _next });
+  } catch (error) {
+    handleApiError(error);
+  }
 }
