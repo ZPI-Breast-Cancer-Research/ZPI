@@ -31,3 +31,4 @@ mlartifacts/
 # IDE
 .idea/
 .vscode/
+.aider*

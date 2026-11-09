@@ -1,10 +1,14 @@
+import io
+import zipfile
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import mock
 
 import requests
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APIClient
 
-from .orthanc_client import OrthancClient
+from .orthanc_client import DOWNLOAD_TIMEOUT, OrthancClient, OrthancUnavailable
 
 ORTHANC_STUDY = {
     "ID": "27f7126f-4f66c3e1-f1e5c8f8-5b8e4f32-9a6bce10",
