@@ -4,6 +4,9 @@ Orthanc may be down or not deployed at all – every call uses short timeouts an
 any network/HTTP/JSON failure is raised as ``OrthancUnavailable`` (or its subclass
 ``OrthancUnauthorized`` when Orthanc rejects the credentials).
 """
+import io
+import zipfile
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -84,6 +87,31 @@ class OrthancClient:
         if not series:
             raise StudyNotFound(f"Orthanc has no study {study_uid}")
         return [_tag(item, SERIES_INSTANCE_UID) for item in series]
+
+    def download_study(self, orthanc_id: str, dest: Path) -> Path:
+        """Download one study and unpack its DICOM files into ``dest``.
+
+        ``orthanc_id`` is Orthanc's own study id (``Study.orthanc_path``), not a
+        StudyInstanceUID. Orthanc returns the study as a zip archive.
+        """
+        response = self._request(
+            f"/studies/{quote(orthanc_id, safe='')}/archive",
+            timeout=DOWNLOAD_TIMEOUT,
+        )
+        payload = io.BytesIO(response.content)
+        if not zipfile.is_zipfile(payload):
+            raise OrthancUnavailable(
+                f"Orthanc /studies/{orthanc_id}/archive did not return a zip archive"
+            )
+        payload.seek(0)
+        dest.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(payload) as archive:
+            for member in archive.namelist():
+                target = (dest / member).resolve()
+                if not target.is_relative_to(dest.resolve()):
+                    raise OrthancUnavailable(f"Orthanc archive has an unsafe path: {member}")
+            archive.extractall(dest)
+        return dest
 
     def status(self) -> str:
         """``ok``, ``unauthorized`` or ``unreachable`` based on ``GET /system``."""
