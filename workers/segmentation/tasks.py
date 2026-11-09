@@ -6,7 +6,7 @@ from pathlib import Path
 from common.storage import BUCKET_MASKS, upload_file
 from config.celery import app
 from patients.models import Study
-from patients.orthanc_client import OrthancClient, OrthancUnavailable
+from patients.orthanc_client import OrthancClient, OrthancUnavailable, StudyNotFound, OrthancUnauthorized
 from segmentation.models import SegmentationResult, StatusChoices
 
 from workers.segmentation.channels import CHANNELS
