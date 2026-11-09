@@ -166,6 +166,7 @@ class OrthancClient:
             "series_count": len(study.get("Series", [])),
             "viewer_url": self.viewer_url(uid),
         }
+
     def upload_dicom_zip(self, zip_bytes: bytes) -> dict:
         url = f"{self.base_url}/instances"
         headers = {"Content-Type": "application/zip"}

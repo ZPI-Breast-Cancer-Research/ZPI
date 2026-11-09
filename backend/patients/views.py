@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
 from .models import Study 
@@ -192,7 +193,14 @@ def study_import(request):
             study = Study.objects.create(
                 orthanc_path=orthanc_study_id
             )
-            
+
+            ## Segmentation task
+            transaction.on_commit(
+                    lambda: current_app.send_task(
+                        "segmentation.run",
+                        kwargs={"study_id": str(study.id)}
+                        )
+                    ) 
 
         # 3. If a report file (.txt / scan) is attached, upload it to MinIO
         if report_file:
