@@ -80,7 +80,23 @@ class OrthancClient:
         except ValueError as exc:
             raise OrthancUnavailable(f"Orthanc {path} returned invalid JSON: {exc}") from exc
 
-    def list_series(self, study_uid: str) -> list[str]:
+    def download_all_instances(self, study_uid: str, dest: Path) -> None:
+        """Download all instances of a study using DICOMweb (QIDO-RS and WADO-RS)."""
+        series_list = self.list_series(study_uid)
+        if not series_list:
+            raise StudyNotFound(f"Orthanc has no study {study_uid}")
+
+        dest.mkdir(parents=True, exist_ok=True)
+        for series_uid in series_list:
+            response = self._request(f"/dicom-web/studies/{study_uid}/series/{series_uid}/instances")
+            instances = response.json()
+            for instance in instances:
+                sop_instance_uid = _tag(instance, "00080018")
+                instance_response = self._request(
+                    f"/dicom-web/studies/{study_uid}/series/{series_uid}/instances/{sop_instance_uid}"
+                )
+                with open(dest / f"{sop_instance_uid}.dcm", "wb") as f:
+                    f.write(instance_response.content)
         """SeriesInstanceUIDs of a study (QIDO-RS)."""
         series = self._get(f"/dicom-web/studies/{study_uid}/series")
         # Orthanc answers an unknown study with 200 and an empty list, not 404.

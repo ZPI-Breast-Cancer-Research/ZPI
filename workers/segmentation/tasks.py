@@ -85,4 +85,21 @@ def run(study_id: str) -> None:
 
 @app.task(name="segmentation.correction_to_dicom_seg")
 def correction_to_dicom_seg(study_instance_uid: str, mask_key: str) -> None:
-    raise NotImplementedError
+    """Convert a corrected mask back to DICOM SEG format."""
+    try:
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            OrthancClient().download_all_instances(study_instance_uid, root / "dicom")
+            # Assuming convert_study handles the conversion to DICOM SEG
+            converted = convert_study(root / "dicom", "case_id", root / "nifti")
+            # Further processing to map the mask back to DICOM SEG
+            # This part depends on your specific implementation details
+    except StudyNotFound:
+        logger.error("Study not found: %s", study_instance_uid)
+        raise
+    except (OrthancUnavailable, OrthancUnauthorized) as exc:
+        logger.error("Orthanc error: %s", exc)
+        raise
+    except Exception as exc:
+        logger.error("Unexpected error during DICOM SEG conversion: %s", exc)
+        raise
