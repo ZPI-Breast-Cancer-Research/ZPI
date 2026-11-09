@@ -52,9 +52,10 @@ def run(study_id: str) -> None:
                 reason = converted.manifest.get("geometry_error") or str(converted.status)
                 raise SegmentationError(f"DICOM conversion status {converted.status}: {reason}")
 
-            model_dir = os.environ.get(MODEL_DIR_ENV)
+            model_dir = os.getenv(MODEL_DIR_ENV)
             if not model_dir:
-                raise SegmentationError(f"{MODEL_DIR_ENV} is not set")
+                logger.error("Environment variable %s is not set", MODEL_DIR_ENV)
+                raise SegmentationError(f"Environment variable {MODEL_DIR_ENV} is not set")
 
             prediction = get_segmentation_model(Path(model_dir)).predict(
                 [converted.nifti[role] for role in CHANNELS],
@@ -75,7 +76,8 @@ def run(study_id: str) -> None:
         _reject(result)
         logger.error("segmentation.run: study %s: %s", study_id, exc)
         raise
-    except Exception:
+    except Exception as exc:
+        logger.error("Unexpected error: %s", exc)
         _reject(result)
         logger.exception("segmentation.run failed for study %s", study_id)
         raise
