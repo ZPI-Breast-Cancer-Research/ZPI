@@ -11,6 +11,9 @@ from django.conf import settings
 
 # (connect, read) timeouts in seconds
 TIMEOUT = (2, 5)
+DOWNLOAD_TIMEOUT = (2, 60)
+
+SERIES_INSTANCE_UID = "0020000E"
 
 
 class OrthancUnavailable(Exception):
@@ -19,6 +22,18 @@ class OrthancUnavailable(Exception):
 
 class OrthancUnauthorized(OrthancUnavailable):
     """Orthanc is reachable but rejected the request (HTTP 401)."""
+
+
+class StudyNotFound(Exception):
+    """Orthanc has no study with the given StudyInstanceUID."""
+
+
+def _tag(item: dict, tag: str) -> str:
+    """First value of a tag in a DICOM JSON item, e.g. ``_tag(series, "0020000E")``."""
+    try:
+        return item[tag]["Value"][0]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise OrthancUnavailable(f"Orthanc response has no value for tag {tag}") from exc
 
 
 class OrthancClient:
@@ -36,10 +51,13 @@ class OrthancClient:
         # Basic auth only when both credentials are set.
         self.auth = (user, password) if user and password else None
 
-    def _get(self, path: str, params: dict | None = None):
+    def _request(
+        self, path: str, params: dict | None = None, timeout=TIMEOUT
+    ) -> requests.Response:
+        """GET from Orthanc; failures raise OrthancUnavailable or OrthancUnauthorized."""
         try:
             response = requests.get(
-                f"{self.base_url}{path}", params=params, auth=self.auth, timeout=TIMEOUT
+                f"{self.base_url}{path}", params=params, auth=self.auth, timeout=timeout
             )
         except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc request {path} failed: {exc}") from exc
@@ -47,9 +65,25 @@ class OrthancClient:
             raise OrthancUnauthorized(f"Orthanc rejected credentials for {path} (HTTP 401)")
         try:
             response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError) as exc:
+        except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc request {path} failed: {exc}") from exc
+        return response
+
+    def _get(self, path: str, params: dict | None = None):
+        """GET and parse the JSON body."""
+        response = self._request(path, params)
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise OrthancUnavailable(f"Orthanc {path} returned invalid JSON: {exc}") from exc
+
+    def list_series(self, study_uid: str) -> list[str]:
+        """SeriesInstanceUIDs of a study (QIDO-RS)."""
+        series = self._get(f"/dicom-web/studies/{study_uid}/series")
+        # Orthanc answers an unknown study with 200 and an empty list, not 404.
+        if not series:
+            raise StudyNotFound(f"Orthanc has no study {study_uid}")
+        return [_tag(item, SERIES_INSTANCE_UID) for item in series]
 
     def status(self) -> str:
         """``ok``, ``unauthorized`` or ``unreachable`` based on ``GET /system``."""
@@ -111,3 +145,5 @@ class OrthancClient:
             return response.json()
         except (requests.RequestException, ValueError) as exc:
             raise OrthancUnavailable(f"Orthanc upload response invalid: {exc}") from exc
+
+    
