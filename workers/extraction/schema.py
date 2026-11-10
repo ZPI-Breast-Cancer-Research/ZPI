@@ -162,8 +162,7 @@ class Obserwacja(BaseModel):
 class PolaczenieObserwacji(BaseModel):
     pewne: bool = Field(
         description=(
-            "true tylko, gdy opis wprost łączy obserwacje "
-            "(np. 'odpowiada zmianie w mammografii')."
+            "true tylko, gdy opis wprost łączy obserwacje (np. 'odpowiada zmianie w mammografii')."
         )
     )
     powod: str | None = Field(
@@ -226,7 +225,8 @@ class EkstrakcjaBadania(BaseModel):
 
 @cache
 def llm_json_schema() -> dict[str, Any]:
-    return _strict(EkstrakcjaBadania.model_json_schema())
+    schema: dict[str, Any] = _strict(EkstrakcjaBadania.model_json_schema())
+    return schema
 
 
 def _strict(node: Any) -> Any:
@@ -242,7 +242,6 @@ def _strict(node: Any) -> Any:
 
 
 class Provenance(BaseModel):
-
     ocr_engine: str | None = None
     ocr_engine_version: str | None = None
     ocr_mean_confidence: float | None = None

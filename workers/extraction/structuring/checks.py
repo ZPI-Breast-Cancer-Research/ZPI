@@ -70,9 +70,7 @@ def check_extraction(data: EkstrakcjaBadania, text: str) -> list[str]:
             warnings.append(f"zmiana {zmiana.id}: polaczenie_obserwacji przy jednej obserwacji")
         for strona in _sides(zmiana.strona):
             if getattr(data.piersi, strona).zmiany_ogniskowe is False:
-                warnings.append(
-                    f"zmiana {zmiana.id}: pierś {strona} ma zmiany_ogniskowe = false"
-                )
+                warnings.append(f"zmiana {zmiana.id}: pierś {strona} ma zmiany_ogniskowe = false")
     return warnings
 
 

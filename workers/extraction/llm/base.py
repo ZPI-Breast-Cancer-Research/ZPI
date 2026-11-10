@@ -29,6 +29,8 @@ class LLMClient(Protocol):
     provider: str
     model: str
 
+    def list_models(self) -> list[str]: ...
+
     def complete(
         self,
         messages: list[Message],

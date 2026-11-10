@@ -1,7 +1,9 @@
 import argparse
+import io
 import json
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import TextIO
@@ -30,9 +32,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
-        stream.reconfigure(encoding="utf-8")
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
+    handler: Callable[[argparse.Namespace, Settings], int] = args.handler
     try:
-        return args.handler(args, _settings(args))
+        return handler(args, _settings(args))
     except (LLMError, OcrError, OrientationError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

@@ -1,4 +1,3 @@
-
 import hashlib
 import json
 import re
@@ -100,8 +99,13 @@ def load_records() -> list[dict[str, Any]]:
 def git_state() -> dict[str, Any]:
     def git(*args: str) -> str | None:
         try:
-            out = subprocess.run(
-                ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+            # fixed git argv without a shell; git is resolved from PATH on purpose
+            out = subprocess.run(  # noqa: S603
+                ["git", *args],  # noqa: S607
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
             )
         except (OSError, subprocess.CalledProcessError):
             return None
@@ -110,7 +114,10 @@ def git_state() -> dict[str, Any]:
     commit = git("rev-parse", "--short", "HEAD")
     # The records themselves live in the module, so they must not make every run look dirty.
     status = git(
-        "status", "--porcelain", "--", "workers/extraction",
+        "status",
+        "--porcelain",
+        "--",
+        "workers/extraction",
         ":!workers/extraction/experiments",
     )
     return {"git_commit": commit, "git_dirty": bool(status) if status is not None else None}

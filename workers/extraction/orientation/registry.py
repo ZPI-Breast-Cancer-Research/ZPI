@@ -12,4 +12,5 @@ def get_orientation_detector(name: str, **options: Any) -> OrientationDetector |
     if name == "none":
         return None
     cls = load_class(DETECTORS, name, "orientation detector", __package__, extra=("none",))
-    return cls(**options)
+    detector: OrientationDetector = cls(**options)
+    return detector

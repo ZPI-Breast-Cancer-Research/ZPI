@@ -25,8 +25,8 @@ def make_upright(image: Path, detector: OrientationDetector, out_dir: Path) -> t
 def upright_copy(image: Path, out_dir: Path, angle: int = 0) -> Path:
     from PIL import Image, ImageOps
 
-    with Image.open(image) as img:
-        img = ImageOps.exif_transpose(img).convert("RGB")
+    with Image.open(image) as src:
+        img = ImageOps.exif_transpose(src).convert("RGB")
         if angle:
             img = img.rotate(angle, expand=True)
         out = out_dir / f"{image.stem}_{angle}.png"

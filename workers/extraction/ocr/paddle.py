@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .base import OcrError, OcrPage, boxes_to_lines
+from .base import OcrBox, OcrError, OcrPage, boxes_to_lines
 
 
 class PaddleOcrEngine:
@@ -43,8 +43,8 @@ class PaddleOcrEngine:
         boxes = self._read_v3(image) if self._v3 else self._read_v2(image)
         return OcrPage(source=image.name, lines=boxes_to_lines(boxes))
 
-    def _read_v3(self, image: Path) -> list[tuple[str, float | None, float, float, float, float]]:
-        boxes = []
+    def _read_v3(self, image: Path) -> list[OcrBox]:
+        boxes: list[OcrBox] = []
         for res in self._ocr.predict(str(image)):
             data: Any = res.json.get("res", res.json) if hasattr(res, "json") else res
             texts = data["rec_texts"]
@@ -53,8 +53,8 @@ class PaddleOcrEngine:
                 boxes.append((text, float(score), *_poly_bounds(poly)))
         return boxes
 
-    def _read_v2(self, image: Path) -> list[tuple[str, float | None, float, float, float, float]]:
-        boxes = []
+    def _read_v2(self, image: Path) -> list[OcrBox]:
+        boxes: list[OcrBox] = []
         for page in self._ocr.ocr(str(image), cls=True) or []:
             for poly, (text, score) in page or []:
                 boxes.append((text, float(score), *_poly_bounds(poly)))

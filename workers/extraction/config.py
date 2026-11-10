@@ -60,7 +60,5 @@ class Settings:
             llm_structured_output=_env_bool(
                 "LLM_STRUCTURED_OUTPUT", defaults.llm_structured_output
             ),
-            few_shot_examples=_env_number(
-                "EXTRACTION_FEW_SHOT", defaults.few_shot_examples, int
-            ),
+            few_shot_examples=_env_number("EXTRACTION_FEW_SHOT", defaults.few_shot_examples, int),
         )

@@ -10,4 +10,5 @@ def load_class(
         available = ", ".join([*extra, *targets])
         raise ValueError(f"Unknown {kind} {name!r}; available: {available}") from None
     module_name, class_name = target.split(":")
-    return getattr(import_module(module_name, package), class_name)
+    cls: type = getattr(import_module(module_name, package), class_name)
+    return cls

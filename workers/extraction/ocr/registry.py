@@ -9,4 +9,5 @@ ENGINES = {
 
 
 def get_ocr_engine(name: str, **options: Any) -> OcrEngine:
-    return load_class(ENGINES, name, "OCR engine", __package__)(**options)
+    engine: OcrEngine = load_class(ENGINES, name, "OCR engine", __package__)(**options)
+    return engine

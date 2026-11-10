@@ -2,12 +2,11 @@ from .scores import SUMMARY_GROUPS, FieldScore, Report
 
 
 def format_report(report: Report) -> str:
-    lines = []
-    for p in report.provenance:
-        lines.append(
-            f"model: {p['llm_model'] or '?'} | prompt: {p['prompt_version']} | "
-            f"schema: {p['schema_version']}"
-        )
+    lines = [
+        f"model: {p['llm_model'] or '?'} | prompt: {p['prompt_version']} | "
+        f"schema: {p['schema_version']}"
+        for p in report.provenance
+    ]
     skipped = ", ".join(
         f"{reason} {len(keys)} ({', '.join(keys)})" for reason, keys in report.skipped.items()
     )

@@ -100,6 +100,7 @@ class LocalHttpChatClient:
         if response.status_code >= 400:
             raise LLMError(f"{method} {url} -> HTTP {response.status_code}: {response.text[:300]}")
         try:
-            return response.json()
+            payload: dict[str, Any] = response.json()
         except ValueError as exc:
             raise LLMError(f"{url} returned a non-JSON response") from exc
+        return payload

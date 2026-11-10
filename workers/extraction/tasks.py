@@ -1,6 +1,7 @@
 import tempfile
 from functools import cache
 from pathlib import Path
+from typing import Any
 
 from common.storage import BUCKET_REPORTS, download_file
 from config.celery import app
@@ -34,23 +35,33 @@ def _orientation() -> OrientationDetector | None:
 
 
 @app.task(name="extraction.run")
-def run(keys: list[str], source: str | None = None) -> dict:
+def run(keys: list[str], source: str | None = None) -> dict[str, Any]:
     settings = _settings()
     llm = _llm()
-    options = {
-        "source": source or Path(keys[0]).name,
-        "few_shot": settings.few_shot_examples,
-        "structured_output": settings.llm_structured_output,
-    }
+    source = source or Path(keys[0]).name
+    few_shot = settings.few_shot_examples
+    structured_output = settings.llm_structured_output
     with tempfile.TemporaryDirectory() as tmp:
         paths = [
             download_file(BUCKET_REPORTS, key, Path(tmp) / f"{i:03d}{Path(key).suffix}")
             for i, key in enumerate(keys)
         ]
         if paths[0].suffix.lower() == ".txt":
-            result = extract_from_text(paths[0].read_text(encoding="utf-8"), llm, **options)
+            result = extract_from_text(
+                paths[0].read_text(encoding="utf-8"),
+                llm,
+                source=source,
+                few_shot=few_shot,
+                structured_output=structured_output,
+            )
         else:
             result = extract_from_images(
-                paths, _ocr(), llm, orientation=_orientation(), **options
+                paths,
+                _ocr(),
+                llm,
+                orientation=_orientation(),
+                source=source,
+                few_shot=few_shot,
+                structured_output=structured_output,
             )
     return result.model_dump(mode="json")
