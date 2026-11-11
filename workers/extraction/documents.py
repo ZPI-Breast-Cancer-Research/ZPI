@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from .errors import InputError
+from .errors import UnsupportedFileTypeError
 
 TEXT_SUFFIXES = {".txt"}
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
@@ -24,10 +24,12 @@ def find_documents(path: Path) -> list[Document]:
     subdirectory is one multi-page document (pages = images sorted by name)."""
     if path.is_file():
         if path.suffix.lower() not in IMAGE_SUFFIXES | TEXT_SUFFIXES:
-            raise InputError(f"{path}: unsupported file type (expected .txt or an image)")
+            raise UnsupportedFileTypeError(
+                f"{path}: unsupported file type (expected .txt or an image)"
+            )
         return [Document(path.name, [path])]
     if not path.is_dir():
-        raise InputError(f"{path} does not exist")
+        raise FileNotFoundError(f"{path} does not exist")
 
     documents = []
     for entry in sorted(path.iterdir()):
