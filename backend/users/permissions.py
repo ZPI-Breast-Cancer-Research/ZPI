@@ -7,7 +7,7 @@ PERMISSIONS: Dict[str, List[str]] = {
     "review": ["radiologist", "admin"],
     "addStudies": ["radiologist", "admin"],
     "viewModels": ["researcher", "admin"],
-    "manageModels": ["admin"],
+    "manageModels": ["admin", "researcher"],
     "administer": ["admin"],
 }
 

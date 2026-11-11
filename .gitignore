@@ -31,4 +31,8 @@ mlartifacts/
 # IDE
 .idea/
 .vscode/
-.aider*
+
+# Testing
+.coverage
+.benchmarks
+htmlcov/

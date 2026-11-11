@@ -161,8 +161,8 @@ def review_queue(request):
         e.study_id: e for e in ExtractionResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
 
-    studies_orth = OrthancClient().list_studies()
     try:
+        studies_orth = OrthancClient().list_studies()
         orthanc_map = {o.get("orthanc_id"): o for o in studies_orth}
     except OrthancUnavailable:  # includes OrthancUnauthorized
         orthanc_map = {}
@@ -271,8 +271,8 @@ def approve_case(request, study_id):
     new_status = StatusChoices.APPROVED if mask_choice == "confirmed" else StatusChoices.CORRECTED
 
     with transaction.atomic():
-        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).first()
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).first()
+        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
 
         if segmentation and segmentation.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
             segmentation.status = new_status

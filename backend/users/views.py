@@ -88,7 +88,7 @@ def set_first_password(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def sign_out(request):
     logout(request)
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -113,7 +113,6 @@ def manage_users(request):
         users = User.objects.all()
         data = []
         for u in users:
-            # Określanie stanu konta na wzór frontendu
             state = "active"
             if not u.is_active:
                 state = "blocked"
@@ -141,7 +140,6 @@ def manage_users(request):
 
         temp_password = generate_temporary_password()
         
-        # Rozdzielamy name na imię i nazwisko (uproszczone)
         full_name = draft.get("name", "")
         parts = full_name.split(" ", 1)
         first_name = parts[0]

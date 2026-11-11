@@ -32,3 +32,10 @@ def download_file(bucket: str, key: str, path: Path) -> Path:
 def put_bytes(data: bytes, bucket: str, key: str, content_type: str | None = None) -> None:
     extra = {"ContentType": content_type} if content_type else {}
     s3_client().put_object(Bucket=bucket, Key=key, Body=data, **extra)
+
+def is_avaible() -> bool:
+    try:
+        s3_client().list_buckets()
+        return True
+    except:
+        return False
