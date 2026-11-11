@@ -1,18 +1,106 @@
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import cached_property
 from pathlib import Path
 
-from .llm.base import LLMClient, LLMError, Message
+from .config import Settings
+from .documents import Document
+from .errors import LLMError, ParseError
+from .llm import LLMClient, Message, get_llm_client
 from .normalize import normalize_text
-from .ocr.base import OcrEngine, OcrPage, OcrResult
-from .orientation import OrientationDetector, make_upright
+from .ocr import OcrEngine, OcrPage, OcrResult, get_ocr_engine
+from .orientation import OrientationDetector, get_orientation_detector, make_upright
 from .schema import ExtractionResult, Provenance, llm_json_schema
 from .structuring.checks import check_extraction
-from .structuring.parsing import ParseError, parse_response
+from .structuring.parsing import parse_response
 from .structuring.prompting import PROMPT_VERSION, build_messages
 
 MAX_ATTEMPTS = 2
+
+
+class Extractor:
+    """The pipeline assembled from ``Settings``: one LLM client, OCR and orientation detector
+    loaded on first use (a run over text files never loads them)."""
+
+    def __init__(
+        self,
+        llm: LLMClient,
+        *,
+        ocr_engine: str = "paddle",
+        ocr_lang: str = "pl",
+        orientation: str = "paddle",
+        few_shot: int = 1,
+        structured_output: bool = True,
+        log: Callable[[str], None] | None = None,
+    ):
+        self.llm = llm
+        self.few_shot = few_shot
+        self.structured_output = structured_output
+        self._ocr_engine = ocr_engine
+        self._ocr_lang = ocr_lang
+        self._orientation = orientation
+        self._log = log or (lambda message: None)
+
+    @classmethod
+    def from_settings(
+        cls, settings: Settings, *, log: Callable[[str], None] | None = None
+    ) -> "Extractor":
+        llm = get_llm_client(
+            settings.llm_provider,
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+            allowed_hosts=settings.llm_allowed_hosts,
+            timeout=settings.llm_timeout,
+        )
+        return cls(
+            llm,
+            ocr_engine=settings.ocr_engine,
+            ocr_lang=settings.ocr_lang,
+            orientation=settings.ocr_orientation,
+            few_shot=settings.few_shot_examples,
+            structured_output=settings.llm_structured_output,
+            log=log,
+        )
+
+    @cached_property
+    def ocr(self) -> OcrEngine:
+        self._log(f"Loading OCR: {self._ocr_engine} ...")
+        return get_ocr_engine(self._ocr_engine, lang=self._ocr_lang)
+
+    @cached_property
+    def orientation(self) -> OrientationDetector | None:
+        if self._orientation != "none":
+            self._log(f"Loading orientation detector: {self._orientation} ...")
+        return get_orientation_detector(self._orientation)
+
+    def extract(self, document: Document) -> ExtractionResult:
+        if document.is_text:
+            return self.extract_text(
+                document.files[0].read_text(encoding="utf-8"), source=document.source
+            )
+        return extract_from_images(
+            document.files,
+            self.ocr,
+            self.llm,
+            orientation=self.orientation,
+            source=document.source,
+            few_shot=self.few_shot,
+            structured_output=self.structured_output,
+        )
+
+    def extract_text(self, text: str, *, source: str = "text") -> ExtractionResult:
+        return extract_from_text(
+            text,
+            self.llm,
+            source=source,
+            few_shot=self.few_shot,
+            structured_output=self.structured_output,
+        )
+
+    def run_ocr(self, images: list[Path]) -> OcrResult:
+        return run_ocr(images, self.ocr, self.orientation)
 
 
 def run_ocr(
@@ -56,6 +144,7 @@ def extract_from_images(
     try:
         ocr_result = run_ocr(images, ocr, orientation)
     except Exception as exc:
+        # OCR libraries raise anything; one unreadable scan must not stop a batch.
         return _error_result(source, f"OCR: {exc}", text="", llm=llm)
 
     result = extract_from_text(
@@ -65,12 +154,7 @@ def extract_from_images(
         few_shot=few_shot,
         structured_output=structured_output,
     )
-    result.provenance.ocr_engine = ocr_result.engine
-    result.provenance.ocr_engine_version = ocr_result.engine_version
-    result.provenance.ocr_mean_confidence = ocr_result.mean_confidence
-    result.provenance.orientation_detector = ocr_result.orientation
-    result.provenance.page_rotations = [page.rotation for page in ocr_result.pages]
-    result.ocr_seconds = round(ocr_result.seconds, 2)
+    _add_ocr_provenance(result, ocr_result)
     return result
 
 
@@ -134,6 +218,15 @@ def _retry_messages(answer: str, error: str) -> list[Message]:
 
 def _provenance(llm: LLMClient) -> Provenance:
     return Provenance(llm_provider=llm.provider, llm_model=llm.model, prompt_version=PROMPT_VERSION)
+
+
+def _add_ocr_provenance(result: ExtractionResult, ocr_result: OcrResult) -> None:
+    result.provenance.ocr_engine = ocr_result.engine
+    result.provenance.ocr_engine_version = ocr_result.engine_version
+    result.provenance.ocr_mean_confidence = ocr_result.mean_confidence
+    result.provenance.orientation_detector = ocr_result.orientation
+    result.provenance.page_rotations = [page.rotation for page in ocr_result.pages]
+    result.ocr_seconds = round(ocr_result.seconds, 2)
 
 
 def _error_result(

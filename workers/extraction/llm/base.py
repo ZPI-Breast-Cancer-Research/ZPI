@@ -2,19 +2,9 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from ..errors import HostNotAllowedError
+
 Message = dict[str, str]
-
-
-class LLMError(Exception):
-    pass
-
-
-class LLMConnectionError(LLMError):
-    pass
-
-
-class HostNotAllowedError(LLMError):
-    pass
 
 
 @dataclass
@@ -28,6 +18,8 @@ class LLMResponse:
 class LLMClient(Protocol):
     provider: str
     model: str
+
+    def list_models(self) -> list[str]: ...
 
     def complete(
         self,

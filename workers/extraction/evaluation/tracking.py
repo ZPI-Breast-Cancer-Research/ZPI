@@ -1,4 +1,3 @@
-
 import hashlib
 import json
 import re
@@ -110,7 +109,10 @@ def git_state() -> dict[str, Any]:
     commit = git("rev-parse", "--short", "HEAD")
     # The records themselves live in the module, so they must not make every run look dirty.
     status = git(
-        "status", "--porcelain", "--", "workers/extraction",
+        "status",
+        "--porcelain",
+        "--",
+        "workers/extraction",
         ":!workers/extraction/experiments",
     )
     return {"git_commit": commit, "git_dirty": bool(status) if status is not None else None}

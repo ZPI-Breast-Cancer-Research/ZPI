@@ -1,11 +1,12 @@
-import os
 from pathlib import Path
 from typing import Any
 
-from .base import OcrError, OcrPage, boxes_to_lines
+from .._paddle import import_paddleocr, result_data
+from ..errors import OcrError
+from .base import Box, OcrEngine, OcrPage, boxes_to_lines
 
 
-class PaddleOcrEngine:
+class PaddleOcrEngine(OcrEngine):
     name = "paddle"
 
     def __init__(
@@ -16,14 +17,7 @@ class PaddleOcrEngine:
         detect_orientation: bool = False,
         enable_mkldnn: bool = False,
     ):
-        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        try:
-            import paddleocr
-        except ImportError as exc:
-            raise OcrError(
-                "PaddleOCR is not installed: pip install -r requirements-paddle.txt"
-            ) from exc
-
+        paddleocr = import_paddleocr(OcrError)
         self.version = getattr(paddleocr, "__version__", "unknown")
         try:
             self._ocr = paddleocr.PaddleOCR(
@@ -43,18 +37,18 @@ class PaddleOcrEngine:
         boxes = self._read_v3(image) if self._v3 else self._read_v2(image)
         return OcrPage(source=image.name, lines=boxes_to_lines(boxes))
 
-    def _read_v3(self, image: Path) -> list[tuple[str, float | None, float, float, float, float]]:
-        boxes = []
+    def _read_v3(self, image: Path) -> list[Box]:
+        boxes: list[Box] = []
         for res in self._ocr.predict(str(image)):
-            data: Any = res.json.get("res", res.json) if hasattr(res, "json") else res
+            data = result_data(res)
             texts = data["rec_texts"]
             scores = data["rec_scores"]
             for text, score, poly in zip(texts, scores, data["rec_polys"], strict=True):
                 boxes.append((text, float(score), *_poly_bounds(poly)))
         return boxes
 
-    def _read_v2(self, image: Path) -> list[tuple[str, float | None, float, float, float, float]]:
-        boxes = []
+    def _read_v2(self, image: Path) -> list[Box]:
+        boxes: list[Box] = []
         for page in self._ocr.ocr(str(image), cls=True) or []:
             for poly, (text, score) in page or []:
                 boxes.append((text, float(score), *_poly_bounds(poly)))

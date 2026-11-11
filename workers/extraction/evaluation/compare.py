@@ -190,13 +190,8 @@ def _match(
     pred: Sequence[T],
     similarity: Callable[[T, T], float],
 ) -> list[tuple[T, T]]:
-  
     candidates = sorted(
-        (
-            (similarity(g, p), i, j)
-            for i, g in enumerate(gold)
-            for j, p in enumerate(pred)
-        ),
+        ((similarity(g, p), i, j) for i, g in enumerate(gold) for j, p in enumerate(pred)),
         reverse=True,
     )
     used_gold: set[int] = set()
@@ -219,11 +214,7 @@ def _match(
 
 def _lesion_sim(gold: Zmiana, pred: Zmiana) -> float:
     return max(
-        (
-            _observation_sim(g, p)
-            for g in gold.obserwacje
-            for p in pred.obserwacje
-        ),
+        (_observation_sim(g, p) for g in gold.obserwacje for p in pred.obserwacje),
         default=0.0,
     )
 
