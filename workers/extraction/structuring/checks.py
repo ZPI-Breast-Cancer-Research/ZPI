@@ -1,6 +1,6 @@
 import re
 
-from ..normalize import fold, quote_similarity
+from ..matching import fold, quote_similarity
 from ..schema import (
     Brzeg,
     Echogenicznosc,
