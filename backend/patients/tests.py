@@ -8,7 +8,7 @@ import requests
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APIClient
 
-from .orthanc_client import DOWNLOAD_TIMEOUT, OrthancClient, OrthancUnavailable
+from .orthanc_client import DOWNLOAD_TIMEOUT, UPLOAD_TIMEOUT, OrthancClient, OrthancUnavailable
 
 ORTHANC_STUDY = {
     "ID": "27f7126f-4f66c3e1-f1e5c8f8-5b8e4f32-9a6bce10",
@@ -222,3 +222,4 @@ class OrthancClientSegmentationTests(SimpleTestCase):
         self.assertTrue(post.call_args.args[0].endswith("/instances"))
         self.assertEqual(post.call_args.kwargs["data"], b"DICM")
         self.assertEqual(post.call_args.kwargs["headers"]["Content-Type"], "application/dicom")
+        self.assertEqual(post.call_args.kwargs["timeout"], UPLOAD_TIMEOUT)

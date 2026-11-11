@@ -15,6 +15,8 @@ from django.conf import settings
 # (connect, read) timeouts in seconds
 TIMEOUT = (2, 5)
 DOWNLOAD_TIMEOUT = (2, 60)
+# Orthanc answers a study upload only after storing every instance (~250 MB: tens of seconds).
+UPLOAD_TIMEOUT = (2, 300)
 
 SERIES_INSTANCE_UID = "0020000E"
 
@@ -166,7 +168,7 @@ class OrthancClient:
                 data=data,
                 auth=self.auth,
                 headers={"Content-Type": content_type},
-                timeout=TIMEOUT,
+                timeout=UPLOAD_TIMEOUT,
             )
         except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc upload to {url} failed: {exc}") from exc
