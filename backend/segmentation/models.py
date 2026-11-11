@@ -38,6 +38,12 @@ class SegmentationResult(models.Model):
         related_name='accepted_segmentations'
     )
     accepted_at = models.DateField(blank=True, null=True)
+    # DICOM SEG objects in Orthanc: the model's proposal, stored right after inference
+    # (blank when the model found nothing), and the mask approved by a radiologist
+    model_seg_series_uid = models.CharField(max_length=64, blank=True, default="")
+    model_seg_sop_uid = models.CharField(max_length=64, blank=True, default="")
+    approved_seg_series_uid = models.CharField(max_length=64, blank=True, default="")
+    approved_seg_sop_uid = models.CharField(max_length=64, blank=True, default="")
 
     class Meta:
         db_table = 'segmentation_results'
