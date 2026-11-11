@@ -5,7 +5,8 @@ import { t } from "../i18n";
 import type { ExtractionOverview } from "./api";
 
 export default function ExtractionView({ data }: { data: ExtractionOverview }) {
-  const worst = Math.max(...data.fields.map((f) => f.correctedShare));
+  const shares = data.fields.map((f) => f.correctedShare).filter((s): s is number => s !== null);
+  const worst = shares.length ? Math.max(...shares) : null;
 
   return (
     <div className="models">
@@ -32,7 +33,7 @@ export default function ExtractionView({ data }: { data: ExtractionOverview }) {
                   {data.fields.map((f) => (
                     <tr key={f.field}>
                       <th>
-                        {f.correctedShare === worst && <WarningIcon />}
+                        {worst !== null && f.correctedShare === worst && <WarningIcon />}
                         {f.field}
                       </th>
                       <td className="cell-right">{formatMetric(f.f1)}</td>

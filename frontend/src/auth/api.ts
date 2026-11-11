@@ -1,11 +1,12 @@
-import { mockDelay, mockScenario } from "../mock";
+import { mockDelay, mockScenario, MOCK_API } from "../mock";
+import {api} from "../api"
 
 export type Role = "radiologist" | "researcher" | "admin";
 
 // one role per account; the admin runs the system and the models but doesn't verify cases
 export const PERMISSIONS = {
-  review: ["radiologist"],
-  addStudies: ["radiologist"],
+  review: ["radiologist", "admin"],
+  addStudies: ["radiologist", "admin"],
   viewModels: ["researcher", "admin"],
   manageModels: ["admin"],
   administer: ["admin"],
@@ -30,20 +31,48 @@ function mockUser(login: string): User {
 
 // TODO: no auth endpoints yet (backend allows everything for now). Logins starting with
 // "radiolog" / "badacz" get those roles; ?mock=first-login and ?mock=bad-login preview the other paths
-export async function signIn(login: string, _password: string): Promise<SignInResult> {
-  const scenario = mockScenario();
-  if (scenario === "bad-login") {
-    await mockDelay(null, 300);
-    throw new AuthError("bad credentials");
+export async function signIn(login: string, password: string): Promise<SignInResult> {
+  if(MOCK_API){
+      const scenario = mockScenario();
+    if (scenario === "bad-login") {
+      await mockDelay(null, 300);
+      throw new AuthError("bad credentials");
+    }
+    if (scenario === "first-login") return mockDelay({ kind: "first-login", login }, 300);
+    return mockDelay({ kind: "signed-in", user: mockUser(login) }, 300);
   }
-  if (scenario === "first-login") return mockDelay({ kind: "first-login", login }, 300);
-  return mockDelay({ kind: "signed-in", user: mockUser(login) }, 300);
+  try {
+    const response = await api.post("/api/auth/signin/", { login, password });
+    return response.data;
+  } catch (error: any) {
+    if (error.response && error.response.status === 401) {
+      throw new AuthError("bad credentials");
+    }
+    throw new AuthError("Wystąpił błąd logowania.");
+  }
+
 }
 
-export async function setFirstPassword(login: string, _temporary: string, _password: string): Promise<User> {
-  return mockDelay(mockUser(login), 300);
+export async function setFirstPassword(login: string, temporary: string, password: string): Promise<User> {
+  if (MOCK_API) {
+    return mockDelay(mockUser(login), 300);
+  }
+
+  try {
+    const response = await api.post("/api/auth/set-password/", { 
+      login, 
+      temporary, 
+      password 
+    });
+    return response.data;
+  } catch (error: any) {
+    throw new Error("Nie udało się ustawić nowego hasła.");
+  }
 }
 
 export async function signOut(): Promise<void> {
-  return mockDelay(undefined, 100);
+  if(MOCK_API){
+    return mockDelay(undefined, 100);
+  }
+  await api.post("/api/auth/signout/");
 }

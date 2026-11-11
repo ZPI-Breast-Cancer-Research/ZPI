@@ -26,7 +26,7 @@ class SegmentationResult(models.Model):
         choices=StatusChoices.choices, 
         default=StatusChoices.PENDING
     )
-    uncertainity = models.FloatField(blank=True, null=True)
+    uncertainty = models.FloatField(blank=True, null=True)
     generated_path = models.CharField(max_length=500, blank=True, null=True)
     accepted_path = models.CharField(max_length=500, blank=True, null=True)
     input_series_ids = models.JSONField(default=list, blank=True, help_text="List ID series from Orthanca used as input")

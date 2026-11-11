@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "extraction",
     "segmentation",
     "mlops",
+    "common",
 ]
 
 MIDDLEWARE = [
@@ -109,8 +110,11 @@ REST_FRAMEWORK = {
     # Authentication/roles are out of scope for the skeleton.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
 }
+CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+
+CSRF_TRUSTED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 
 # Orthanc is an external service (separate setup); the backend only talks to it over HTTP.
 ORTHANC_URL = env("ORTHANC_URL").rstrip("/")

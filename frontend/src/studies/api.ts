@@ -1,4 +1,4 @@
-import { api, fetchStudies, sendStudy as apiSendStudy } from "../api";
+import { api, ApiError, handleApiError, API_URL } from "../api";
 import { toIsoDate } from "../format";
 import { MOCK_API, mockDelay } from "../mock";
 import { reviewProgress } from "../review/api";
@@ -13,6 +13,19 @@ export type ImageStatus =
   | "verified_corrected";
 
 export type ReportStatus = "missing" | "extracting" | "ready" | "to_review" | "verified";
+
+export interface Study {
+  orthanc_id: string;
+  study_instance_uid: string | null;
+  patient_id: string | null;
+  study_date: string | null;
+  description: string | null;
+  modalities: string[];
+  series_count: number;
+  extraction_status: string;
+  segmentation_status: string;
+  uncertainty: number | null;
+}
 
 export interface StudyRow {
   id: string;
@@ -105,18 +118,25 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
 
 export async function listStudies(): Promise<StudyRow[]> {
   if (MOCK_API) return mockDelay(MOCK_ROWS.map(withReview));
-  const studies = await fetchStudies();
-  // TODO: no study number from the backend yet
-  return studies.map((study) => ({
-    id: study.orthanc_id,
-    number: null,
-    patientId: study.patient_id ?? "—",
-    studyDate: dicomDateToIso(study.study_date),
-    image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
-    report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
-    uncertainty: study.uncertainty,
-    verifiedAt: null,
-  }));
+  const url = API_URL || window.location.origin;
+  try {
+    const { data } = await api.get<Study[]>("/api/studies");
+    // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
+    // if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
+    return data.map((study) => ({
+      id: study.orthanc_id,
+      number: null,
+      patientId: study.patient_id ?? "—",
+      studyDate: dicomDateToIso(study.study_date),
+      image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
+      report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
+      uncertainty: study.uncertainty,
+      verifiedAt: null,
+    }));
+  } catch (error) {
+    handleApiError(error);
+  }
+
 }
 
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
@@ -151,7 +171,16 @@ export async function getProcessingSteps(study: StudyRow): Promise<ProcessingSte
 
 export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<unknown> {
   if (MOCK_API) return mockDelay(null, 400);
-  return apiSendStudy(archiveFile, reportFile);
+  const formData = new FormData();
+  if (archiveFile) formData.append("archives", archiveFile);
+  if (reportFile) formData.append("report", reportFile);
+
+  try {
+    const { data } = await api.post("/api/studies/import/", formData);
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 export async function attachReport(studyId: string, source: File | string): Promise<void> {
