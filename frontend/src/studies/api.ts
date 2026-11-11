@@ -17,6 +17,8 @@ export type ReportStatus = "missing" | "extracting" | "ready" | "to_review" | "v
 
 export interface Study {
   orthanc_id: string;
+  // the study's number in MARIA, e.g. "0012"
+  number?: string | null;
   study_instance_uid: string | null;
   patient_id: string | null;
   study_date: string | null;
@@ -126,7 +128,7 @@ export async function listStudies(): Promise<StudyRow[]> {
     if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
     return data.map((study) => ({
       id: study.orthanc_id,
-      number: null,
+      number: study.number ?? null,
       patientId: study.patient_id ?? "—",
       studyDate: dicomDateToIso(study.study_date),
       image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
