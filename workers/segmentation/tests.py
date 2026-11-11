@@ -85,7 +85,7 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     from pydicom.uid import generate_uid
 
     from workers.segmentation.conversion import (
-        SEG_SERIES_DESCRIPTION,
+        APPROVED_SEG_SERIES_DESCRIPTION,
         Status,
         convert_nifti_to_dicom_seg,
         convert_study,
@@ -111,11 +111,16 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     nib.save(nib.Nifti1Image(mask, pre.affine), mask_path)
 
     # Act
-    seg_path = convert_nifti_to_dicom_seg(study_dir, mask_path, tmp_path / "seg.dcm")
+    written = convert_nifti_to_dicom_seg(study_dir, mask_path, tmp_path / "seg.dcm")
 
     # Assert
-    seg = hd.seg.segread(seg_path)
-    assert seg.SeriesDescription == SEG_SERIES_DESCRIPTION
+    seg = hd.seg.segread(written.path)
+    assert seg.SeriesDescription == APPROVED_SEG_SERIES_DESCRIPTION
+    assert seg.SegmentSequence[0].SegmentAlgorithmType == "MANUAL"
+    assert (seg.SeriesInstanceUID, seg.SOPInstanceUID) == (
+        written.series_instance_uid,
+        written.sop_instance_uid,
+    )
     frames = seg.pixel_array.reshape(-1, ROWS, COLUMNS)  # a single frame comes back as 2D
     marked = [
         (frame, item)
@@ -127,3 +132,172 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     source_sop = item.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
     assert source_sop == pre_sops[source_slice]
     assert [tuple(map(int, rc)) for rc in zip(*np.nonzero(frame))] == [(source_row, source_column)]
+
+
+# --- segmentation.run and segmentation.correction_to_dicom_seg ----------------------------------
+
+AXIAL = [1, 0, 0, 0, 1, 0]
+
+
+class FakeOrthanc:
+    """Serves a synthetic three-phase study and keeps what was uploaded."""
+
+    fail_upload = False
+
+    def __init__(self):
+        self.uploaded = []
+
+    def download_study(self, orthanc_id, destination):
+        from pydicom.uid import generate_uid
+
+        destination.mkdir(parents=True, exist_ok=True)
+        study_uid, frame_uid = generate_uid(), generate_uid()
+        for number, time in ((1, "120000"), (2, "120100"), (3, "120200")):
+            _write_mr_series(destination, study_uid, frame_uid, number, time, AXIAL)
+
+    def upload_dicom_file(self, path):
+        import pydicom
+        from patients.orthanc_client import OrthancUnavailable
+
+        if FakeOrthanc.fail_upload:
+            raise OrthancUnavailable("Orthanc upload response invalid: 400")
+        self.uploaded.append(pydicom.dcmread(path))
+        return {"Status": "Success"}
+
+
+class FakeModel:
+    """Writes a mask over the pre phase grid: one voxel, or nothing when ``empty``."""
+
+    def __init__(self, empty=False):
+        from workers.segmentation.models.base import ModelInfo
+
+        self.empty = empty
+        self.info = ModelInfo("nnunet", "dce3-test", "7", ("pre", "post1", "post2"), {})
+
+    def predict(self, channels, out_dir, case_id):
+        import nibabel as nib
+        import numpy as np
+
+        from workers.segmentation.models.base import SegmentationResult as Prediction
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pre = nib.load(channels[0])
+        mask = np.zeros(pre.shape, dtype=np.uint8)
+        if not self.empty:
+            mask[1, 0, 2] = 1
+        label_path, probabilities_path = (
+            out_dir / f"{case_id}.nii.gz",
+            out_dir / f"{case_id}_prob.nii.gz",
+        )
+        nib.save(nib.Nifti1Image(mask, pre.affine), label_path)
+        nib.save(nib.Nifti1Image(mask.astype(np.float32), pre.affine), probabilities_path)
+        return Prediction(label_path, probabilities_path, self.info.name, self.info.version, 1.0)
+
+
+@pytest.fixture
+def pipeline(monkeypatch):
+    """segmentation tasks with a fake Orthanc, model and masks bucket."""
+    from workers.segmentation import tasks
+
+    orthanc = FakeOrthanc()
+    FakeOrthanc.fail_upload = False
+    stored = {}
+    monkeypatch.setattr(tasks, "OrthancClient", lambda: orthanc)
+    monkeypatch.setattr(
+        tasks, "upload_file", lambda path, bucket, key: stored.update({key: path.read_bytes()})
+    )
+    monkeypatch.setattr(tasks, "_model", lambda: FakeModel())
+    return tasks, orthanc, stored
+
+
+@pytest.fixture
+def study(db):
+    from patients.models import Study
+
+    return Study.objects.create(orthanc_path="orthanc-study-1")
+
+
+def test_run_stores_the_model_mask_as_dicom_seg(pipeline, study):
+    # Arrange
+    tasks, orthanc, _ = pipeline
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    result = study.segmentations.get()
+    assert result.status == "COMPLETED"
+    [seg] = orthanc.uploaded
+    assert seg.Modality == "SEG"
+    assert seg.SeriesDescription == "MARIA model segmentation"
+    segment = seg.SegmentSequence[0]
+    assert segment.SegmentAlgorithmType == "AUTOMATIC"
+    assert segment.SegmentAlgorithmName == "dce3-test"
+    assert segment.SegmentationAlgorithmIdentificationSequence[0].AlgorithmVersion == "7"
+    assert (result.model_seg_series_uid, result.model_seg_sop_uid) == (
+        seg.SeriesInstanceUID,
+        seg.SOPInstanceUID,
+    )
+
+
+def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
+    # Arrange
+    tasks, orthanc, stored = pipeline
+    monkeypatch.setattr(tasks, "_model", lambda: FakeModel(empty=True))
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    result = study.segmentations.get()
+    assert result.status == "COMPLETED"
+    assert orthanc.uploaded == []
+    assert result.model_seg_series_uid == result.model_seg_sop_uid == ""
+    assert result.generated_path in stored
+
+
+def test_run_rejects_the_result_when_orthanc_refuses_the_seg(pipeline, study):
+    # Arrange
+    from patients.orthanc_client import OrthancUnavailable
+
+    tasks, _, stored = pipeline
+    FakeOrthanc.fail_upload = True
+
+    # Act
+    with pytest.raises(OrthancUnavailable):
+        tasks.run(str(study.id))
+
+    # Assert
+    result = study.segmentations.get()
+    assert result.status == "REJECTED"
+    assert result.model_seg_series_uid == ""
+    assert f"{study.id}/study_{study.id}.nii.gz" in stored
+
+
+def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatch):
+    # Arrange
+    from segmentation.models import SegmentationResult
+
+    tasks, orthanc, stored = pipeline
+    tasks.run(str(study.id))
+    result = study.segmentations.get()
+    model_seg = orthanc.uploaded.pop()
+    mask_bytes = stored[result.generated_path]
+    monkeypatch.setattr(
+        tasks, "download_file", lambda bucket, key, path: path.write_bytes(mask_bytes)
+    )
+
+    # Act
+    tasks.correction_to_dicom_seg(study.orthanc_path, result.generated_path, result_id=result.id)
+
+    # Assert
+    result = SegmentationResult.objects.get(pk=result.pk)
+    [seg] = orthanc.uploaded
+    assert seg.SeriesDescription == "MARIA approved segmentation"
+    assert seg.SegmentSequence[0].SegmentAlgorithmType == "MANUAL"
+    assert (result.approved_seg_series_uid, result.approved_seg_sop_uid) == (
+        seg.SeriesInstanceUID,
+        seg.SOPInstanceUID,
+    )
+    assert result.approved_seg_series_uid != model_seg.SeriesInstanceUID
+    assert result.model_seg_series_uid == model_seg.SeriesInstanceUID

@@ -19,6 +19,7 @@ from segmentation.models import SegmentationResult, StatusChoices
 
 from workers.segmentation.channels import CHANNELS
 from workers.segmentation.conversion import (
+    Algorithm,
     Status,
     convert_nifti_to_dicom_seg,
     convert_study,
@@ -68,6 +69,10 @@ def _reject(result: SegmentationResult) -> None:
     result.save(update_fields=["status", "input_series_ids"])
 
 
+def _is_empty(mask_path: Path) -> bool:
+    return not np.asarray(nib.load(mask_path).dataobj).any()
+
+
 def _calculate_uncertainty(prob_map_path: Path) -> float:
     """Oblicza średnią entropię na mapie prawdopodobieństwa wewnątrz obszaru guza."""
     try:
@@ -90,7 +95,10 @@ def _calculate_uncertainty(prob_map_path: Path) -> float:
 
 @app.task(name="segmentation.run", bind=True, queue="segmentation")
 def run(self, study_id: str) -> None:
-    """Segment one study: Orthanc DICOM → NIfTI → nnU-Net mask in the masks bucket."""
+    """Segment one study: Orthanc DICOM → NIfTI → nnU-Net mask in the masks bucket.
+
+    A non-empty mask is also stored in Orthanc as DICOM SEG, so the review viewer can show it.
+    """
     study = Study.objects.get(pk=int(study_id))
     result = SegmentationResult.objects.create(study=study, status=StatusChoices.PROCESSING)
     try:
@@ -100,7 +108,8 @@ def run(self, study_id: str) -> None:
         with tempfile.TemporaryDirectory() as work:
             root = Path(work)
             case_id = f"study_{study.id}"
-            OrthancClient().download_study(study.orthanc_path, root / "dicom")
+            orthanc = OrthancClient()
+            orthanc.download_study(study.orthanc_path, root / "dicom")
 
             converted = convert_study(root / "dicom", case_id, root / "nifti")
             result.input_series_ids = _series_ids(converted.manifest)
@@ -122,6 +131,19 @@ def run(self, study_id: str) -> None:
             upload_file(prediction.label_path, BUCKET_MASKS, label_key)
             upload_file(prediction.probabilities_path, BUCKET_MASKS, prob_key)
 
+            # the study is already on disk, so the SEG costs no second download
+            if not _is_empty(prediction.label_path):
+                seg = convert_nifti_to_dicom_seg(
+                    study_dir=root / "dicom",
+                    mask_nifti_path=prediction.label_path,
+                    output_seg_path=root / "model_seg.dcm",
+                    segment_label="Breast Lesion",
+                    algorithm=Algorithm(model.info.name, model.info.version),
+                )
+                orthanc.upload_dicom_file(seg.path)
+                result.model_seg_series_uid = seg.series_instance_uid
+                result.model_seg_sop_uid = seg.sop_instance_uid
+
             result.generated_path = label_key
             result.uncertainty = _calculate_uncertainty(prediction.probabilities_path)
             result.model = _model_version(model)
@@ -133,6 +155,8 @@ def run(self, study_id: str) -> None:
                     "input_series_ids",
                     "uncertainty",
                     "model",
+                    "model_seg_series_uid",
+                    "model_seg_sop_uid",
                 ]
             )
 
@@ -147,10 +171,13 @@ def run(self, study_id: str) -> None:
 
 
 @app.task(name="segmentation.correction_to_dicom_seg", queue="segmentation-convert")
-def correction_to_dicom_seg(orthanc_study_id: str, mask_key: str) -> None:
-    """Convert a corrected mask back to DICOM SEG format and upload to Orthanc (CPU queue).
+def correction_to_dicom_seg(
+    orthanc_study_id: str, mask_key: str, result_id: int | None = None
+) -> None:
+    """Convert an approved mask to DICOM SEG and upload it to Orthanc (CPU queue).
 
-    ``orthanc_study_id`` is Orthanc's own study id (``Study.orthanc_path``).
+    ``orthanc_study_id`` is Orthanc's own study id (``Study.orthanc_path``). The UIDs of the SEG
+    are saved on the SegmentationResult ``result_id``.
     """
     try:
         with tempfile.TemporaryDirectory() as work:
@@ -163,14 +190,19 @@ def correction_to_dicom_seg(orthanc_study_id: str, mask_key: str) -> None:
             orthanc.download_study(orthanc_study_id, dicom_dir)
             download_file(BUCKET_MASKS, mask_key, mask_nifti_path)
 
-            convert_nifti_to_dicom_seg(
+            seg = convert_nifti_to_dicom_seg(
                 study_dir=dicom_dir,
                 mask_nifti_path=mask_nifti_path,
                 output_seg_path=output_seg_path,
                 segment_label="Corrected Breast Lesion",
             )
 
-            orthanc.upload_dicom_file(output_seg_path)
+            orthanc.upload_dicom_file(seg.path)
+            if result_id is not None:
+                SegmentationResult.objects.filter(pk=result_id).update(
+                    approved_seg_series_uid=seg.series_instance_uid,
+                    approved_seg_sop_uid=seg.sop_instance_uid,
+                )
 
             logger.info(
                 "Pomyślnie zamieniono maskę %s na DICOM SEG dla badania %s",

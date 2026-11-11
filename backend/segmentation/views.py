@@ -96,10 +96,15 @@ def approve_segmentation(request, study_id: int):
 
             if study.orthanc_path:
                 orthanc_study_id = study.orthanc_path
+                result_id = result.id
                 transaction.on_commit(
                     lambda: current_app.send_task(
                         "segmentation.correction_to_dicom_seg",
-                        kwargs={"orthanc_study_id": orthanc_study_id, "mask_key": accepted_key},
+                        kwargs={
+                            "orthanc_study_id": orthanc_study_id,
+                            "mask_key": accepted_key,
+                            "result_id": result_id,
+                        },
                     )
                 )
     except Exception:

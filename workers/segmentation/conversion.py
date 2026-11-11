@@ -10,6 +10,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 import pydicom
+from highdicom import AlgorithmIdentificationSequence
 from highdicom.seg import (
     Segmentation,
     SegmentAlgorithmTypeValues,
@@ -18,6 +19,7 @@ from highdicom.seg import (
 )
 from highdicom.sr.coding import CodedConcept
 from pydicom.errors import InvalidDicomError
+from pydicom.sr.codedict import codes
 
 from workers.segmentation.channels import CHANNELS, channel_suffix
 
@@ -26,7 +28,8 @@ SLICE_GAP_TOLERANCE_MM = 0.01
 # Sign of the main RAS direction of array axes 0, 1, 2 in the MAMA-MIA training data.
 TRAINING_AXIS_SIGNS = (-1, 1, 1)
 # Shown in the viewer's series list (OHIF), so the SEG is recognisable among the MR phases.
-SEG_SERIES_DESCRIPTION = "MARIA approved segmentation"
+MODEL_SEG_SERIES_DESCRIPTION = "MARIA model segmentation"
+APPROVED_SEG_SERIES_DESCRIPTION = "MARIA approved segmentation"
 
 
 class GeometryError(Exception):
@@ -357,16 +360,35 @@ def reference_phase(study_dir: Path) -> Phase:
     return assignment.roles[CHANNELS[0]]
 
 
+@dataclass(frozen=True)
+class Algorithm:
+    """The model that drew a mask, written into the SEG of an automatic segmentation."""
+
+    name: str
+    version: str
+
+
+@dataclass(frozen=True)
+class DicomSeg:
+    path: Path
+    series_instance_uid: str
+    sop_instance_uid: str
+
+
 def convert_nifti_to_dicom_seg(
     study_dir: Path,
     mask_nifti_path: Path,
     output_seg_path: Path,
     segment_label: str = "Corrected Breast Lesion",
-) -> Path:
+    algorithm: Algorithm | None = None,
+) -> DicomSeg:
     """Write a mask in the model input layout as a DICOM SEG referencing the `pre` phase.
 
     The mask has the array layout of the NIfTI from convert_study, so the training-layout flips are
     undone before the frames are matched with the DICOM slices.
+
+    With ``algorithm`` the SEG is the model's own proposal (AUTOMATIC, named after the model);
+    without it, a mask approved by a radiologist (MANUAL).
     """
     phase = reference_phase(study_dir)
     slices = [pydicom.dcmread(path) for path in phase.files]
@@ -398,28 +420,42 @@ def convert_nifti_to_dicom_seg(
             scheme_designator="SCT",
             meaning="Tumor",
         ),
-        algorithm_type=SegmentAlgorithmTypeValues.MANUAL,
+        algorithm_type=(
+            SegmentAlgorithmTypeValues.AUTOMATIC if algorithm else SegmentAlgorithmTypeValues.MANUAL
+        ),
+        algorithm_identification=(
+            AlgorithmIdentificationSequence(
+                name=algorithm.name,
+                family=codes.cid7162.ArtificialIntelligence,
+                version=algorithm.version,
+            )
+            if algorithm
+            else None
+        ),
     )
 
+    series_uid, sop_uid = pydicom.uid.generate_uid(), pydicom.uid.generate_uid()
     seg = Segmentation(
         source_images=slices,
         pixel_array=pixel_array,
         segmentation_type=SegmentationTypeValues.BINARY,
         segment_descriptions=[segment_description],
-        series_instance_uid=pydicom.uid.generate_uid(),
+        series_instance_uid=series_uid,
         series_number=1000,
-        sop_instance_uid=pydicom.uid.generate_uid(),
+        sop_instance_uid=sop_uid,
         instance_number=1,
         manufacturer="MARIA Project",
         manufacturer_model_name="NIfTI to DICOM SEG Converter",
-        series_description=SEG_SERIES_DESCRIPTION,
+        series_description=(
+            MODEL_SEG_SERIES_DESCRIPTION if algorithm else APPROVED_SEG_SERIES_DESCRIPTION
+        ),
         software_versions="1.0",
         device_serial_number="1.0",
     )
 
     output_seg_path.parent.mkdir(parents=True, exist_ok=True)
     seg.save_as(str(output_seg_path))
-    return output_seg_path
+    return DicomSeg(output_seg_path, series_uid, sop_uid)
 
 
 def _phase_entry(
