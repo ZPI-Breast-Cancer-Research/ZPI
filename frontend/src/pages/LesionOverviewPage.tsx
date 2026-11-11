@@ -12,7 +12,10 @@ import { t } from "../i18n";
 import { fetchOverview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
-import { FIELDS } from "../review/fields";
+import { fieldLabel, FIELDS, lesionSummary, optionLabel } from "../review/fields";
+import { fromExtraction } from "../review/report";
+import ReportOriginal from "../review/ReportOriginal";
+import ReportPreview from "../review/ReportPreview";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
 import type { Series, Tool } from "../viewer/types";
@@ -33,6 +36,7 @@ export default function LesionOverviewPage() {
   const [series, setSeries] = useState<Series>(preferred.series);
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [layout, setLayout] = useViewerLayout();
+  const [showOriginal, setShowOriginal] = useState(false);
   const reviews = useCan()("review");
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
@@ -53,8 +57,14 @@ export default function LesionOverviewPage() {
 
   const saving = data.status === "saving";
   const value = (text: string) => (saving ? <span className="muted">{t("overview.recalc")}</span> : text);
-  const label = (key: string) => FIELDS.find((f) => f.key === key)?.label ?? key;
   const dims = data.measurements.dimensions;
+  const report = data.report;
+  const extracted = report?.source.result.data;
+  const lesions = extracted ? fromExtraction(extracted).lesions : [];
+  const lesionIndex = lesions.findIndex((l) => l.id === report?.onImage);
+  const lesion = lesionIndex >= 0 ? lesions[lesionIndex] : null;
+  const answers = report && report.onImage !== null ? (report.lesions[report.onImage] ?? {}) : {};
+  const rows = FIELDS.filter((f) => answers[f.key]);
 
   return (
     <Page
@@ -161,32 +171,52 @@ export default function LesionOverviewPage() {
 
           <Panel title={t("overview.reportData")} aux={data.verification.extractionVersion ? `${t("review.extraction")} ${t("models.version")} ${data.verification.extractionVersion}` : undefined}>
             <div className="overview__pad">
-              {data.report ? (
-                <table className="kv">
-                  <thead>
-                    <tr>
-                      <th>{t("review.col.field")}</th>
-                      <th>{t("review.col.value")}</th>
-                      <th className="cell-right">{t("review.col.status")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.report.map((row) => (
-                      <tr key={row.field}>
-                        <th>{label(row.field)}</th>
-                        <td>{row.value}</td>
-                        <td className="cell-right">
-                          <span className={row.corrected ? "status status--corrected" : "status status--confirmed"}>
-                            {t(row.corrected ? "review.field.corrected" : "review.field.confirmed")}
-                          </span>
-                        </td>
+              {report ? (
+                <>
+                  <div style={{ margin: "8px 0 10px" }}>
+                    <ReportPreview report={report.source} onOpen={() => setShowOriginal(true)} />
+                  </div>
+                  {lesion && lesions.length > 1 && (
+                    <p className="muted" style={{ marginBottom: 6 }}>
+                      {t("review.lesion.of", { n: lesionIndex + 1, total: lesions.length })} · {lesionSummary(lesion)} · {t("review.lesion.onImage")}
+                    </p>
+                  )}
+                  <table className="kv">
+                    <thead>
+                      <tr>
+                        <th>{t("review.col.field")}</th>
+                        <th>{t("review.col.value")}</th>
+                        <th className="cell-right">{t("review.col.status")}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {rows.map((field) => {
+                        const answer = answers[field.key]!;
+                        const corrected = answer.state === "corrected";
+                        return (
+                          <tr key={field.key}>
+                            <th>{fieldLabel(field.key)}</th>
+                            <td>{answer.value ? `${optionLabel(field.key, answer.value)}${field.unit ? ` ${field.unit}` : ""}` : "—"}</td>
+                            <td className="cell-right">
+                              <span className={corrected ? "status status--corrected" : "status status--confirmed"}>
+                                {t(corrected ? "review.field.corrected" : "review.field.confirmed")}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <ReportOriginal
+                    report={report.source}
+                    open={showOriginal}
+                    onClose={() => setShowOriginal(false)}
+                    lesion={lesion ? { number: lesionIndex + 1, quotes: lesion.observations.map((o) => o.quote) } : null}
+                  />
+                </>
               ) : (
                 <div className="empty-box" style={{ marginTop: 8 }}>
-                  <b>{t("review.noReport")}</b>
+                  <b>{t(data.reportPending ? "review.original.pending" : "review.noReport")}</b>
                   {t("overview.noReportBody")}
                   <br />
                   <Link className="btn btn--small" to={`/badania?badanie=${data.studyId}`}>
@@ -199,7 +229,7 @@ export default function LesionOverviewPage() {
 
           <Panel title={t("overview.comparison")}>
             <div className="overview__pad">
-              {data.report ? (
+              {report ? (
                 <table className="kv">
                   <thead>
                     <tr>

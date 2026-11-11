@@ -1,7 +1,15 @@
+import { api, handleApiError } from "../api";
 import { mockDelay, mockScenario, mockStudyUid, MOCK_API } from "../mock";
-import type { FieldKey } from "../review/fields";
+import type { FieldAnswers } from "../review/api";
+import { isCaseReport, type CaseReport, type Extraction } from "../review/extraction";
 import type { MaskSource } from "../viewer/types";
-import {api, handleApiError} from "../api"
+
+export interface OverviewReport {
+  source: CaseReport;
+  accepted: Extraction;
+  lesions: Record<number, FieldAnswers>;
+  onImage: number | null;
+}
 
 export interface Overview {
   studyId: string;
@@ -16,12 +24,13 @@ export interface Overview {
   masks: { approved: MaskSource; model: MaskSource };
   mask: { corrected: boolean; version: number; date: string; by: string };
   measurements: { volume: number | null; dimensions: [number, number, number] | null; intensity: number | null };
-  report: { field: FieldKey; value: string; corrected: boolean }[] | null;
+  report: OverviewReport | null;
+  reportPending?: boolean;
   comparison: { feature: "largestSize" | "quadrant"; fromMask: string | null; fromReport: string | null; match: boolean | null }[];
   verification: { by: string; date: string; editingSeconds: number; segmentationVersion: string; extractionVersion: string | null };
 }
 
-// TODO: no lesion overview endpoint yet; ?mock=saving / ?mock=no-report preview the other states
+// ?mock=saving / ?mock=no-report preview the other states
 export async function fetchOverview(studyId: string): Promise<Overview> {
   if(MOCK_API){
     const scenario = mockScenario();
@@ -43,18 +52,9 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
       },
       mask: { corrected: true, version: 1, date: "2026-10-21", by: "Użytkownik" },
       measurements: { volume: null, dimensions: null, intensity: null },
-      report: noReport
-        ? null
-        : [
-            { field: "birads", value: "4C", corrected: false },
-            { field: "location", value: "KGZ", corrected: false },
-            { field: "size", value: "14 mm", corrected: false },
-            { field: "shape", value: "Owalny", corrected: true },
-            { field: "margin", value: "Nieregularne", corrected: false },
-            { field: "curve", value: "Plateau", corrected: true },
-          ],
+      report: null,
       comparison: [
-        { feature: "largestSize", fromMask: null, fromReport: "14 mm", match: null },
+        { feature: "largestSize", fromMask: null, fromReport: "16 mm", match: null },
         { feature: "quadrant", fromMask: null, fromReport: "KGZ", match: null },
       ],
       verification: { by: "Użytkownik", date: "2026-10-21", editingSeconds: 74, segmentationVersion: "7", extractionVersion: noReport ? null : "3" },
@@ -62,9 +62,9 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
   }
   try {
     const { data } = await api.get<Overview>(`/api/review/cases/${encodeURIComponent(studyId)}/review-overview/`);
-    return data;
+    const ready = !!data.report && isCaseReport(data.report.source);
+    return { ...data, report: ready ? data.report : null, reportPending: !ready && !!data.report };
   } catch (error) {
     handleApiError(error);
   }
-
 }
