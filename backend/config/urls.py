@@ -9,6 +9,7 @@ urlpatterns = [
     path("api/auth/orthanc", views.orthanc_auth, name="orthanc-auth"),
     path("api/", include("patients.urls")),
     path("api/", include("users.urls")),
+    path("api/segmentation/", include("segmentation.urls")),
     path("api/review/", include("review.urls")),
     path("api/models/", include("mlops.urls")),
 ]

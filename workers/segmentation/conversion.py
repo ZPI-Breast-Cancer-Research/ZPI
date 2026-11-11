@@ -10,6 +10,13 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 import pydicom
+from highdicom.seg import (
+    Segmentation,
+    SegmentAlgorithmTypeValues,
+    SegmentDescription,
+    SegmentationTypeValues,
+)
+from highdicom.sr.coding import CodedConcept
 from pydicom.errors import InvalidDicomError
 
 from workers.segmentation.channels import CHANNELS, channel_suffix
@@ -18,6 +25,8 @@ LPS_TO_RAS = np.diag([-1.0, -1.0, 1.0, 1.0])
 SLICE_GAP_TOLERANCE_MM = 0.01
 # Sign of the main RAS direction of array axes 0, 1, 2 in the MAMA-MIA training data.
 TRAINING_AXIS_SIGNS = (-1, 1, 1)
+# Shown in the viewer's series list (OHIF), so the SEG is recognisable among the MR phases.
+SEG_SERIES_DESCRIPTION = "MARIA approved segmentation"
 
 
 class GeometryError(Exception):
@@ -164,11 +173,18 @@ def load_volume(phase: Phase) -> tuple[np.ndarray, np.ndarray]:
     their slice axis is mirrored relative to DICOM.
     """
     slices = [pydicom.dcmread(path) for path in phase.files]
+    affine = _native_affine(phase.series_uid, slices)
+    volume = np.stack([_pixels(s).T for s in slices], axis=-1)  # [column, row, slice]
+    return _to_training_layout(volume, affine)
+
+
+def _native_affine(series_uid: str, slices: list[pydicom.Dataset]) -> np.ndarray:
+    """RAS affine of slices stacked as [column, row, slice], in the order given."""
     first = slices[0]
     if len(slices) < 2:
-        raise GeometryError(f"Series {phase.series_uid}: a volume needs at least 2 slices")
+        raise GeometryError(f"Series {series_uid}: a volume needs at least 2 slices")
     if len({(s.Rows, s.Columns, tuple(map(float, s.PixelSpacing))) for s in slices}) != 1:
-        raise GeometryError(f"Series {phase.series_uid}: slices differ in size or pixel spacing")
+        raise GeometryError(f"Series {series_uid}: slices differ in size or pixel spacing")
 
     orientation = np.array(first.ImageOrientationPatient, dtype=float)
     row_direction, column_direction = orientation[:3], orientation[3:]
@@ -177,7 +193,7 @@ def load_volume(phase: Phase) -> tuple[np.ndarray, np.ndarray]:
     positions = np.array([np.dot(s.ImagePositionPatient, normal) for s in slices], dtype=float)
     gaps = np.diff(positions)
     if not np.allclose(gaps, gaps[0], atol=SLICE_GAP_TOLERANCE_MM) or gaps[0] <= 0:
-        raise GeometryError(f"Series {phase.series_uid}: uneven slice spacing")
+        raise GeometryError(f"Series {series_uid}: uneven slice spacing")
 
     # PixelSpacing is (between rows, between columns).
     row_spacing, column_spacing = map(float, first.PixelSpacing)
@@ -186,10 +202,7 @@ def load_volume(phase: Phase) -> tuple[np.ndarray, np.ndarray]:
     affine[:3, 1] = column_direction * row_spacing
     affine[:3, 2] = normal * float(np.mean(gaps))
     affine[:3, 3] = np.array(first.ImagePositionPatient, dtype=float)
-    affine = LPS_TO_RAS @ affine
-
-    volume = np.stack([_pixels(s).T for s in slices], axis=-1)  # [column, row, slice]
-    return _to_training_layout(volume, affine)
+    return LPS_TO_RAS @ affine
 
 
 def _pixels(dataset: pydicom.Dataset) -> np.ndarray:
@@ -201,14 +214,23 @@ def _pixels(dataset: pydicom.Dataset) -> np.ndarray:
     return pixels * slope + intercept
 
 
-def _to_training_layout(volume: np.ndarray, affine: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    affine = affine.copy()
+def _training_flips(affine: np.ndarray) -> tuple[int, ...]:
+    """Array axes to flip so that their main RAS direction matches TRAINING_AXIS_SIGNS."""
+    flips = []
     for axis, wanted_sign in enumerate(TRAINING_AXIS_SIGNS):
         direction = affine[:3, axis]
         if np.sign(direction[np.argmax(np.abs(direction))]) != wanted_sign:
-            volume = np.flip(volume, axis)
-            affine[:3, 3] += direction * (volume.shape[axis] - 1)
-            affine[:3, axis] = -direction
+            flips.append(axis)
+    return tuple(flips)
+
+
+def _to_training_layout(volume: np.ndarray, affine: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    affine = affine.copy()
+    for axis in _training_flips(affine):
+        direction = affine[:3, axis].copy()
+        volume = np.flip(volume, axis)
+        affine[:3, 3] += direction * (volume.shape[axis] - 1)
+        affine[:3, axis] = -direction
     return volume, affine
 
 
@@ -318,6 +340,86 @@ def convert_study(study_dir: Path, case_id: str, out_dir: Path) -> ConversionRes
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return ConversionResult(status, nifti, manifest)
+
+def reference_phase(study_dir: Path) -> Phase:
+    """The phase the model output is aligned to: `pre`, chosen by the same rules as convert_study."""
+    phases: list[Phase] = []
+    for item in read_series(study_dir):
+        if not is_dynamic_candidate(item):
+            continue
+        try:
+            phases.extend(split_phases(item))
+        except GeometryError:
+            continue
+    assignment = assign_roles(phases)
+    if assignment.status is not Status.OK:
+        raise GeometryError(f"Cannot pick the reference phase: status {assignment.status}")
+    return assignment.roles[CHANNELS[0]]
+
+
+def convert_nifti_to_dicom_seg(
+    study_dir: Path,
+    mask_nifti_path: Path,
+    output_seg_path: Path,
+    segment_label: str = "Corrected Breast Lesion",
+) -> Path:
+    """Write a mask in the model input layout as a DICOM SEG referencing the `pre` phase.
+
+    The mask has the array layout of the NIfTI from convert_study, so the training-layout flips are
+    undone before the frames are matched with the DICOM slices.
+    """
+    phase = reference_phase(study_dir)
+    slices = [pydicom.dcmread(path) for path in phase.files]
+    affine = _native_affine(phase.series_uid, slices)
+
+    mask = np.asarray(nib.load(mask_nifti_path).dataobj) > 0
+    flips = _training_flips(affine)
+    if flips:
+        mask = np.flip(mask, flips)
+
+    expected = (int(slices[0].Columns), int(slices[0].Rows), len(slices))
+    if mask.shape != expected:
+        raise GeometryError(
+            f"Mask shape {mask.shape} does not match the reference phase {expected} "
+            f"(series {phase.series_uid})"
+        )
+    pixel_array = np.ascontiguousarray(mask.transpose(2, 1, 0), dtype=np.uint8)  # [slice, row, col]
+
+    segment_description = SegmentDescription(
+        segment_number=1,
+        segment_label=segment_label,
+        segmented_property_category=CodedConcept(
+            value="49755003",
+            scheme_designator="SCT",
+            meaning="Morphologically Altered Structure",
+        ),
+        segmented_property_type=CodedConcept(
+            value="108369006",
+            scheme_designator="SCT",
+            meaning="Tumor",
+        ),
+        algorithm_type=SegmentAlgorithmTypeValues.MANUAL,
+    )
+
+    seg = Segmentation(
+        source_images=slices,
+        pixel_array=pixel_array,
+        segmentation_type=SegmentationTypeValues.BINARY,
+        segment_descriptions=[segment_description],
+        series_instance_uid=pydicom.uid.generate_uid(),
+        series_number=1000,
+        sop_instance_uid=pydicom.uid.generate_uid(),
+        instance_number=1,
+        manufacturer="MARIA Project",
+        manufacturer_model_name="NIfTI to DICOM SEG Converter",
+        series_description=SEG_SERIES_DESCRIPTION,
+        software_versions="1.0",
+        device_serial_number="1.0",
+    )
+
+    output_seg_path.parent.mkdir(parents=True, exist_ok=True)
+    seg.save_as(str(output_seg_path))
+    return output_seg_path
 
 
 def _phase_entry(
