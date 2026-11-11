@@ -57,6 +57,56 @@ export async function findSeries(studyUid: string): Promise<Partial<Record<Serie
   return found;
 }
 
+export interface SegRef {
+  seriesUid: string;
+  sopUid: string;
+  // the series the SEG was drawn on; its frames are matched to that series' images
+  referencedSeriesUid: string;
+}
+
+// TODO: stand-in until the review API says which SEG belongs to the case; takes the newest SEG in the study
+export async function latestSeg(studyUid: string): Promise<SegRef | null> {
+  let series: DicomJson[];
+  try {
+    series = await get(`/studies/${studyUid}/series?Modality=SEG&includefield=00080021&includefield=00080031`);
+  } catch (error) {
+    if (error instanceof DicomWebError && error.kind === "not-found") return null;
+    throw error;
+  }
+  const when = (s: DicomJson) => `${tag(s, "00080021") ?? ""}${tag(s, "00080031") ?? ""}`;
+  const newest = series.sort((a, b) => when(b).localeCompare(when(a)))[0];
+  if (!newest) return null;
+  const seriesUid = String(tag(newest, "0020000E"));
+  const [instance] = await get(`/studies/${studyUid}/series/${seriesUid}/metadata`);
+  const referenced = instance?.["00081115"]?.Value?.[0] as DicomJson | undefined;
+  const referencedSeriesUid = referenced && tag(referenced, "0020000E");
+  if (!instance || !referencedSeriesUid) return null;
+  return { seriesUid, sopUid: String(tag(instance, "00080018")), referencedSeriesUid: String(referencedSeriesUid) };
+}
+
+// WADO-RS answers with multipart/related even for one instance; this returns the DICOM part of it
+export async function fetchInstance(studyUid: string, seriesUid: string, sopUid: string): Promise<ArrayBuffer> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}/studies/${studyUid}/series/${seriesUid}/instances/${sopUid}`, {
+      headers: { Accept: 'multipart/related; type="application/dicom"' },
+    });
+  } catch {
+    throw new DicomWebError("unavailable");
+  }
+  if (response.status === 404) throw new DicomWebError("not-found");
+  if (!response.ok) throw new DicomWebError("unavailable");
+  const body = new Uint8Array(await response.arrayBuffer());
+  const boundary = /boundary="?([^";]+)"?/i.exec(response.headers.get("Content-Type") ?? "")?.[1];
+  if (!boundary) return body.buffer;
+  const head = new TextDecoder("latin1").decode(body.subarray(0, 4096));
+  const start = head.indexOf("\r\n\r\n") + 4;
+  const closing = new TextEncoder().encode(`\r\n--${boundary}`);
+  let end = body.length - closing.length;
+  while (end > start && !closing.every((byte, i) => body[end + i] === byte)) end--;
+  return body.slice(start, end > start ? end : body.length).buffer;
+}
+
 const imageIdCache = new Map<string, Promise<string[]>>();
 
 // registers the series metadata with the loader and returns one imageId per frame
