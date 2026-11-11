@@ -4,9 +4,18 @@ from typing import Any, TypeVar
 
 from ..matching import fold, quote_similarity, text_similarity
 from ..normalize import normalize_text
-from ..schema import EkstrakcjaBadania, ExtractionResult, Obserwacja, Wezel, Wymiary, Zmiana
+from ..schema import (
+    EkstrakcjaBadania,
+    ExtractionResult,
+    Obserwacja,
+    Piersi,
+    Wezel,
+    Wniosek,
+    Wymiary,
+    Zmiana,
+)
 from ..structuring.prompting import load_few_shot
-from .scores import Report
+from .report import Report
 
 TEXT_MIN_SIMILARITY = 0.9
 MATCH_MIN_SIMILARITY = 0.6
@@ -84,24 +93,33 @@ def _is_few_shot(text: str, few_shot_reports: list[str]) -> bool:
 
 
 def _compare_document(report: Report, gold: EkstrakcjaBadania, pred: EkstrakcjaBadania) -> None:
+    """Score one document: single-valued parts directly, lesions and nodes after pairing."""
+    # Order does not matter, and an empty list counts as no answer.
     _score(report, "modalnosci", set(gold.modalnosci) or None, set(pred.modalnosci) or None)
+    _compare_breasts(report, gold.piersi, pred.piersi)
+    _compare_conclusion(report, gold.wniosek, pred.wniosek)
 
+    for g_lesion, p_lesion in _match(report, "zmiany", gold.zmiany, pred.zmiany, _lesion_sim):
+        _compare_lesion(report, g_lesion, p_lesion)
+    for g_node, p_node in _match(report, "wezly", gold.wezly, pred.wezly, _node_sim):
+        _compare_node(report, g_node, p_node)
+
+
+def _compare_breasts(report: Report, gold: Piersi, pred: Piersi) -> None:
+    # Both sides are scored under the same field names, so each row covers left and right.
     for side in ("lewa", "prawa"):
-        g, p = getattr(gold.piersi, side), getattr(pred.piersi, side)
+        g, p = getattr(gold, side), getattr(pred, side)
         _score(report, "piersi.budowa", g.budowa, p.budowa, _same_text)
         for name in PIERS_FLAGS:
             _score(report, f"piersi.{name}", getattr(g, name), getattr(p, name))
         _score(report, "piersi.skora.stan", g.skora.stan, p.skora.stan, _same_text)
         _score(report, "piersi.skora.naciek", g.skora.naciek, p.skora.naciek)
 
-    _score(report, "wniosek.birads", gold.wniosek.birads, pred.wniosek.birads)
-    _score(report, "wniosek.tekst", gold.wniosek.tekst, pred.wniosek.tekst, _same_text)
-    _score(report, "wniosek.zalecenie", gold.wniosek.zalecenie, pred.wniosek.zalecenie, _same_text)
 
-    for g_lesion, p_lesion in _match(report, "zmiany", gold.zmiany, pred.zmiany, _lesion_sim):
-        _compare_lesion(report, g_lesion, p_lesion)
-    for g_node, p_node in _match(report, "wezly", gold.wezly, pred.wezly, _node_sim):
-        _compare_node(report, g_node, p_node)
+def _compare_conclusion(report: Report, gold: Wniosek, pred: Wniosek) -> None:
+    _score(report, "wniosek.birads", gold.birads, pred.birads)
+    _score(report, "wniosek.tekst", gold.tekst, pred.tekst, _same_text)
+    _score(report, "wniosek.zalecenie", gold.zalecenie, pred.zalecenie, _same_text)
 
 
 def _compare_lesion(report: Report, gold: Zmiana, pred: Zmiana) -> None:
@@ -170,6 +188,22 @@ def _score(
     pred: Any,
     same: Callable[[Any, Any], bool] = lambda a, b: a == b,
 ) -> None:
+    """Count one field of one document: hand-checked ``gold`` value vs model ``pred`` value.
+
+    gold    pred    result
+    None    None    not counted (nothing to find, nothing found)
+    value   None    missed    - the model left out a value that is in the report
+    None    value   spurious  - the model filled in a value that is not in the report
+    value   value   correct   - if ``same(gold, pred)`` (``==`` by default, ``_same_text`` for
+                                verbatim text, ``math.isclose`` for sizes in mm)
+    value   value   wrong     - otherwise
+
+    EXAMPLE:
+        _score(report, "wniosek.birads", "4a", "4a")  -> correct
+        _score(report, "wniosek.birads", "4a", "3")   -> wrong
+        _score(report, "wniosek.birads", "4a", None)  -> missed
+        _score(report, "piersi.obrzek", None, True)   -> spurious
+    """
     if gold is None and pred is None:
         return
     score = report.field_score(name)
