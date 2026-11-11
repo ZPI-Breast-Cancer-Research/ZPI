@@ -31,11 +31,12 @@ def format_report(report: Report) -> str:
     if report.errors:
         summary += f" (failed, scored as empty: {', '.join(report.errors)})"
     lines.append(summary + (f"; skipped: {skipped}" if skipped else ""))
-    if report.ocr_cer:
-        worst = max(report.ocr_cer, key=report.ocr_cer.__getitem__)
+    worst = report.ocr.worst
+    if worst is not None:
+        worst_key, worst_cer = worst
         lines.append(
-            f"OCR character error rate: mean {report.mean_ocr_cer:.1%}, "
-            f"worst {report.ocr_cer[worst]:.1%} ({worst})"
+            f"OCR character error rate: mean {report.ocr.mean:.1%}, "
+            f"worst {worst_cer:.1%} ({worst_key})"
         )
 
     lines += ["", f"{'field group':<26}{'n':>5}{'acc':>7}{'P':>7}{'R':>7}{'F1':>7}"]

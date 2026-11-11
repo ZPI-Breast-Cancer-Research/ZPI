@@ -3,7 +3,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .scores import EntityScore, FieldScore
+from .scores import EntityScore, FieldScore, OCRScore
 
 SUMMARY_GROUPS = (
     "piersi",
@@ -23,11 +23,7 @@ class Report:
     provenance: list[dict[str, str]] = field(default_factory=list)
     entities: dict[str, EntityScore] = field(default_factory=dict)
     fields: dict[str, FieldScore] = field(default_factory=dict)
-    ocr_cer: dict[str, float] = field(default_factory=dict)
-
-    @property
-    def mean_ocr_cer(self) -> float | None:
-        return sum(self.ocr_cer.values()) / len(self.ocr_cer) if self.ocr_cer else None
+    ocr: OCRScore = field(default_factory=OCRScore)
 
     def field_score(self, name: str) -> FieldScore:
         return self.fields.setdefault(name, FieldScore())
@@ -57,7 +53,7 @@ class Report:
             summary[f"{entity}_f1"] = score.f1 if score else None
         birads = self.fields.get("wniosek.birads")
         summary["wniosek_birads_accuracy"] = birads.accuracy if birads else None
-        summary["ocr_cer"] = self.mean_ocr_cer
+        summary["ocr_cer"] = self.ocr.mean
         return summary
 
     def to_dict(self) -> dict[str, Any]:
@@ -75,5 +71,5 @@ class Report:
             "summary": self.summary(),
             "entities": scores(self.entities, ("precision", "recall", "f1")),
             "fields": scores(self.fields, ("n", "accuracy", "precision", "recall", "f1")),
-            "ocr_cer": {"mean": self.mean_ocr_cer, "documents": self.ocr_cer},
+            "ocr_cer": {"mean": self.ocr.mean, "documents": self.ocr.documents},
         }

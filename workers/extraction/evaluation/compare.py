@@ -3,7 +3,6 @@ from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
 
 from ..matching import fold, quote_similarity, text_similarity
-from ..normalize import normalize_text
 from ..schema import (
     EkstrakcjaBadania,
     ExtractionResult,
@@ -57,7 +56,7 @@ def evaluate(
             report.provenance.append(provenance)
         reference = (transcripts or {}).get(key)
         if reference and result.provenance.ocr_engine and result.text:
-            report.ocr_cer[key] = char_error_rate(reference, result.text)
+            report.ocr.add(key, reference, result.text)
         if result.status != "ok" or result.data is None:
             # A failed document counts as nothing found.
             report.errors.append(key)
@@ -65,26 +64,6 @@ def evaluate(
         else:
             _compare_document(report, gold[key], result.data)
     return report
-
-
-def char_error_rate(reference: str, hypothesis: str, *, normalize: bool = True) -> float:
-    """Levenshtein distance / reference length, after the same normalisation as the LLM input
-    and with all whitespace collapsed (line breaks are layout, not OCR errors).
-
-    ``normalize=False`` skips ``normalize_text`` (whitespace is still collapsed), to measure
-    how much the normalisation itself removes from the error.
-    """
-    prepare = normalize_text if normalize else str
-    ref, hyp = (" ".join(prepare(t).split()) for t in (reference, hypothesis))
-    if not ref:
-        return 0.0 if not hyp else 1.0
-    previous = list(range(len(hyp) + 1))
-    for i, r in enumerate(ref, start=1):
-        current = [i]
-        for j, h in enumerate(hyp, start=1):
-            current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (r != h)))
-        previous = current
-    return previous[-1] / len(ref)
 
 
 def _is_few_shot(text: str, few_shot_reports: list[str]) -> bool:
