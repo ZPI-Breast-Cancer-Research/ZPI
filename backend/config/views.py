@@ -5,7 +5,8 @@ from rest_framework.response import Response
 
 from mlops.mlflow_client import MlflowClient
 from patients.orthanc_client import OrthancClient
-
+from common.storage import is_avaible
+from users.permissions import require_permission
 
 def _database_ok() -> bool:
     try:
@@ -25,10 +26,12 @@ def health(request):
         "database": "ok" if db_ok else "error",
         "orthanc": OrthancClient().status(),
         "mlflow": MlflowClient().status(),
+        "storage": "ok" if is_avaible() else "error",
     }
     return Response(body, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 @api_view(["GET"])
+@require_permission(["review"])
 def orthanc_auth(request):
     return Response(status=status.HTTP_204_NO_CONTENT)
