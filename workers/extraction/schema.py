@@ -250,6 +250,9 @@ class Provenance(BaseModel):
     llm_model: str
     prompt_version: str
     schema_version: str = SCHEMA_VERSION
+    # None in results saved before these fields existed.
+    few_shot: int | None = None
+    structured_output: bool | None = None
 
 
 class ExtractionResult(BaseModel):

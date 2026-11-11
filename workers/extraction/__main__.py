@@ -11,6 +11,8 @@ from .documents import Document, find_documents
 from .errors import ExtractionError
 from .evaluation import (
     evaluate,
+    format_experiment_diff,
+    format_experiments,
     format_report,
     load_gold,
     load_predictions,
@@ -160,20 +162,27 @@ def cmd_experiment(args: argparse.Namespace, settings: Settings) -> int:
     )
     previous = tracking.load_records()
     record = tracking.build_record(
-        exp_id, args.name, args.note, settings, results, report, args.gold, predictions_path
+        exp_id,
+        args.name,
+        hypothesis=args.note,
+        settings=settings,
+        results=results,
+        report=report,
+        gold_dir=args.gold,
+        predictions=predictions_path,
     )
     path = tracking.save_record(record)
 
     print(format_report(report))
     print()
     if previous:
-        print(tracking.format_diff(previous[-1], record))
+        print(format_experiment_diff(previous[-1], record))
     print(f"Saved experiment {exp_id} -> {path}", file=sys.stderr)
     return 0
 
 
 def cmd_experiments(args: argparse.Namespace, settings: Settings) -> int:
-    print(tracking.format_table(tracking.load_records()))
+    print(format_experiments(tracking.load_records()))
     return 0
 
 
