@@ -10,6 +10,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@cornerstonejs/adapters": "4.22.13",
     "@cornerstonejs/core": "4.22.13",
     "@cornerstonejs/dicom-image-loader": "4.22.13",
     "@cornerstonejs/tools": "4.22.13",

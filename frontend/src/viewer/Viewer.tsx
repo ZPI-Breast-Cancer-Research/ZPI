@@ -15,7 +15,8 @@ import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, use
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
 import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
-import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
+import { paintSeg } from "./dicomSeg";
+import { DicomWebError, findSeries, latestSeg, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
 import { applyPatch, interpolateMask, maskExtent, maskPatch, restoreSlice, type Extent, type MaskPatch } from "./maskTools";
 import SliceStrip from "./SliceStrip";
@@ -184,6 +185,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   callbacks.current = { onEdit, onSeriesFound, onGridMatch, onWindow, onMaskInfo };
   // the mask as the model drew it, to tell which slices the radiologist changed
   const original = useRef<Uint8Array | null>(null);
+  // where the planes open: the middle of the mask, once it is known
+  const maskCenter = useRef<Types.Point3 | null>(null);
 
   const [problem, setProblem] = useState<Problem | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -364,6 +367,16 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       const main = await loadVolume(studyUid, found.post!);
       if (cancelled || !main) return;
       addMask(ids.mask, main, mask);
+      const labelmap = cache.getVolume(ids.mask)!;
+      maskCenter.current = mask ? maskCenterWorld(labelmap, mask) : null;
+      // the model's real mask from Orthanc replaces the placeholder when the study has one
+      const seg = await latestSeg(studyUid);
+      if (cancelled) return;
+      if (seg) {
+        const painted = await paintSeg(labelmap, studyUid, seg);
+        if (cancelled) return;
+        maskCenter.current = painted.center;
+      }
       original.current = (cache.getVolume(ids.mask)!.voxelManager!.getCompleteScalarDataArray!() as Uint8Array).slice();
       if (modelMask) addMask(ids.model, main, modelMask);
       setLoaded(true);
@@ -408,9 +421,9 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       } else {
         for (const plane of PLANES) (rendering.getViewport(ids[plane]) as Types.IVolumeViewport).setOrientation(ALIGNED[plane], false, true);
       }
-      if (!cameras && mask) {
+      const center = maskCenter.current;
+      if (!cameras && center) {
         // open every plane on the lesion
-        const center = maskCenterWorld(cache.getVolume(ids.mask)!, mask);
         for (const plane of PLANES) {
           const viewport = rendering.getViewport(ids[plane]) as Types.IVolumeViewport;
           await csUtils.jumpToSlice(viewport.element, { imageIndex: sliceOf(viewport, center).index });
