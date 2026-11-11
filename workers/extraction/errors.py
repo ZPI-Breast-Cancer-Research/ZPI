@@ -6,7 +6,15 @@ class ExtractionError(Exception):
 
 
 class ConfigError(ExtractionError):
-    """Malformed environment variable or unknown component name (e.g. ``--ocr bogus``)."""
+    """Invalid configuration; base of the two errors below."""
+
+
+class InvalidSettingValueError(ConfigError):
+    """Environment variable cannot be read as its type (number, true/false)."""
+
+
+class UnknownComponentError(ConfigError):
+    """No OCR engine, LLM provider or orientation detector is registered under that name."""
 
 
 class UnsupportedFileTypeError(ExtractionError):

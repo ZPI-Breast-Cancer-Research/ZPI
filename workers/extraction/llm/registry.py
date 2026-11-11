@@ -9,4 +9,6 @@ PROVIDERS = {
 
 
 def get_llm_client(name: str, **options: Any) -> LLMClient:
-    return load_class(PROVIDERS, name, "LLM provider", __package__)(**options)
+    return load_class(PROVIDERS, name, "LLM provider", __package__, setting="LLM_PROVIDER")(
+        **options
+    )

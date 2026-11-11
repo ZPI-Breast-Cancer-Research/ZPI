@@ -11,5 +11,12 @@ DETECTORS = {
 def get_orientation_detector(name: str, **options: Any) -> OrientationDetector | None:
     if name == "none":
         return None
-    cls = load_class(DETECTORS, name, "orientation detector", __package__, extra=("none",))
+    cls = load_class(
+        DETECTORS,
+        name,
+        "orientation detector",
+        __package__,
+        setting="OCR_ORIENTATION or --orientation",
+        extra=("none",),
+    )
     return cls(**options)
