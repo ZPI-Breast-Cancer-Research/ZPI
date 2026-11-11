@@ -55,6 +55,8 @@ interface Props {
   // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline
   mask: MaskSource | null;
   modelMask?: MaskSource | null;
+  // the series the model read; without them we guess by name
+  roles?: { pre: string | null; post1: string | null; post2: string | null } | null;
   series: Series;
   maskState: MaskState;
   showMask: boolean;
@@ -141,6 +143,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     studyUid,
     mask,
     modelMask = null,
+    roles = null,
     series,
     maskState,
     showMask,
@@ -356,7 +359,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       return;
     }
     (async () => {
-      const found = await findSeries(studyUid);
+      const found = roles?.post1 ? { post: roles.post1, ...(roles.pre ? { pre: roles.pre } : {}) } : await findSeries(studyUid);
       if (cancelled) return;
       seriesUids.current = found;
       callbacks.current.onSeriesFound?.(Object.keys(found) as Series[]);
@@ -374,7 +377,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       removeMask(ids.mask);
       removeMask(ids.model);
     };
-  }, [ids, studyUid, mask, modelMask, attempt]);
+  }, [ids, studyUid, mask, modelMask, roles, attempt]);
 
   // series on screen; keeps the slice and zoom when switching
   useEffect(() => {
