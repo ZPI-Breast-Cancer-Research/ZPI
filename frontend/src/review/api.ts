@@ -2,6 +2,7 @@ import { api } from "../api";
 import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
 import type { MaskSource } from "../viewer/types";
+import { isCaseReport, type CaseReport, type Extraction } from "./extraction";
 import type { FieldKey } from "./fields";
 
 export interface QueueEntry {
@@ -11,15 +12,12 @@ export interface QueueEntry {
   uncertainty: number;
 }
 
-export interface Proposal {
-  value: string;
-  // model and the regex rules gave different answers
-  disagreement?: boolean;
-}
-
-export interface ReportPart {
-  text: string;
-  field?: FieldKey;
+export interface SegmentationInfo {
+  side: "left" | "right" | null;
+  sizeMm: number | null;
+  volumeMl: number | null;
+  // roles as in workers/segmentation/channels.py
+  series: { pre: string | null; post1: string | null; post2: string | null } | null;
 }
 
 export interface ReviewCase {
@@ -34,43 +32,34 @@ export interface ReviewCase {
   extractionVersion: string | null;
   studyUid: string | null;
   mask: MaskSource;
-  report: ReportPart[] | null;
-  proposals: Partial<Record<FieldKey, Proposal>>;
+  report: CaseReport | null;
+  reportPending: boolean;
+  segmentation: SegmentationInfo | null;
   measurements: { volume: number | null; size: number | null; sizeInReport: number | null };
   // the mask was approved on its own; the case still waits for the form
   maskApproved: "confirmed" | "corrected" | null;
 }
 
-export interface ApprovalPayload {
+export type FieldAnswers = Partial<Record<FieldKey, { value: string; state: "confirmed" | "corrected" }>>;
+
+// the approved report in the worker's schema, plus the answers per lesion
+export interface FormPayload {
+  report: Extraction;
+  lesions: Record<number, FieldAnswers>;
+}
+
+export interface ApprovalPayload extends Partial<FormPayload> {
   mask: "confirmed" | "corrected";
   edits: number;
-  fields: Partial<Record<FieldKey, { value: string; state: "confirmed" | "corrected" }>>;
   editingSeconds: number;
 }
 
-// --- MOCK DATA (dla trybu MOCK_API) ---
 const QUEUE: QueueEntry[] = [0.71, 0.66, 0.62, 0.58, 0.55].map((uncertainty, i) => ({
   studyId: `s${i + 1}`,
   studyNumber: String(i + 1).padStart(4, "0"),
   studyDate: `2026-10-${String(26 - i).padStart(2, "0")}`,
   uncertainty,
 }));
-
-const REPORT: ReportPart[] = [
-  { text: "Treść opisu badania: " },
-  { text: "lokalizacja", field: "location" },
-  { text: ", " },
-  { text: "kształt", field: "shape" },
-  { text: ", " },
-  { text: "brzegi", field: "margin" },
-  { text: ", " },
-  { text: "wymiar", field: "size" },
-  { text: ", " },
-  { text: "krzywa", field: "curve" },
-  { text: ", " },
-  { text: "BI-RADS", field: "birads" },
-  { text: "." },
-];
 
 const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10] };
 
@@ -88,8 +77,6 @@ export function reviewProgress(studyId: string) {
   }
   return { mask: null, form: false, done: false };
 }
-
-// --- GŁÓWNE FUNKCJE API (KOMUNIKACJA Z DJANGO) ---
 
 // least certain first, the order verification follows
 export async function fetchQueue(): Promise<QueueEntry[]> {
@@ -118,23 +105,16 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
       extractionVersion: noReport ? null : "3",
       studyUid,
       mask: MOCK_MASK,
-      report: noReport ? null : REPORT,
-      proposals: noReport
-        ? {}
-        : {
-            birads: { value: "4C" },
-            location: { value: "KGZ" },
-            size: { value: "14" },
-            shape: { value: "Nieregularny" },
-            margin: { value: "Nieregularne", disagreement: true },
-            curve: { value: "Wash-out" },
-          },
+      report: null,
+      reportPending: false,
+      segmentation: { side: "right", sizeMm: 17, volumeMl: 1.8, series: null },
       measurements: { volume: null, size: null, sizeInReport: null },
       maskApproved: masksApproved.get(studyId) ?? null,
     });
   }
   const { data } = await api.get<ReviewCase>(`/api/review/cases/${studyId}/`);
-  return data;
+  const ready = isCaseReport(data.report);
+  return { ...data, report: ready ? data.report : null, reportPending: !ready && !!data.report, segmentation: data.segmentation ?? null };
 }
 
 export async function approveCase(studyId: string, payload: ApprovalPayload): Promise<void> {
@@ -182,13 +162,13 @@ export async function unapproveMask(studyId: string): Promise<void> {
 }
 
 // called when every field is confirmed or corrected; the form needs no button of its own
-export async function approveForm(studyId: string, fields: ApprovalPayload["fields"]): Promise<void> {
+export async function approveForm(studyId: string, payload: FormPayload): Promise<void> {
   if (MOCK_API) {
     formsApproved.add(studyId);
     record("form_approved", label(studyId));
     return mockDelay(undefined, 200);
   }
-  await api.post(`/api/review/cases/${studyId}/approve-form/`, { fields });
+  await api.post(`/api/review/cases/${studyId}/approve-form/`, payload);
   record("form_approved", `#${studyId}`);
 }
 

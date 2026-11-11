@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import Page from "../components/layout/Page";
@@ -16,13 +16,16 @@ import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
 import ViewerToolRail from "../viewer/ViewerToolRail";
 import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
-import { approveCase, approveForm, approveMask, reopenCase, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
+import { approveCase, approveForm, approveMask, reopenCase, type FieldAnswers, type FormPayload, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
-import { FIELDS, type FieldKey } from "./fields";
+import { applyAnswers, FIELDS, lesionFields, lesionSummary, matchLesion, type FieldKey, type Proposals } from "./fields";
+import { fromExtraction } from "./report";
+import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
-import ReportText from "./ReportText";
+import ReportOriginal from "./ReportOriginal";
+import ReportPreview from "./ReportPreview";
 
 type Values = Partial<Record<FieldKey, string>>;
 type States = Partial<Record<FieldKey, FieldState>>;
@@ -74,11 +77,32 @@ export default function CaseReview({ data, queue }: Props) {
   // back to the list the case was opened from, or the cases waiting for verification
   const backTo = (location.state as { from?: string } | null)?.from ?? TO_REVIEW;
 
-  const keys = FIELDS.map((f) => f.key).filter((key) => data.proposals[key]);
-  const [values, setValues] = useState<Values>(() => Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
-  const [states, setStates] = useState<States>({});
+  const report = data.report;
+  const extraction = report?.result.status === "ok" ? report.result.data : null;
+  const model = useMemo(() => (extraction ? fromExtraction(extraction) : null), [extraction]);
+  const lesions = useMemo(() => model?.lesions ?? [], [model]);
+  const proposals = useMemo(
+    () => Object.fromEntries(lesions.map((l) => [l.id, lesionFields(l, model!.conclusion)])) as Record<number, Proposals>,
+    [lesions, model],
+  );
+  const keysOf = useCallback((id: number) => FIELDS.map((f) => f.key).filter((key) => proposals[id]?.[key]), [proposals]);
+  const fresh = useCallback(
+    () => Object.fromEntries(lesions.map((l) => [l.id, Object.fromEntries(keysOf(l.id).map((key) => [key, proposals[l.id][key]!.value]))])) as Record<number, Values>,
+    [lesions, keysOf, proposals],
+  );
 
-  const stateOf = (key: FieldKey, value: string): FieldState => (value === data.proposals[key]?.value ? "confirmed" : "corrected");
+  // only the lesion on the image is required
+  const match = useMemo(() => matchLesion(lesions, data.segmentation?.side ?? null, data.segmentation?.sizeMm ?? null), [lesions, data.segmentation]);
+  const [onImage, setOnImage] = useState<number | null>(match?.id ?? null);
+  const [onImageSure, setOnImageSure] = useState(match?.certain ?? false);
+  const [current, setCurrent] = useState<number | null>(match?.id ?? null);
+  const [values, setValues] = useState<Record<number, Values>>(fresh);
+  const [states, setStates] = useState<Record<number, States>>({});
+  const [showOriginal, setShowOriginal] = useState(false);
+  const originalOpen = useRef(false);
+  originalOpen.current = showOriginal;
+
+  const stateOf = (id: number, key: FieldKey, value: string): FieldState => (value === proposals[id]?.[key]?.value ? "confirmed" : "corrected");
   // the case as it was left last time, if it was not approved
   const [restoredAt, setRestoredAt] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -89,21 +113,46 @@ export default function CaseReview({ data, queue }: Props) {
   const touch = () => (touched.current = true);
 
   const change = (key: FieldKey, value: string) => {
+    if (current === null) return;
     touch();
-    setValues((v) => ({ ...v, [key]: value }));
-    setStates((s) => ({ ...s, [key]: stateOf(key, value) }));
+    setValues((v) => ({ ...v, [current]: { ...v[current], [key]: value } }));
+    setStates((s) => ({ ...s, [current]: { ...s[current], [key]: stateOf(current, key, value) } }));
   };
   const confirm = (key: FieldKey) => {
+    if (current === null) return;
     touch();
-    setStates((s) => ({ ...s, [key]: stateOf(key, values[key] ?? "") }));
+    setStates((s) => ({ ...s, [current]: { ...s[current], [key]: stateOf(current, key, values[current]?.[key] ?? "") } }));
   };
+  // just the lesion on screen
   const confirmAll = () => {
+    if (current === null) return;
     touch();
-    setStates(Object.fromEntries(keys.map((key) => [key, states[key] ?? stateOf(key, values[key] ?? "")])));
+    setStates((s) => ({
+      ...s,
+      [current]: Object.fromEntries(keysOf(current).map((key) => [key, s[current]?.[key] ?? stateOf(current, key, values[current]?.[key] ?? "")])),
+    }));
   };
 
-  const openFields = keys.filter((key) => !states[key]);
-  const flagged = openFields.filter((key) => data.proposals[key]?.disagreement).length;
+  const openOf = (id: number) => keysOf(id).filter((key) => !states[id]?.[key]);
+  const openFields = onImage === null ? [] : openOf(onImage);
+  const currentOpen = current === null ? [] : openOf(current);
+  const flagged = currentOpen.filter((key) => proposals[current!]?.[key]?.check).length;
+  const complete = lesions.filter((l) => keysOf(l.id).length && !openOf(l.id).length).map((l) => l.id);
+  const index = lesions.findIndex((l) => l.id === current);
+
+  // only fully confirmed lesions go out
+  const formPayload = useRef<() => FormPayload | undefined>(() => undefined);
+  formPayload.current = () => {
+    if (!extraction) return undefined;
+    const answers = (id: number): FieldAnswers =>
+      Object.fromEntries(
+        keysOf(id).map((key) => [key, { value: values[id]?.[key] ?? "", state: states[id]?.[key] === "corrected" ? "corrected" : "confirmed" }]),
+      );
+    return {
+      report: applyAnswers(extraction, Object.fromEntries(complete.map((id) => [id, { proposals: proposals[id], values: values[id] ?? {} }]))),
+      lesions: Object.fromEntries(complete.map((id) => [id, answers(id)])),
+    };
+  };
   // edits that all ended up undone or restored leave the model's mask as it was
   const corrected = mask.state === "corrected" && (maskInfo?.edited ?? 1) > 0;
   // approved on its own, the mask is locked; the case still waits for the form
@@ -146,24 +195,22 @@ export default function CaseReview({ data, queue }: Props) {
     },
   });
 
-  // every field confirmed or corrected counts as the form approved, no button of its own
-  const formSent = useRef(false);
-  // takes the form back to the model's proposals, all open again
+  // confirming another lesion later sends the form again
+  const sentFor = useRef<string | null>(null);
+  const completeKey = complete.join(",");
+  // back to the model's proposals, every lesion
   function unconfirmForm() {
     touch();
-    setValues(Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
+    setValues(fresh());
     setStates({});
-    formSent.current = false;
+    sentFor.current = null;
     unapproveForm(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
   }
   useEffect(() => {
-    if (!data.report || !keys.length || openFields.length || formSent.current) return;
-    formSent.current = true;
-    approveForm(
-      data.studyId,
-      Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
-    ).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
-  }, [data.report, data.studyId, keys, openFields.length, values, states, queryClient]);
+    if (!extraction || onImage === null || openFields.length || sentFor.current === completeKey) return;
+    sentFor.current = completeKey;
+    approveForm(data.studyId, formPayload.current()!).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+  }, [extraction, onImage, openFields.length, completeKey, data.studyId, queryClient]);
 
   // verified = the mask approved and every field confirmed, in either order; leaving keeps it
   const verified = maskApproved !== null && openFields.length === 0;
@@ -175,7 +222,7 @@ export default function CaseReview({ data, queue }: Props) {
       approveCase(data.studyId, {
         mask: maskApproved ?? "confirmed",
         edits: mask.edits,
-        fields: Object.fromEntries(keys.map((key) => [key, { value: values[key] ?? "", state: states[key] === "corrected" ? "corrected" : "confirmed" }])),
+        ...formPayload.current(),
         editingSeconds: Math.round((Date.now() - startedAt.current) / 1000),
       }).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
       deleteDraft(data.studyId);
@@ -183,7 +230,7 @@ export default function CaseReview({ data, queue }: Props) {
     } else {
       reopenCase(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
     }
-  }, [verified, data.studyId, data.studyNumber, maskApproved, mask.edits, keys, values, states, queryClient, toast]);
+  }, [verified, data.studyId, data.studyNumber, maskApproved, mask.edits, queryClient, toast]);
 
   const nextRef = useRef(() => {});
   nextRef.current = goOn;
@@ -216,7 +263,7 @@ export default function CaseReview({ data, queue }: Props) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement).matches("input, select, textarea")) return;
+      if (originalOpen.current || (event.target as HTMLElement).matches("input, select, textarea")) return;
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key === "Enter") return nextRef.current();
       if (mod && event.key.toLowerCase() === "z") {
@@ -250,8 +297,15 @@ export default function CaseReview({ data, queue }: Props) {
       if (cancelled) return;
       draftLoaded.current = true;
       if (!draft) return;
-      setValues((v) => ({ ...v, ...draft.values }));
-      setStates(draft.states);
+      if (draft.form) {
+        const form = draft.form;
+        setValues((v) => ({ ...v, ...form.values }));
+        setStates(form.states);
+        if (form.onImage !== null) {
+          setOnImage(form.onImage);
+          setCurrent(form.onImage);
+        }
+      }
       pendingPatch.current = draft.mask;
       setRestoredAt(draft.savedAt);
     });
@@ -274,20 +328,20 @@ export default function CaseReview({ data, queue }: Props) {
     const timer = window.setTimeout(async () => {
       // an approved mask is saved for real, so the draft keeps only the form
       const patch = locked ? null : (mask.viewer.current?.getPatch() ?? null);
-      if (!patch && Object.keys(states).length === 0) {
+      if (!patch && Object.values(states).every((s) => !Object.keys(s ?? {}).length)) {
         await deleteDraft(data.studyId);
         setSavedAt(null);
       } else {
-        setSavedAt(await saveDraft(data.studyId, { values, states, mask: patch }));
+        setSavedAt(await saveDraft(data.studyId, { form: { values, states, onImage }, mask: patch }));
       }
       setRestoredAt(null);
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [data.studyId, values, states, maskInfo, mask.viewer, locked]);
+  }, [data.studyId, values, states, onImage, maskInfo, mask.viewer, locked]);
 
   function discardDraft() {
     deleteDraft(data.studyId);
-    setValues(Object.fromEntries(keys.map((key) => [key, data.proposals[key]!.value])));
+    setValues(fresh());
     setStates({});
     mask.restoreModel();
     touched.current = false;
@@ -389,6 +443,7 @@ export default function CaseReview({ data, queue }: Props) {
             <Viewer
               ref={mask.viewer}
               studyUid={data.studyUid}
+              roles={data.segmentation?.series}
               mask={data.mask}
               series={series}
               maskState={locked ? "confirmed" : corrected ? "corrected" : "proposed"}
@@ -431,15 +486,28 @@ export default function CaseReview({ data, queue }: Props) {
           <button type="button" className="review__form-tab" title={t("review.showForm")} onClick={() => setFullView(false)}>
             <Icon name="showSide" />
             <span>{t("review.formTab")}</span>
-            {data.report && <b>{openFields.length ? t("review.left", { n: openFields.length }) : t("review.formConfirmed")}</b>}
+            {extraction && <b>{openFields.length ? t("review.left", { n: openFields.length }) : t("review.formConfirmed")}</b>}
           </button>
         ) : (
           <section className="review__form" aria-label={t("review.form")}>
             <div className="review__form-body">
               <Panel title={t("review.report")}>
                 <div className="review__section">
-                  {data.report ? (
-                    <ReportText parts={data.report} states={states} />
+                  {report ? (
+                    <>
+                      <ReportPreview report={report} onOpen={() => setShowOriginal(true)} />
+                      {report.result.status === "error" && (
+                        <p className="birads__note">
+                          {t("review.original.failed")}
+                          {report.result.error && `: ${report.result.error}`}
+                        </p>
+                      )}
+                    </>
+                  ) : data.reportPending ? (
+                    <div className="empty-box">
+                      <b>{t("review.original.pending")}</b>
+                      {t("review.original.pendingBody")}
+                    </div>
                   ) : (
                     <div className="empty-box">
                       <b>{t("review.noReport")}</b>
@@ -457,28 +525,63 @@ export default function CaseReview({ data, queue }: Props) {
                   data.extractionVersion ? <span title={t("review.extractionVersion", { v: data.extractionVersion })}>{t("review.form")}</span> : t("review.form")
                 }
                 aux={
-                  !data.report
+                  !extraction
                     ? t("review.formWaitsAux")
-                    : [
-                        openFields.length ? t("review.left", { n: openFields.length }) : t("review.formConfirmed"),
-                        flagged ? t("review.flagged", { n: flagged }) : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
+                    : current === null
+                      ? null
+                      : [
+                          currentOpen.length ? t("review.left", { n: currentOpen.length }) : t("review.formConfirmed"),
+                          flagged ? t("review.flagged", { n: flagged }) : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
                 }
               >
+                {extraction && current !== null && lesions.length > 1 && (
+                  <LesionSwitcher
+                    index={index}
+                    total={lesions.length}
+                    summary={lesionSummary(lesions[index])}
+                    onImage={current === onImage}
+                    note={
+                      current === onImage
+                        ? t(onImageSure ? "review.lesion.onImage" : "review.lesion.onImageGuess")
+                        : t(complete.includes(current) ? "review.lesion.confirmed" : "review.lesion.optional")
+                    }
+                    onPrev={() => setCurrent(lesions[index - 1].id)}
+                    onNext={() => setCurrent(lesions[index + 1].id)}
+                    onMarkOnImage={
+                      current !== onImage && !onImageSure
+                        ? () => {
+                            touch();
+                            setOnImage(current);
+                            setOnImageSure(true);
+                          }
+                        : undefined
+                    }
+                  />
+                )}
                 <div className="review__section">
-                  {data.report ? (
-                    <BiradsForm proposals={data.proposals} values={values} states={states} onChange={change} onConfirm={confirm} maskSizeMm={maskInfo?.sizeMm} />
+                  {!extraction ? (
+                    <div className="empty-box">{t(data.reportPending ? "review.formWaitsRead" : "review.formWaits")}</div>
+                  ) : current === null ? (
+                    <div className="empty-box">{t("review.original.noLesions")}</div>
                   ) : (
-                    <div className="empty-box">{t("review.formWaits")}</div>
+                    <BiradsForm
+                      proposals={proposals[current]}
+                      values={values[current] ?? {}}
+                      states={states[current] ?? {}}
+                      onChange={change}
+                      onConfirm={confirm}
+                      maskSizeMm={current === onImage ? maskInfo?.sizeMm : null}
+                    />
                   )}
                 </div>
               </Panel>
             </div>
-            {data.report && (
+            {extraction && current !== null && (
               <div className="review__foot">
-                {openFields.length ? (
+                {currentOpen.length ? (
                   <button type="button" className="btn btn--confirm" onClick={confirmAll}>
                     {t("review.confirmAll")}
                   </button>
@@ -492,6 +595,23 @@ export default function CaseReview({ data, queue }: Props) {
           </section>
         )}
       </div>
+      {report && (
+        <ReportOriginal
+          report={report}
+          open={showOriginal}
+          onClose={() => setShowOriginal(false)}
+          lesion={
+            current === null
+              ? null
+              : {
+                  number: index + 1,
+                  quotes: lesions[index].observations.map((o) => o.quote),
+                }
+          }
+          onPrev={index > 0 ? () => setCurrent(lesions[index - 1].id) : undefined}
+          onNext={index >= 0 && index < lesions.length - 1 ? () => setCurrent(lesions[index + 1].id) : undefined}
+        />
+      )}
     </Page>
   );
 }
