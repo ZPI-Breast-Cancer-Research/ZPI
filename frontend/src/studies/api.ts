@@ -12,7 +12,7 @@ export type ImageStatus =
   | "verified_unchanged"
   | "verified_corrected";
 
-export type ReportStatus = "missing" | "extracting" | "ready" | "to_review" | "verified";
+export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified";
 
 export interface Study {
   orthanc_id: string;
@@ -113,6 +113,7 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   APPROVED: "verified",
   CORRECTED: "verified",
   REJECTED: "to_review",
+  FAILED: "error",
   missing: "missing",
 };
 
@@ -164,7 +165,14 @@ export async function getProcessingSteps(study: StudyRow): Promise<ProcessingSte
     { key: "segmentation", state: done ? "done" : study.image === "processing" ? "running" : "waiting" },
     {
       key: "extraction",
-      state: study.report === "missing" ? "waiting_report" : study.report === "extracting" ? "running" : "done",
+      state:
+        study.report === "missing"
+          ? "waiting_report"
+          : study.report === "extracting"
+            ? "running"
+            : study.report === "error"
+              ? "error"
+              : "done",
     },
   ]);
 }

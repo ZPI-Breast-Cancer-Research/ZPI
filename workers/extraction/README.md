@@ -218,7 +218,7 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `evaluation/` | scoring predictions against gold files (`eval`): `scoring.py` `evaluate` – which documents are scored (skipped, few-shot leak) and run-level data; `comparison.py` `Comparison` of one document – entity matching, per-field comparison; `scores.py` counters and metrics of one field (`FieldScore`), entity type (`EntityScore`) or OCR text (`OCRScore`: character error rate against the transcripts); `report.py` `Report` – all scores of a run, summary, JSON export; `loading.py` gold, transcript and prediction files; `formatting.py` text tables of a report and of the experiment history; `tracking.py` experiment history – records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
 | `experiments/` | experiment records (`runs/`) and journal `EXPERIMENTS.md` |
 | `__main__.py` | CLI |
-| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path) |
+| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path): sets the backend `ExtractionResult` row to PROCESSING with the production model version, runs the pipeline and saves `generated_report` (the `EkstrakcjaBadania` JSON), `warnings` and `provenance` with status COMPLETED, or the reason with FAILED. Rows a doctor already reviewed are never overwritten |
 
 Changing `structuring/prompts/` or `structuring/prompting.py`: bump `PROMPT_VERSION`. Changing `schema.py`: bump
 `SCHEMA_VERSION` and update `structuring/prompts/few_shot/` (examples are validated against the schema at

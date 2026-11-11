@@ -39,6 +39,7 @@ const IMAGE_CLASS: Record<ImageStatus, string> = {
 const REPORT_CLASS: Record<ReportStatus, string> = {
   missing: "status",
   extracting: "status status--running",
+  error: "status status--warning",
   ready: "status",
   to_review: "status",
   verified: "status status--confirmed",

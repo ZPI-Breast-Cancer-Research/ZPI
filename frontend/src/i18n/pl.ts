@@ -141,6 +141,7 @@ export const pl = {
   "studies.image.verified_corrected": "Zweryfikowane · poprawiona",
   "studies.report.missing": "Brak",
   "studies.report.extracting": "Ekstrakcja w toku",
+  "studies.report.error": "Błąd ekstrakcji",
   "studies.report.ready": "Gotowy",
   "studies.report.to_review": "Do weryfikacji",
   "studies.report.verified": "Zweryfikowany",
