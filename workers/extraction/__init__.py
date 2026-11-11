@@ -1,14 +1,16 @@
 from .config import Settings
 from .documents import Document, find_documents
-from .errors import ExtractionError
+from .errors import ConfigError, ExtractionError, InputError
 from .pipeline import Extractor, extract_from_images, extract_from_text, run_ocr
 from .schema import EkstrakcjaBadania, ExtractionResult
 
 __all__ = [
+    "ConfigError",
     "Document",
     "EkstrakcjaBadania",
     "ExtractionError",
     "ExtractionResult",
+    "InputError",
     "Extractor",
     "Settings",
     "extract_from_images",

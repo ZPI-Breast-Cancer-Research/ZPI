@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass, field
 from typing import TypeVar
 
+from .errors import ConfigError
+
 N = TypeVar("N", int, float)
 
 DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "host.docker.internal")
@@ -28,7 +30,7 @@ def _env_number(name: str, default: N, kind: type[N]) -> N:
     try:
         return kind(raw)
     except ValueError:
-        raise ValueError(f"{name} must be a number, got {raw!r}") from None
+        raise ConfigError(f"{name} must be a number, got {raw!r}") from None
 
 
 @dataclass
