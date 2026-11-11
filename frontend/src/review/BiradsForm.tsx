@@ -1,13 +1,12 @@
 import WarningIcon from "../components/WarningIcon";
 import { t } from "../i18n";
-import type { Proposal } from "./api";
 import FieldSelect from "./FieldSelect";
-import { FIELDS, type FieldKey } from "./fields";
+import { fieldLabel, FIELDS, optionLabel, type FieldKey, type Proposals } from "./fields";
 
 export type FieldState = "proposed" | "confirmed" | "corrected";
 
 interface Props {
-  proposals: Partial<Record<FieldKey, Proposal>>;
+  proposals: Proposals;
   values: Partial<Record<FieldKey, string>>;
   states: Partial<Record<FieldKey, FieldState>>;
   onChange: (key: FieldKey, value: string) => void;
@@ -30,7 +29,7 @@ export default function BiradsForm({ proposals, values, states, onChange, onConf
         {FIELDS.filter((f) => proposals[f.key]).map((field) => {
           const proposal = proposals[field.key]!;
           const state = states[field.key] ?? "proposed";
-          const flagged = state === "proposed" && proposal.disagreement;
+          const flagged = state === "proposed" && !!proposal.check;
           const value = values[field.key] ?? "";
           const id = `field-${field.key}`;
 
@@ -38,11 +37,18 @@ export default function BiradsForm({ proposals, values, states, onChange, onConf
             <tr key={field.key} className={`birads__row birads__row--${state}${flagged ? " birads__row--flag" : ""}`}>
               <td className="birads__label">
                 {flagged && <WarningIcon label={t("review.field.check")} />}
-                <label htmlFor={id}>{field.label}</label>
+                <label htmlFor={id}>{fieldLabel(field.key)}</label>
               </td>
               <td>
                 {field.options ? (
-                  <FieldSelect id={id} value={value} options={field.options} proposal={proposal.value} onChange={(next) => onChange(field.key, next)} />
+                  <FieldSelect
+                    id={id}
+                    value={value}
+                    options={field.options}
+                    proposal={proposal.value}
+                    label={(code) => optionLabel(field.key, code)}
+                    onChange={(next) => onChange(field.key, next)}
+                  />
                 ) : (
                   <span className="birads__num">
                     <input
@@ -63,7 +69,12 @@ export default function BiradsForm({ proposals, values, states, onChange, onConf
                     {t("review.field.fromMask", { n: Math.round(maskSizeMm) })}
                   </p>
                 )}
-                {flagged && <p className="birads__note">{t("review.field.disagree")}</p>}
+                {proposal.hints?.map((hint) => (
+                  <p key={hint} className="birads__mask">
+                    {hint}
+                  </p>
+                ))}
+                {flagged && <p className="birads__note">{proposal.check}</p>}
               </td>
               <td className="birads__status">
                 {state === "proposed" ? (

@@ -5,14 +5,15 @@ import { t } from "../i18n";
 interface Props {
   id: string;
   value: string;
-  options: string[];
+  options: readonly string[];
+  label?: (value: string) => string;
   // the model's answer, marked in the list only, so the closed field shows the value alone
   proposal: string;
   onChange: (value: string) => void;
 }
 
 // a list in the app's own look instead of the system one; arrows, Enter and Esc work as in a select
-export default function FieldSelect({ id, value, options, proposal, onChange }: Props) {
+export default function FieldSelect({ id, value, options, proposal, onChange, label = (v) => v }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -71,7 +72,7 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
           }
         }}
       >
-        {value}
+        {label(value) || "—"}
       </button>
       {open && (
         <ul className="field-select__list" role="listbox" aria-labelledby={id} style={place}>
@@ -85,7 +86,7 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pick(option)}
             >
-              {option}
+              {label(option)}
               {option === proposal && <small>{t("review.field.model")}</small>}
             </li>
           ))}
