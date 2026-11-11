@@ -33,6 +33,11 @@ STEMS = {
     Echogenicznosc.HIPERECHOGENICZNA: ("hiperech", "hyperech"),
     Echogenicznosc.ZLOZONA: ("zlozon", "torbielowatolit", "litotorbiel"),
 }
+# A stem must start a word: "nieostro odgraniczona" must not match OBWIEDZIONY's "ostro odgranicz".
+_STEM_PATTERNS = {
+    value: re.compile("|".join(rf"\b{re.escape(stem)}" for stem in stems))
+    for value, stems in STEMS.items()
+}
 
 
 def check_extraction(data: EkstrakcjaBadania, text: str) -> list[str]:
@@ -101,7 +106,7 @@ def _check_observation(where: str, obs: Obserwacja, haystack: str) -> list[str]:
     quote = fold(obs.cytat)
     for name in ("ksztalt", "brzeg", "echogenicznosc"):
         value = getattr(obs, name)
-        if value is not None and not any(stem in quote for stem in STEMS[value]):
+        if value is not None and not _STEM_PATTERNS[value].search(quote):
             warnings.append(f"{where}: {name} = {value} nie wynika z cytatu")
     return warnings
 
