@@ -172,7 +172,7 @@ Pytanie · od czego zależy · kto rozstrzyga.
 - Czy obrazy i opis mogą dochodzić osobno i w dowolnej kolejności? Czy opis można dołączyć do badania później? Kiedy startuje przetwarzanie? · stany badania, reguła startu przetwarzania · zespół (Patrycja – makiety)
 - Czy w jednym badaniu może być więcej niż jedna zmiana? · model danych (PR #33), pomiary, interfejs · zespół + opiekunka
 - Czy użytkownik może odrzucić wynik modelu w całości (maska zupełnie błędna, brak zmiany)? · statusy badania, dane do treningu · zespół
-- Gdzie i w jakim formacie zapisujemy poprawioną maskę (DICOM SEG w Orthanc czy plik w backendzie)? · edycja w przeglądarce obrazów, trening, pomiary · ARCH-1
+- Gdzie i w jakim formacie zapisujemy poprawioną maskę (DICOM SEG w Orthanc czy plik w backendzie)? · edycja w przeglądarce obrazów, trening, pomiary · ARCH-1 · częściowo: ADR 0003 (do przeglądarki DICOM SEG w Orthancu, NIfTI w MinIO dla treningu i pomiarów)
 - Kto w szpitalu będzie administratorem modeli (fizyk medyczny, dział nauki, IT, nikt)? · czy P2 jest w MVP · opiekunka + szpital
 - Czy ktoś potrzebuje dwóch ról naraz (radiolog i administrator)? Na razie jedna rola na konto: administrator nie weryfikuje badań, badacz ma tylko odczyt · uprawnienia, model użytkownika · zespół + szpital
 - Czy promocja modelu wymaga akceptacji klinicznej (radiolog lub kierownik)? · role, kroki P2 · szpital

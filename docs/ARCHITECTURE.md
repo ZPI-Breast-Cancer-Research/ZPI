@@ -193,7 +193,7 @@ flowchart LR
 
     model -- "maska, prawdopodobieństwa" --> s3
     model -- "wynik, wersja modelu" --> pg
-    model -- "maska" --> seg
+    model -- "niepusta maska" --> seg
     seg -- "DICOM SEG" --> orthanc
 
     orthanc -- "serie, DICOM SEG" --> ui
@@ -201,6 +201,7 @@ flowchart LR
     api -- "statusy, wyniki" --> ui
     ui -- "poprawiona maska" --> api
     api -- "zatwierdzona maska" --> s3
+    s3 -- "zatwierdzona maska<br/>(kolejka CPU)" --> seg
 ```
 
 ### Trening
