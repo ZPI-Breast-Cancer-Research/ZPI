@@ -183,7 +183,8 @@ Environment variables; the CLI flags `--ocr`, `--orientation`, `--base-url`, `--
 - **Another model:** load it on the server and pass `--model`.
 - **Another server with the same API** (vLLM, Ollama, llama.cpp server): change `LLM_BASE_URL`.
 - **Another LLM backend** (e.g. `transformers` in-process): a new module in `llm/` implementing
-  `LLMClient` (`llm/base.py`) and one entry in `llm/registry.py`.
+  `LLMClient` (`llm/base.py`) and one entry in `llm/registry.py`; its constructor options are filled
+  in `Extractor.from_settings` (`pipeline.py`).
 - **Another OCR engine:** a new module in `ocr/` implementing `OcrEngine` (`ocr/base.py`, method
   `read_page(image) -> OcrPage`), one entry in `ocr/registry.py`, and its own
   `requirements-<engine>.txt`. Import the engine library inside the class, not at module level,
@@ -204,12 +205,16 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | File | Role |
 |---|---|
 | `schema.py` | data contract: `EkstrakcjaBadania` (what the LLM returns – per-breast findings, lesions with MMG/USG observations, nodes, conclusion), `ExtractionResult` (envelope) |
-| `pipeline.py` | entry points `extract_from_images`, `extract_from_text`, `run_ocr` |
+| `pipeline.py` | `Extractor` – the pipeline built from `Settings` (LLM client, OCR and orientation loaded on first use), used by the CLI and the Celery task; plain functions `extract_from_images`, `extract_from_text`, `run_ocr` |
+| `documents.py` | input documents: `find_documents` (file / directory / page folders), `Document`, supported suffixes |
+| `errors.py` | all exceptions; `ExtractionError` is the base of `LLMError`, `OcrError`, `OrientationError`, `ParseError` |
 | `ocr/` | OCR interface, PaddleOCR engine, registry |
+| `utils/` | technical helpers: `plugins.py` loads a registered class by name on demand (used by the registries); `<library>.py` holds helpers for one library shared by several components, e.g. `paddle.py` (PaddleOCR import and result format for `ocr/paddle.py` and `orientation/paddle.py`) |
 | `orientation/` | page orientation detector (PaddleOCR document classifier), rotation, registry |
 | `llm/` | LLM interface + local-host guard, HTTP client for `/v1/chat/completions`, registry |
-| `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” and the footer („Wykonał/a:”, „Opis:”); text matching helpers `fold` / `quote_similarity` shared by checks and evaluation |
-| `structuring/` | report text → structured data: `prompting.py` + `prompts/` prompt, field list generated from the schema, few-shot examples; `parsing.py` JSON extraction from the answer + schema validation (one retry with feedback); `checks.py` warnings: warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions |
+| `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” and the footer („Wykonał/a:”, „Opis:”) |
+| `matching.py` | fuzzy text matching tolerant to OCR noise, case and diacritics: `fold`, `quote_similarity`, `text_similarity`; shared by checks and evaluation |
+| `structuring/` | report text → structured data: `prompting.py` + `prompts/` prompt, field list generated from the schema, few-shot examples; `parsing.py` JSON extraction from the answer + schema validation (one retry with feedback); `checks.py` warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions |
 | `evaluation/` | scoring predictions against gold files (`eval`): `compare.py` entity matching, per-field comparison, OCR CER; `scores.py` score/report data and summary; `loading.py` gold, transcript and prediction files; `report.py` text table; `tracking.py` experiment history – records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
 | `experiments/` | experiment records (`runs/`) and journal `EXPERIMENTS.md` |
 | `__main__.py` | CLI |

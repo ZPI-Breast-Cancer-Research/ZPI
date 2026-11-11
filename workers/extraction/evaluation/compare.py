@@ -1,9 +1,9 @@
 import math
 from collections.abc import Callable, Sequence
-from difflib import SequenceMatcher
 from typing import Any, TypeVar
 
-from ..normalize import fold, normalize_text, quote_similarity
+from ..matching import fold, quote_similarity, text_similarity
+from ..normalize import normalize_text
 from ..schema import EkstrakcjaBadania, ExtractionResult, Obserwacja, Wezel, Wymiary, Zmiana
 from ..structuring.prompting import load_few_shot
 from .scores import Report
@@ -190,13 +190,8 @@ def _match(
     pred: Sequence[T],
     similarity: Callable[[T, T], float],
 ) -> list[tuple[T, T]]:
-  
     candidates = sorted(
-        (
-            (similarity(g, p), i, j)
-            for i, g in enumerate(gold)
-            for j, p in enumerate(pred)
-        ),
+        ((similarity(g, p), i, j) for i, g in enumerate(gold) for j, p in enumerate(pred)),
         reverse=True,
     )
     used_gold: set[int] = set()
@@ -219,11 +214,7 @@ def _match(
 
 def _lesion_sim(gold: Zmiana, pred: Zmiana) -> float:
     return max(
-        (
-            _observation_sim(g, p)
-            for g in gold.obserwacje
-            for p in pred.obserwacje
-        ),
+        (_observation_sim(g, p) for g in gold.obserwacje for p in pred.obserwacje),
         default=0.0,
     )
 
@@ -241,4 +232,4 @@ def _quote_overlap(a: str, b: str) -> float:
 
 
 def _same_text(a: str, b: str) -> bool:
-    return SequenceMatcher(None, fold(a), fold(b), autojunk=False).ratio() >= TEXT_MIN_SIMILARITY
+    return text_similarity(a, b) >= TEXT_MIN_SIMILARITY

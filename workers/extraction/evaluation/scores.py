@@ -3,7 +3,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 SUMMARY_GROUPS = (
-    "piersi", "obserwacja.mammografia", "obserwacja.usg", "zmiana", "wezel", "wniosek"
+    "piersi",
+    "obserwacja.mammografia",
+    "obserwacja.usg",
+    "zmiana",
+    "wezel",
+    "wniosek",
 )
 
 

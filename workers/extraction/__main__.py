@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import TextIO
 
 from .config import Settings
+from .documents import Document, find_documents
+from .errors import ExtractionError
 from .evaluation import (
     evaluate,
     format_report,
@@ -15,13 +17,9 @@ from .evaluation import (
     load_transcripts,
     tracking,
 )
-from .llm import LLMError, get_llm_client
-from .ocr import IMAGE_SUFFIXES, OcrEngine, OcrError, get_ocr_engine
-from .orientation import OrientationDetector, OrientationError, get_orientation_detector
-from .pipeline import extract_from_images, extract_from_text, run_ocr
-from .schema import ExtractionResult
+from .pipeline import Extractor
+from .schema import EkstrakcjaBadania, ExtractionResult
 
-TEXT_SUFFIXES = {".txt"}
 GOLD_DIR = Path("data/ground_truth")
 PREDICTIONS_DIR = Path("data/eval/runs")
 
@@ -33,21 +31,19 @@ def main(argv: list[str] | None = None) -> int:
         stream.reconfigure(encoding="utf-8")
     try:
         return args.handler(args, _settings(args))
-    except (LLMError, OcrError, OrientationError, ValueError, OSError) as exc:
+    except (ExtractionError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
 
 def cmd_models(args: argparse.Namespace, settings: Settings) -> int:
-    client = get_llm_client(settings)
-    for model in client.list_models():
+    for model in _extractor(settings).llm.list_models():
         print(model)
     return 0
 
 
 def cmd_ping(args: argparse.Namespace, settings: Settings) -> int:
-    client = get_llm_client(settings)
-    response = client.complete(
+    response = _extractor(settings).llm.complete(
         [{"role": "user", "content": "Odpowiedz jednym słowem: OK"}], temperature=0.0
     )
     print(f"{settings.llm_base_url} | model: {response.model} | {response.seconds:.1f}s")
@@ -56,100 +52,48 @@ def cmd_ping(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def cmd_ocr(args: argparse.Namespace, settings: Settings) -> int:
-    ocr = _ocr_engine(settings)
-    orientation = _orientation(settings)
+    extractor = _extractor(settings)
     if args.out_dir:
         args.out_dir.mkdir(parents=True, exist_ok=True)
-    for source, files in _documents(args.input):
-        if files[0].suffix.lower() in TEXT_SUFFIXES:
+    for document in find_documents(args.input):
+        if document.is_text:
             continue
-        result = run_ocr(files, ocr, orientation)
+        result = extractor.run_ocr(document.files)
         confidence = result.mean_confidence
         rotations = ", ".join(f"{page.rotation}°" for page in result.pages if page.rotation)
         print(
-            f"===== {source} | {result.engine} {result.engine_version} | "
+            f"===== {document.source} | {result.engine} {result.engine_version} | "
             f"confidence: {confidence:.2f} | {result.seconds:.1f}s"
             if confidence is not None
-            else f"===== {source} | {result.engine} {result.engine_version}"
+            else f"===== {document.source} | {result.engine} {result.engine_version}"
         )
         if rotations:
             print(f"rotated: {rotations}")
         print(result.text)
         if args.out_dir:
-            (args.out_dir / f"{Path(source).stem}.txt").write_text(result.text, encoding="utf-8")
+            out = args.out_dir / f"{Path(document.source).stem}.txt"
+            out.write_text(result.text, encoding="utf-8")
     return 0
 
 
 def cmd_extract(args: argparse.Namespace, settings: Settings) -> int:
-    client = get_llm_client(settings)
     text = args.input.read_text(encoding="utf-8")
-    result = extract_from_text(
-        text,
-        client,
-        source=args.input.name,
-        few_shot=settings.few_shot_examples,
-        structured_output=settings.llm_structured_output,
-    )
+    result = _extractor(settings).extract_text(text, source=args.input.name)
     print(result.model_dump_json(indent=2))
     return 0 if result.status == "ok" else 1
 
 
 def cmd_run(args: argparse.Namespace, settings: Settings) -> int:
-    documents = _documents(args.input)
+    documents = _require_documents(args.input)
     if not documents:
-        print(f"No .txt files or images in {args.input}", file=sys.stderr)
         return 1
-
     out = args.out.open("w", encoding="utf-8") if args.out else sys.stdout
     try:
-        results = _run_documents(documents, settings, out)
+        results = _run_documents(documents, _extractor(settings), out)
     finally:
         if args.out:
             out.close()
     return 0 if all(r.status == "ok" for r in results) else 1
-
-
-def _run_documents(
-    documents: list[tuple[str, list[Path]]], settings: Settings, out: TextIO
-) -> list[ExtractionResult]:
-    client = get_llm_client(settings)
-    needs_ocr = any(files[0].suffix.lower() not in TEXT_SUFFIXES for _, files in documents)
-    ocr: OcrEngine | None = _ocr_engine(settings) if needs_ocr else None
-    orientation = _orientation(settings) if ocr else None
-    results = []
-    started = time.perf_counter()
-    for i, (source, files) in enumerate(documents, start=1):
-        if files[0].suffix.lower() in TEXT_SUFFIXES:
-            result = extract_from_text(
-                files[0].read_text(encoding="utf-8"),
-                client,
-                source=source,
-                few_shot=settings.few_shot_examples,
-                structured_output=settings.llm_structured_output,
-            )
-        else:
-            assert ocr is not None
-            result = extract_from_images(
-                files,
-                ocr,
-                client,
-                orientation=orientation,
-                source=source,
-                few_shot=settings.few_shot_examples,
-                structured_output=settings.llm_structured_output,
-            )
-        results.append(result)
-        out.write(result.model_dump_json() + "\n")
-        out.flush()
-        print(f"[{i}/{len(documents)}] {source}: {_summary(result)}", file=sys.stderr)
-
-    failures = sum(r.status != "ok" for r in results)
-    print(
-        f"Done: {len(results) - failures} ok, {failures} failed, "
-        f"{time.perf_counter() - started:.0f}s",
-        file=sys.stderr,
-    )
-    return results
 
 
 def cmd_gold_init(args: argparse.Namespace, settings: Settings) -> int:
@@ -174,9 +118,8 @@ def cmd_gold_init(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def cmd_eval(args: argparse.Namespace, settings: Settings) -> int:
-    gold = load_gold(args.gold)
+    gold = _require_gold(args.gold)
     if not gold:
-        print(f"No gold files (*.json) in {args.gold}", file=sys.stderr)
         return 1
     report = evaluate(
         gold,
@@ -193,9 +136,8 @@ def cmd_eval(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def cmd_experiment(args: argparse.Namespace, settings: Settings) -> int:
-    gold = load_gold(args.gold)
+    gold = _require_gold(args.gold)
     if not gold:
-        print(f"No gold files (*.json) in {args.gold}", file=sys.stderr)
         return 1
     exp_id = tracking.next_id()
 
@@ -203,14 +145,13 @@ def cmd_experiment(args: argparse.Namespace, settings: Settings) -> int:
         predictions_path = args.predictions
         results = list(load_predictions(predictions_path).values())
     else:
-        documents = _documents(args.input)
+        documents = _require_documents(args.input)
         if not documents:
-            print(f"No .txt files or images in {args.input}", file=sys.stderr)
             return 1
         PREDICTIONS_DIR.mkdir(parents=True, exist_ok=True)
         predictions_path = PREDICTIONS_DIR / f"{exp_id}_{tracking.slugify(args.name)}.jsonl"
         with predictions_path.open("w", encoding="utf-8") as out:
-            results = _run_documents(documents, settings, out)
+            results = _run_documents(documents, _extractor(settings), out)
 
     report = evaluate(
         gold,
@@ -236,24 +177,26 @@ def cmd_experiments(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
-def _documents(path: Path) -> list[tuple[str, list[Path]]]:
-    if path.is_file():
-        if path.suffix.lower() not in IMAGE_SUFFIXES | TEXT_SUFFIXES:
-            raise ValueError(f"{path}: unsupported file type (expected .txt or an image)")
-        return [(path.name, [path])]
-    if not path.is_dir():
-        raise ValueError(f"{path} does not exist")
+def _run_documents(
+    documents: list[Document], extractor: Extractor, out: TextIO
+) -> list[ExtractionResult]:
+    """Extract every document, writing one JSON line per result as soon as it is ready."""
+    results = []
+    started = time.perf_counter()
+    for i, document in enumerate(documents, start=1):
+        result = extractor.extract(document)
+        results.append(result)
+        out.write(result.model_dump_json() + "\n")
+        out.flush()
+        print(f"[{i}/{len(documents)}] {document.source}: {_summary(result)}", file=sys.stderr)
 
-    documents = []
-    for entry in sorted(path.iterdir()):
-        suffix = entry.suffix.lower()
-        if entry.is_file() and (suffix in IMAGE_SUFFIXES or suffix in TEXT_SUFFIXES):
-            documents.append((entry.name, [entry]))
-        elif entry.is_dir():
-            pages = sorted(p for p in entry.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
-            if pages:
-                documents.append((entry.name, pages))
-    return documents
+    failures = sum(r.status != "ok" for r in results)
+    print(
+        f"Done: {len(results) - failures} ok, {failures} failed, "
+        f"{time.perf_counter() - started:.0f}s",
+        file=sys.stderr,
+    )
+    return results
 
 
 def _summary(result: ExtractionResult) -> str:
@@ -272,15 +215,22 @@ def _summary(result: ExtractionResult) -> str:
     return "ok – " + ", ".join(parts)
 
 
-def _ocr_engine(settings: Settings) -> OcrEngine:
-    print(f"Loading OCR: {settings.ocr_engine} ...", file=sys.stderr)
-    return get_ocr_engine(settings.ocr_engine, lang=settings.ocr_lang)
+def _extractor(settings: Settings) -> Extractor:
+    return Extractor.from_settings(settings, log=lambda message: print(message, file=sys.stderr))
 
 
-def _orientation(settings: Settings) -> OrientationDetector | None:
-    if settings.ocr_orientation != "none":
-        print(f"Loading orientation detector: {settings.ocr_orientation} ...", file=sys.stderr)
-    return get_orientation_detector(settings.ocr_orientation)
+def _require_documents(path: Path) -> list[Document]:
+    documents = find_documents(path)
+    if not documents:
+        print(f"No .txt files or images in {path}", file=sys.stderr)
+    return documents
+
+
+def _require_gold(directory: Path) -> dict[str, EkstrakcjaBadania]:
+    gold = load_gold(directory)
+    if not gold:
+        print(f"No gold files (*.json) in {directory}", file=sys.stderr)
+    return gold
 
 
 def _settings(args: argparse.Namespace) -> Settings:

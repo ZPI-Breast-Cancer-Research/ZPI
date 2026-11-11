@@ -1,4 +1,5 @@
-from .base import OrientationDetector, OrientationError, make_upright, upright_copy
+from ..errors import OrientationError
+from .base import OrientationDetector, make_upright, upright_copy
 from .registry import DETECTORS, get_orientation_detector
 
 __all__ = [

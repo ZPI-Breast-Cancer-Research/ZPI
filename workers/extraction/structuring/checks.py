@@ -1,6 +1,6 @@
 import re
 
-from ..normalize import fold, quote_similarity
+from ..matching import fold, quote_similarity
 from ..schema import (
     Brzeg,
     Echogenicznosc,
@@ -32,6 +32,11 @@ STEMS = {
     Echogenicznosc.IZOECHOGENICZNA: ("izoech", "isoech", "normoech"),
     Echogenicznosc.HIPERECHOGENICZNA: ("hiperech", "hyperech"),
     Echogenicznosc.ZLOZONA: ("zlozon", "torbielowatolit", "litotorbiel"),
+}
+# A stem must start a word: "nieostro odgraniczona" must not match OBWIEDZIONY's "ostro odgranicz".
+_STEM_PATTERNS = {
+    value: re.compile("|".join(rf"\b{re.escape(stem)}" for stem in stems))
+    for value, stems in STEMS.items()
 }
 
 
@@ -70,9 +75,7 @@ def check_extraction(data: EkstrakcjaBadania, text: str) -> list[str]:
             warnings.append(f"zmiana {zmiana.id}: polaczenie_obserwacji przy jednej obserwacji")
         for strona in _sides(zmiana.strona):
             if getattr(data.piersi, strona).zmiany_ogniskowe is False:
-                warnings.append(
-                    f"zmiana {zmiana.id}: pierś {strona} ma zmiany_ogniskowe = false"
-                )
+                warnings.append(f"zmiana {zmiana.id}: pierś {strona} ma zmiany_ogniskowe = false")
     return warnings
 
 
@@ -103,7 +106,7 @@ def _check_observation(where: str, obs: Obserwacja, haystack: str) -> list[str]:
     quote = fold(obs.cytat)
     for name in ("ksztalt", "brzeg", "echogenicznosc"):
         value = getattr(obs, name)
-        if value is not None and not any(stem in quote for stem in STEMS[value]):
+        if value is not None and not _STEM_PATTERNS[value].search(quote):
             warnings.append(f"{where}: {name} = {value} nie wynika z cytatu")
     return warnings
 
