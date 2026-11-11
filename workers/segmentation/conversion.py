@@ -25,6 +25,8 @@ LPS_TO_RAS = np.diag([-1.0, -1.0, 1.0, 1.0])
 SLICE_GAP_TOLERANCE_MM = 0.01
 # Sign of the main RAS direction of array axes 0, 1, 2 in the MAMA-MIA training data.
 TRAINING_AXIS_SIGNS = (-1, 1, 1)
+# Shown in the viewer's series list (OHIF), so the SEG is recognisable among the MR phases.
+SEG_SERIES_DESCRIPTION = "MARIA approved segmentation"
 
 
 class GeometryError(Exception):
@@ -410,6 +412,7 @@ def convert_nifti_to_dicom_seg(
         instance_number=1,
         manufacturer="MARIA Project",
         manufacturer_model_name="NIfTI to DICOM SEG Converter",
+        series_description=SEG_SERIES_DESCRIPTION,
         software_versions="1.0",
         device_serial_number="1.0",
     )

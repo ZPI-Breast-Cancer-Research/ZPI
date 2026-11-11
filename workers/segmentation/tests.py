@@ -29,7 +29,7 @@ def test_channel_suffix_rejects_unknown_role():
 ROWS, COLUMNS, SLICES = 5, 6, 4
 
 
-def _write_mr_series(directory, study_uid, frame_uid, number, acquisition_time):
+def _write_mr_series(directory, study_uid, frame_uid, number, acquisition_time, orientation):
     """One axial 3D MR phase; each voxel holds slice * 100 + row * 10 + column."""
     import numpy as np
     from pydicom.dataset import FileDataset, FileMetaDataset
@@ -56,7 +56,7 @@ def _write_mr_series(directory, study_uid, frame_uid, number, acquisition_time):
         ds.ImageType = ["ORIGINAL", "PRIMARY", "OTHER"]
         ds.MRAcquisitionType = "3D"
         ds.AcquisitionTime = acquisition_time
-        ds.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]
+        ds.ImageOrientationPatient = orientation
         ds.ImagePositionPatient = [0, 0, float(index) * 2]
         ds.PixelSpacing = [1.0, 1.0]
         ds.SliceThickness = 2.0
@@ -70,21 +70,33 @@ def _write_mr_series(directory, study_uid, frame_uid, number, acquisition_time):
     return sop_uids
 
 
-def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path):
+@pytest.mark.parametrize(
+    "orientation",
+    [
+        pytest.param([1, 0, 0, 0, 1, 0], id="training-layout-flips-axis-1"),
+        pytest.param([-1, 0, 0, 0, -1, 0], id="duke-flips-axis-0"),
+    ],
+)
+def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orientation):
     # Arrange
     import highdicom as hd
     import nibabel as nib
     import numpy as np
     from pydicom.uid import generate_uid
 
-    from workers.segmentation.conversion import Status, convert_nifti_to_dicom_seg, convert_study
+    from workers.segmentation.conversion import (
+        SEG_SERIES_DESCRIPTION,
+        Status,
+        convert_nifti_to_dicom_seg,
+        convert_study,
+    )
 
     study_dir = tmp_path / "dicom"
     study_dir.mkdir()
     study_uid, frame_uid = generate_uid(), generate_uid()
-    pre_sops = _write_mr_series(study_dir, study_uid, frame_uid, 1, "120000")
-    _write_mr_series(study_dir, study_uid, frame_uid, 2, "120100")
-    _write_mr_series(study_dir, study_uid, frame_uid, 3, "120200")
+    pre_sops = _write_mr_series(study_dir, study_uid, frame_uid, 1, "120000", orientation)
+    _write_mr_series(study_dir, study_uid, frame_uid, 2, "120100", orientation)
+    _write_mr_series(study_dir, study_uid, frame_uid, 3, "120200", orientation)
 
     converted = convert_study(study_dir, "case", tmp_path / "nifti")
     assert converted.status is Status.OK
@@ -103,6 +115,7 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path):
 
     # Assert
     seg = hd.seg.segread(seg_path)
+    assert seg.SeriesDescription == SEG_SERIES_DESCRIPTION
     frames = seg.pixel_array.reshape(-1, ROWS, COLUMNS)  # a single frame comes back as 2D
     marked = [
         (frame, item)
