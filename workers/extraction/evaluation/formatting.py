@@ -1,7 +1,20 @@
-"""Text tables of an evaluation ``Report`` for the terminal; computes nothing itself."""
+"""Text tables for the terminal: an evaluation ``Report`` and the experiment records.
+
+Computes nothing itself.
+"""
+
+from typing import Any
 
 from .report import SUMMARY_GROUPS, Report
 from .scores import FieldScore
+
+TABLE_METRICS = (
+    ("field_accuracy", "fields"),
+    ("zmiany_f1", "lesF1"),
+    ("wezly_f1", "nodeF1"),
+    ("wniosek_birads_accuracy", "birads"),
+    ("ocr_cer", "CER"),
+)
 
 
 def format_report(report: Report) -> str:
@@ -56,3 +69,54 @@ def _score_cells(s: FieldScore) -> str:
 
 def _pct(value: float | None) -> str:
     return f"{value:>7.0%}" if value is not None else f"{'–':>7}"
+
+
+def format_experiments(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return "No experiments yet."
+    latest_gold = records[-1]["data"]["gold_sha"]
+    header = (
+        f"{'id':<5}{'name':<24}{'model':<28}{'prompt':<8}{'schema':<8}{'fs':>3} {'input':<12}"
+        + "".join(f"{label:>8}" for _, label in TABLE_METRICS)
+    )
+    lines = [header]
+    for r in records:
+        c = r["config"]
+        marker = "" if r["data"]["gold_sha"] == latest_gold else "  *other gold"
+        # None: recorded from predictions that predate provenance.few_shot.
+        few_shot = "?" if c["few_shot"] is None else c["few_shot"]
+        lines.append(
+            f"{r['id']:<5}{r['name'][:23]:<24}{str(c['llm_model'])[:27]:<28}"
+            f"{c['prompt_version']:<8}{c['schema_version']:<8}{few_shot:>3} {r['input']:<12}"
+            + "".join(_cell(r["summary"].get(key), key) for key, _ in TABLE_METRICS)
+            + marker
+        )
+    return "\n".join(lines)
+
+
+def format_experiment_diff(previous: dict[str, Any], current: dict[str, Any]) -> str:
+    lines = [f"vs {previous['id']} {previous['name']}:"]
+    changed = [
+        f"  {key}: {previous['config'].get(key)} -> {value}"
+        for key, value in current["config"].items()
+        if previous["config"].get(key) != value
+    ]
+    if previous["input"] != current["input"]:
+        changed.append(f"  input: {previous['input']} -> {current['input']}")
+    if previous["data"]["gold_sha"] != current["data"]["gold_sha"]:
+        changed.append("  gold set changed – scores are not directly comparable")
+    lines += changed or ["  config unchanged"]
+    for key, value in current["summary"].items():
+        before = previous["summary"].get(key)
+        if value is None or before is None:
+            continue
+        delta = (value - before) * 100
+        if abs(delta) >= 0.05:
+            lines.append(f"  {key}: {before:.1%} -> {value:.1%} ({delta:+.1f} pp)")
+    return "\n".join(lines)
+
+
+def _cell(value: float | None, key: str) -> str:
+    if value is None:
+        return f"{'–':>8}"
+    return f"{value:>8.1%}" if key == "ocr_cer" else f"{value:>8.0%}"

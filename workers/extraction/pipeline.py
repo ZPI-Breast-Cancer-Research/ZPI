@@ -2,7 +2,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import cached_property
+from functools import cached_property, partial
 from pathlib import Path
 
 from .config import Settings
@@ -145,7 +145,8 @@ def extract_from_images(
         ocr_result = run_ocr(images, ocr, orientation)
     except Exception as exc:
         # OCR libraries raise anything; one unreadable scan must not stop a batch.
-        return _error_result(source, f"OCR: {exc}", text="", llm=llm)
+        provenance = _provenance(llm, few_shot, structured_output)
+        return _error_result(source, f"OCR: {exc}", "", provenance)
 
     result = extract_from_text(
         ocr_result.text,
@@ -166,9 +167,12 @@ def extract_from_text(
     few_shot: int = 1,
     structured_output: bool = True,
 ) -> ExtractionResult:
+    # Built when the result is made: an auto-selected model is known only after the first call.
+    provenance = partial(_provenance, llm, few_shot, structured_output)
     text = normalize_text(text)
     if not text:
-        return _error_result(source, "Empty report text (did OCR read nothing?)", text, llm)
+        error = "Empty report text (did OCR read nothing?)"
+        return _error_result(source, error, text, provenance())
 
     messages = build_messages(text, few_shot=few_shot)
     schema = llm_json_schema() if structured_output else None
@@ -179,7 +183,7 @@ def extract_from_text(
         try:
             response = llm.complete(messages, json_schema=schema)
         except LLMError as exc:
-            return _error_result(source, f"LLM: {exc}", text, llm, attempts=attempt)
+            return _error_result(source, f"LLM: {exc}", text, provenance(), attempts=attempt)
         llm_seconds += response.seconds
 
         try:
@@ -195,13 +199,15 @@ def extract_from_text(
             data=data,
             warnings=check_extraction(data, text),
             text=text,
-            provenance=_provenance(llm),
+            provenance=provenance(),
             attempts=attempt,
             llm_seconds=round(llm_seconds, 2),
             created_at=datetime.now(UTC),
         )
 
-    result = _error_result(source, f"Parsing: {last_error}", text, llm, attempts=MAX_ATTEMPTS)
+    result = _error_result(
+        source, f"Parsing: {last_error}", text, provenance(), attempts=MAX_ATTEMPTS
+    )
     result.llm_seconds = round(llm_seconds, 2)
     return result
 
@@ -216,8 +222,14 @@ def _retry_messages(answer: str, error: str) -> list[Message]:
     ]
 
 
-def _provenance(llm: LLMClient) -> Provenance:
-    return Provenance(llm_provider=llm.provider, llm_model=llm.model, prompt_version=PROMPT_VERSION)
+def _provenance(llm: LLMClient, few_shot: int, structured_output: bool) -> Provenance:
+    return Provenance(
+        llm_provider=llm.provider,
+        llm_model=llm.model,
+        prompt_version=PROMPT_VERSION,
+        few_shot=few_shot,
+        structured_output=structured_output,
+    )
 
 
 def _add_ocr_provenance(result: ExtractionResult, ocr_result: OcrResult) -> None:
@@ -230,14 +242,14 @@ def _add_ocr_provenance(result: ExtractionResult, ocr_result: OcrResult) -> None
 
 
 def _error_result(
-    source: str, error: str, text: str, llm: LLMClient, *, attempts: int = 0
+    source: str, error: str, text: str, provenance: Provenance, *, attempts: int = 0
 ) -> ExtractionResult:
     return ExtractionResult(
         source=source,
         status="error",
         error=error,
         text=text,
-        provenance=_provenance(llm),
+        provenance=provenance,
         attempts=attempts,
         created_at=datetime.now(UTC),
     )

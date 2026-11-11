@@ -14,13 +14,6 @@ from .report import Report
 
 EXPERIMENTS_DIR = Path(__file__).parents[1] / "experiments" / "runs"
 REPO_ROOT = Path(__file__).resolve().parents[3]
-TABLE_METRICS = (
-    ("field_accuracy", "fields"),
-    ("zmiany_f1", "lesF1"),
-    ("wezly_f1", "nodeF1"),
-    ("wniosek_birads_accuracy", "birads"),
-    ("ocr_cer", "CER"),
-)
 
 
 def slugify(name: str) -> str:
@@ -35,6 +28,7 @@ def next_id() -> str:
 def build_record(
     exp_id: str,
     name: str,
+    *,
     hypothesis: str | None,
     settings: Settings,
     results: list[ExtractionResult],
@@ -45,9 +39,21 @@ def build_record(
     ok = [r for r in results if r.status == "ok"]
     first = (ok or results)[0].provenance if results else None
     scans = any(r.provenance.ocr_engine for r in results)
-    few_shot = load_few_shot()[: settings.few_shot_examples]
-    # A run recorded from older predictions may come from another prompt; its hash is unknown.
+    # What produced the results, not the current settings: with --predictions they may differ.
+    # None when the results predate these provenance fields.
+    few_shot: int | None
+    structured_output: bool | None
+    if first is None:
+        few_shot, structured_output = settings.few_shot_examples, settings.llm_structured_output
+    else:
+        few_shot, structured_output = first.few_shot, first.structured_output
+    # The hash is known only for the current prompt and a known number of examples.
     same_prompt = first is None or first.prompt_version == PROMPT_VERSION
+    prompt_sha = (
+        _sha(json.dumps([system_prompt(), load_few_shot()[:few_shot]], ensure_ascii=False))
+        if same_prompt and few_shot is not None
+        else None
+    )
     return {
         "id": exp_id,
         "name": name,
@@ -57,15 +63,13 @@ def build_record(
         "config": {
             "llm_provider": first.llm_provider if first else settings.llm_provider,
             "llm_model": (first.llm_model if first else "") or settings.llm_model or None,
-            "few_shot": settings.few_shot_examples,
-            "structured_output": settings.llm_structured_output,
+            "few_shot": few_shot,
+            "structured_output": structured_output,
             "ocr_engine": first.ocr_engine if scans and first else None,
             "ocr_engine_version": first.ocr_engine_version if scans and first else None,
             "ocr_orientation": first.orientation_detector if scans and first else None,
             "prompt_version": first.prompt_version if first else PROMPT_VERSION,
-            "prompt_sha": _sha(json.dumps([system_prompt(), few_shot], ensure_ascii=False))
-            if same_prompt
-            else None,
+            "prompt_sha": prompt_sha,
             "schema_version": first.schema_version if first else SCHEMA_VERSION,
             "schema_sha": _sha(json.dumps(llm_json_schema(), sort_keys=True)),
         },
@@ -124,55 +128,6 @@ def gold_sha(directory: Path) -> str:
         digest.update(path.relative_to(directory).as_posix().encode())
         digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
-
-
-def format_table(records: list[dict[str, Any]]) -> str:
-    if not records:
-        return "No experiments yet."
-    latest_gold = records[-1]["data"]["gold_sha"]
-    header = (
-        f"{'id':<5}{'name':<24}{'model':<28}{'prompt':<8}{'schema':<8}{'fs':>3} {'input':<12}"
-        + "".join(f"{label:>8}" for _, label in TABLE_METRICS)
-    )
-    lines = [header]
-    for r in records:
-        c = r["config"]
-        marker = "" if r["data"]["gold_sha"] == latest_gold else "  *other gold"
-        lines.append(
-            f"{r['id']:<5}{r['name'][:23]:<24}{str(c['llm_model'])[:27]:<28}"
-            f"{c['prompt_version']:<8}{c['schema_version']:<8}{c['few_shot']:>3} {r['input']:<12}"
-            + "".join(_cell(r["summary"].get(key), key) for key, _ in TABLE_METRICS)
-            + marker
-        )
-    return "\n".join(lines)
-
-
-def format_diff(previous: dict[str, Any], current: dict[str, Any]) -> str:
-    lines = [f"vs {previous['id']} {previous['name']}:"]
-    changed = [
-        f"  {key}: {previous['config'].get(key)} -> {value}"
-        for key, value in current["config"].items()
-        if previous["config"].get(key) != value
-    ]
-    if previous["input"] != current["input"]:
-        changed.append(f"  input: {previous['input']} -> {current['input']}")
-    if previous["data"]["gold_sha"] != current["data"]["gold_sha"]:
-        changed.append("  gold set changed – scores are not directly comparable")
-    lines += changed or ["  config unchanged"]
-    for key, value in current["summary"].items():
-        before = previous["summary"].get(key)
-        if value is None or before is None:
-            continue
-        delta = (value - before) * 100
-        if abs(delta) >= 0.05:
-            lines.append(f"  {key}: {before:.1%} -> {value:.1%} ({delta:+.1f} pp)")
-    return "\n".join(lines)
-
-
-def _cell(value: float | None, key: str) -> str:
-    if value is None:
-        return f"{'–':>8}"
-    return f"{value:>8.1%}" if key == "ocr_cer" else f"{value:>8.0%}"
 
 
 def _mean(values: Any) -> float | None:
