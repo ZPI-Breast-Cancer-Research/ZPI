@@ -1,5 +1,7 @@
 import { mockDelay, mockScenario, MOCK_API } from "../mock";
-import {api} from "../api"
+import axios from "axios";
+
+import { api } from "../api";
 
 export type Role = "radiologist" | "researcher" | "admin";
 
@@ -29,11 +31,11 @@ function mockUser(login: string): User {
   return { login, name: "Użytkownik", role };
 }
 
-// TODO: no auth endpoints yet (backend allows everything for now). Logins starting with
-// "radiolog" / "badacz" get those roles; ?mock=first-login and ?mock=bad-login preview the other paths
+// with mocks, logins starting with "radiolog" / "badacz" get those roles;
+// ?mock=first-login and ?mock=bad-login preview the other paths
 export async function signIn(login: string, password: string): Promise<SignInResult> {
-  if(MOCK_API){
-      const scenario = mockScenario();
+  if (MOCK_API) {
+    const scenario = mockScenario();
     if (scenario === "bad-login") {
       await mockDelay(null, 300);
       throw new AuthError("bad credentials");
@@ -44,13 +46,12 @@ export async function signIn(login: string, password: string): Promise<SignInRes
   try {
     const response = await api.post("/api/auth/signin/", { login, password });
     return response.data;
-  } catch (error: any) {
-    if (error.response && error.response.status === 401) {
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new AuthError("bad credentials");
     }
     throw new AuthError("Wystąpił błąd logowania.");
   }
-
 }
 
 export async function setFirstPassword(login: string, temporary: string, password: string): Promise<User> {
@@ -59,19 +60,15 @@ export async function setFirstPassword(login: string, temporary: string, passwor
   }
 
   try {
-    const response = await api.post("/api/auth/set-password/", { 
-      login, 
-      temporary, 
-      password 
-    });
+    const response = await api.post("/api/auth/set-password/", { login, temporary, password });
     return response.data;
-  } catch (error: any) {
+  } catch {
     throw new Error("Nie udało się ustawić nowego hasła.");
   }
 }
 
 export async function signOut(): Promise<void> {
-  if(MOCK_API){
+  if (MOCK_API) {
     return mockDelay(undefined, 100);
   }
   await api.post("/api/auth/signout/");

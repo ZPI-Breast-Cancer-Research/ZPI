@@ -57,6 +57,16 @@ export async function findSeries(studyUid: string): Promise<Partial<Record<Serie
   return found;
 }
 
+// MR studies in Orthanc, most series first
+export async function listMrStudies(): Promise<string[]> {
+  const studies = await get("/studies?ModalitiesInStudy=MR&includefield=00201206");
+  return studies
+    .map((s) => ({ uid: String(tag(s, "0020000D") ?? ""), series: Number(tag(s, "00201206") ?? 0) }))
+    .filter((s) => s.uid)
+    .sort((a, b) => b.series - a.series)
+    .map((s) => s.uid);
+}
+
 const imageIdCache = new Map<string, Promise<string[]>>();
 
 // registers the series metadata with the loader and returns one imageId per frame

@@ -1,5 +1,6 @@
 import { api, ApiError, handleApiError, API_URL } from "../api";
 import { toIsoDate } from "../format";
+import { t } from "../i18n";
 import { MOCK_API, mockDelay } from "../mock";
 import { reviewProgress } from "../review/api";
 
@@ -122,7 +123,7 @@ export async function listStudies(): Promise<StudyRow[]> {
   try {
     const { data } = await api.get<Study[]>("/api/studies");
     // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
-    // if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
+    if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
     return data.map((study) => ({
       id: study.orthanc_id,
       number: null,
@@ -134,9 +135,8 @@ export async function listStudies(): Promise<StudyRow[]> {
       verifiedAt: null,
     }));
   } catch (error) {
-    handleApiError(error);
+    handleApiError(error, url);
   }
-
 }
 
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
