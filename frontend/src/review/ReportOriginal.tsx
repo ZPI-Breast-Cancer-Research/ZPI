@@ -19,6 +19,7 @@ const ZOOMS = [50, 75, 100, 125, 150, 200, 300];
 // native dialog: Esc, focus and the backdrop for free
 export default function ReportOriginal({ report, open, onClose, lesion, onPrev, onNext }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<"photo" | "text">(report.originalUrl ? "photo" : "text");
   const [turn, setTurn] = useState(0);
   const [zoom, setZoom] = useState(100);
@@ -32,6 +33,24 @@ export default function ReportOriginal({ report, open, onClose, lesion, onPrev, 
   }, [open]);
 
   const step = (by: number) => setZoom((z) => ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + by))]);
+
+  // Ctrl + wheel (and a trackpad pinch) zooms the scan, like in the viewer
+  useEffect(() => {
+    const box = body.current;
+    if (!box || tab !== "photo") return;
+    // a pinch sends many tiny events; one zoom step per this much of them
+    let total = 0;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      total += event.deltaY;
+      if (Math.abs(total) < 40) return;
+      step(total < 0 ? 1 : -1);
+      total = 0;
+    };
+    box.addEventListener("wheel", onWheel, { passive: false });
+    return () => box.removeEventListener("wheel", onWheel);
+  }, [tab, open]);
 
   return (
     <dialog
@@ -78,7 +97,7 @@ export default function ReportOriginal({ report, open, onClose, lesion, onPrev, 
           {t("review.original.text")}
         </a>
       </nav>
-      <div className="original__body">
+      <div className="original__body" ref={body}>
         {tab === "photo" && report.originalUrl ? (
           image && <img src={image} alt={t("review.original.title")} style={{ width: `${zoom}%` }} />
         ) : (
