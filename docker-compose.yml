@@ -112,7 +112,10 @@ services:
     env_file: .env
     depends_on: [redis, postgres, minio, orthanc, mlflow]
     volumes: [./backend:/app/backend, ./workers:/app/workers, ./data:/data]
-    # TODO: GPU reservation
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
 
   worker-segmentation-convert:
     build: {context: ., dockerfile: workers/segmentation/Dockerfile}

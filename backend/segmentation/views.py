@@ -1,108 +1,120 @@
+import logging
+
+from celery import current_app
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-from django.db import transaction
-from celery import current_app
 
-from common.storage import BUCKET_MASKS, upload_file
+from common.storage import BUCKET_MASKS, put_bytes
 from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices
+from users.permissions import require_permission
+
+logger = logging.getLogger(__name__)
 
 
-@api_view["POST"]
-@parser_classes([MultiPartParser, FormParser])
-def get_segmentation_result(result, study_id: int):
-    """
-    Pobiera metadane i status najnowszego wyniku segmentacji dla danego badania
-    """
+def _latest(study: Study) -> SegmentationResult | None:
+    return SegmentationResult.objects.filter(study=study).order_by("-id").first()
 
+
+@api_view(["GET"])
+@require_permission(["review", "viewModels"])
+def get_segmentation_result(request, study_id: int):
+    """Status and metadata of the newest segmentation result of a study."""
     study = get_object_or_404(Study, pk=study_id)
-    result = SegmentationResult.objecs.filter(study=study).last()
-    
-    if not result:
-        return Response(
-                {"detail": "Brak wyniku segmentacji dla podanego badania"}, 
-                status=status.HTTP_404_NOT_FOUND)
-
-    return Response(
-            {
-                "id": result.id,
-                "study_id": study.id,
-                "status": result.status,
-                "uncertainity": result.uncertainity,
-                "model_version": result.model_version,
-                "generated_path": result.generated_path,
-                "corrected_path": result.corrected_path,
-                "volume_ml": getattr(result, "volume_ml", None),
-                "lesion_dimensions_mm": getattr(result, "lesion_dimensions_mm", None),
-                "created_at": result.created_at if hasattr(result, "created_at") else None
-                },
-            status=status.HTTP_200_OK,
-            )
-
-@api_view(["POST"])
-@parser_classes([MultiPartParser, FormParser])
-def approve_segmentation(request, study_id: int):
-    """
-    Zatwierdza lub nadpisuje maskę segmentacji dla badania.
-    Zapisuje plik NIfTI w MinIO, zmienia status w bazie i wysyła task CPU
-    segmentation.correction_to_dicom_seg do Celery po commit transakcji.
-    """
-    study = get_object_or_404(Study, pk=study_id)
-    result = SegmentationResult.objects.filter(study=study).last()
+    result = _latest(study)
 
     if not result:
         return Response(
-            {"detail": "Nie znaleziono rekordu segmentacji do zatwierdzenia."},
+            {"detail": "Brak wyniku segmentacji dla podanego badania"},
             status=status.HTTP_404_NOT_FOUND,
         )
 
+    return Response(
+        {
+            "id": result.id,
+            "study_id": study.id,
+            "status": result.status,
+            "uncertainty": result.uncertainty,
+            "model_version": result.model.version if result.model else None,
+            "generated_path": result.generated_path,
+            "accepted_path": result.accepted_path,
+            "accepted_at": result.accepted_at,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser, FormParser])
+@require_permission("review")
+def approve_segmentation(request, study_id: int):
+    """
+    Zatwierdza maskę modelu albo zapisuje poprawioną maskę (pole ``mask_file``, NIfTI).
+    Poprawiona maska trafia do MinIO, a po commicie transakcji task CPU
+    segmentation.correction_to_dicom_seg zapisuje zatwierdzoną maskę w Orthancu jako DICOM SEG.
+    """
+    study = get_object_or_404(Study, pk=study_id)
     corrected_file = request.FILES.get("mask_file")
-    
+
     try:
         with transaction.atomic():
-            corrected_key = result.generated_path
+            result = (
+                SegmentationResult.objects.select_for_update()
+                .filter(study=study)
+                .order_by("-id")
+                .first()
+            )
+            if not result:
+                return Response(
+                    {"detail": "Nie znaleziono rekordu segmentacji do zatwierdzenia."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if result.status != StatusChoices.COMPLETED:
+                return Response(
+                    {"detail": f"Nie można zatwierdzić wyniku w statusie {result.status}."},
+                    status=status.HTTP_409_CONFLICT,
+                )
 
             if corrected_file:
-                # Radiolog nanosił poprawki pędzlem -> tworzymy nową ścieżkę w MinIO
-                corrected_key = f"{study.id}/corrected_mask.nii.gz"
-                upload_file(corrected_file, BUCKET_MASKS, corrected_key)
-                result.corrected_path = corrected_key
+                # Radiolog poprawił maskę -> osobny plik, maska modelu zostaje bez zmian
+                accepted_key = f"{study.id}/{result.id}_corrected.nii.gz"
+                put_bytes(corrected_file.read(), BUCKET_MASKS, accepted_key, "application/gzip")
+                result.status = StatusChoices.CORRECTED
             else:
-                # Radiolog zatwierdził maskę wygenerowaną przez model bez zmian
-                result.corrected_path = result.generated_path
+                accepted_key = result.generated_path
+                result.status = StatusChoices.APPROVED
 
-            result.status = StatusChoices.VERIFIED
-            result.save(update_fields=["status", "corrected_path"])
+            result.accepted_path = accepted_key
+            result.accepted_by = request.user
+            result.accepted_at = timezone.now().date()
+            result.save(update_fields=["status", "accepted_path", "accepted_by", "accepted_at"])
 
-            # 2. Bezpieczne zlecenie taska CPU (konwersja do DICOM SEG i wysyłka do Orthanc)
-            # Wzorzec transaction.on_commit chroni przed race-condition (Driver Q3)
             if study.orthanc_path:
+                orthanc_study_id = study.orthanc_path
                 transaction.on_commit(
                     lambda: current_app.send_task(
                         "segmentation.correction_to_dicom_seg",
-                        kwargs={
-                            "study_instance_uid": study.orthanc_path,
-                            "mask_key": corrected_key,
-                        },
+                        kwargs={"orthanc_study_id": orthanc_study_id, "mask_key": accepted_key},
                     )
                 )
-
-        logger.info("Zatwierdzono segmentację dla badania %s (rekord ID: %s)", study.id, result.id)
-        return Response(
-            {
-                "detail": "Maska została pomyślnie zatwierdzona.",
-                "status": result.status,
-                "corrected_path": result.corrected_path,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-    except Exception as exc:
+    except Exception:
         logger.exception("Błąd podczas zatwierdzania segmentacji dla badania %s", study_id)
         return Response(
-            {"code": "server_error", "detail": f"Wystąpił błąd: {str(exc)}"},
+            {"code": "server_error", "detail": "Wystąpił błąd podczas zatwierdzania maski."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+    logger.info("Zatwierdzono segmentację dla badania %s (rekord ID: %s)", study.id, result.id)
+    return Response(
+        {
+            "detail": "Maska została pomyślnie zatwierdzona.",
+            "status": result.status,
+            "accepted_path": result.accepted_path,
+        },
+        status=status.HTTP_200_OK,
+    )

@@ -80,23 +80,7 @@ class OrthancClient:
         except ValueError as exc:
             raise OrthancUnavailable(f"Orthanc {path} returned invalid JSON: {exc}") from exc
 
-    def download_all_instances(self, study_uid: str, dest: Path) -> None:
-        """Download all instances of a study using DICOMweb (QIDO-RS and WADO-RS)."""
-        series_list = self.list_series(study_uid)
-        if not series_list:
-            raise StudyNotFound(f"Orthanc has no study {study_uid}")
-
-        dest.mkdir(parents=True, exist_ok=True)
-        for series_uid in series_list:
-            response = self._request(f"/dicom-web/studies/{study_uid}/series/{series_uid}/instances")
-            instances = response.json()
-            for instance in instances:
-                sop_instance_uid = _tag(instance, "00080018")
-                instance_response = self._request(
-                    f"/dicom-web/studies/{study_uid}/series/{series_uid}/instances/{sop_instance_uid}"
-                )
-                with open(dest / f"{sop_instance_uid}.dcm", "wb") as f:
-                    f.write(instance_response.content)
+    def list_series(self, study_uid: str) -> list[str]:
         """SeriesInstanceUIDs of a study (QIDO-RS)."""
         series = self._get(f"/dicom-web/studies/{study_uid}/series")
         # Orthanc answers an unknown study with 200 and an empty list, not 404.
@@ -168,27 +152,31 @@ class OrthancClient:
         }
 
     def upload_dicom_zip(self, zip_bytes: bytes) -> dict:
+        return self._post_instances(zip_bytes, "application/zip")
+
+    def upload_dicom_file(self, path: Path) -> dict:
+        """Store one DICOM file (e.g. a DICOM SEG) in Orthanc."""
+        return self._post_instances(Path(path).read_bytes(), "application/dicom")
+
+    def _post_instances(self, data: bytes, content_type: str):
         url = f"{self.base_url}/instances"
-        headers = {"Content-Type": "application/zip"}
-        
         try:
             response = requests.post(
-                url, 
-                data=zip_bytes, 
-                auth=self.auth, 
-                headers=headers, 
-                timeout=TIMEOUT
+                url,
+                data=data,
+                auth=self.auth,
+                headers={"Content-Type": content_type},
+                timeout=TIMEOUT,
             )
         except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc upload to {url} failed: {exc}") from exc
 
         if response.status_code == 401:
-            raise OrthancUnauthorized(f"Orthanc rejected credentials during upload (HTTP 401)")
-            
+            raise OrthancUnauthorized("Orthanc rejected credentials during upload (HTTP 401)")
+
         try:
             response.raise_for_status()
             return response.json()
         except (requests.RequestException, ValueError) as exc:
             raise OrthancUnavailable(f"Orthanc upload response invalid: {exc}") from exc
 
-    
