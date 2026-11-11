@@ -1,12 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 
 import { t } from "../i18n";
-import type { CaseReport } from "./extraction";
+import type { CaseReport, ExtractionResult } from "./extraction";
 import ReportText from "./ReportText";
 import { useUprightImage } from "./upright";
 
+// the uploaded file and, once the worker has read it, its result
+export interface Scan {
+  url: string | null;
+  fileName: string;
+  result: ExtractionResult | null;
+}
+
+export const scanOf = (report: CaseReport): Scan => ({ url: report.originalUrl, fileName: report.result.source, result: report.result });
+
 interface Props {
-  report: CaseReport;
+  scan: Scan;
   open: boolean;
   onClose: () => void;
   lesion: { number: number; quotes: string[] } | null;
@@ -17,13 +26,25 @@ interface Props {
 const ZOOMS = [50, 75, 100, 125, 150, 200, 300];
 
 // native dialog: Esc, focus and the backdrop for free
-export default function ReportOriginal({ report, open, onClose, lesion, onPrev, onNext }: Props) {
+export default function ReportOriginal({ scan, open, onClose, lesion, onPrev, onNext }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const body = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"photo" | "text">(report.originalUrl ? "photo" : "text");
+  const textFile = /\.txt$/i.test(scan.fileName);
+  const photo = !!scan.url && !textFile;
+  const [tab, setTab] = useState<"photo" | "text">(photo ? "photo" : "text");
   const [turn, setTurn] = useState(0);
   const [zoom, setZoom] = useState(100);
-  const image = useUprightImage(report.originalUrl, (report.result.provenance.page_rotations[0] ?? 0) + turn);
+  const [fileText, setFileText] = useState<string | null>(null);
+  const image = useUprightImage(photo ? scan.url : null, (scan.result?.provenance.page_rotations[0] ?? 0) + turn);
+  const text = scan.result?.text ?? fileText;
+
+  // a .txt nobody has read yet is shown as it was uploaded
+  useEffect(() => {
+    if (!open || !textFile || scan.result || !scan.url || fileText !== null) return;
+    fetch(scan.url)
+      .then((response) => (response.ok ? response.text() : ""))
+      .then(setFileText, () => setFileText(""));
+  }, [open, textFile, scan.result, scan.url, fileText]);
 
   useEffect(() => {
     const box = dialog.current;
@@ -62,10 +83,10 @@ export default function ReportOriginal({ report, open, onClose, lesion, onPrev, 
     >
       <div className="original__head">
         <span>
-          {t("review.original.title")} <span className="muted">· {report.result.source}</span>
+          {t("review.original.title")} <span className="muted">· {scan.fileName}</span>
         </span>
         <div className="original__tools">
-          {tab === "photo" && report.originalUrl && (
+          {tab === "photo" && photo && (
             <>
               <button type="button" className="btn btn--small" onClick={() => setTurn((a) => a + 90)}>
                 ↺ {t("review.original.rotateLeft")}
@@ -88,22 +109,24 @@ export default function ReportOriginal({ report, open, onClose, lesion, onPrev, 
         </div>
       </div>
       <nav className="tabs original__tabs" aria-label={t("review.original.title")}>
-        {report.originalUrl && (
+        {photo && (
           <a href="#zdjecie" className={tab === "photo" ? "active" : undefined} onClick={(e) => (e.preventDefault(), setTab("photo"))}>
             {t("review.original.photo")}
           </a>
         )}
-        <a href="#tekst" className={tab === "text" ? "active" : undefined} onClick={(e) => (e.preventDefault(), setTab("text"))}>
-          {t("review.original.text")}
-        </a>
+        {text !== null && (
+          <a href="#tekst" className={tab === "text" ? "active" : undefined} onClick={(e) => (e.preventDefault(), setTab("text"))}>
+            {t("review.original.text")}
+          </a>
+        )}
       </nav>
       <div className="original__body" ref={body}>
-        {tab === "photo" && report.originalUrl ? (
+        {tab === "photo" && photo ? (
           image && <img src={image} alt={t("review.original.title")} style={{ width: `${zoom}%` }} />
         ) : (
           <>
-            {!report.originalUrl && <p className="note">{t("review.original.noPhoto")}</p>}
-            <ReportText text={report.result.text} quotes={tab === "text" && lesion ? lesion.quotes : []} />
+            {!photo && scan.result && <p className="note">{t("review.original.noPhoto")}</p>}
+            {text !== null && <ReportText text={text} quotes={lesion ? lesion.quotes : []} />}
           </>
         )}
       </div>

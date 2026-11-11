@@ -187,3 +187,119 @@
     grid-template-columns: minmax(0, 1fr) 380px;
   }
 }
+
+/* a report waiting for its study */
+.report-card {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.report-card--selected {
+  background: var(--color-selected);
+  box-shadow: inset 2px 0 0 var(--color-primary);
+}
+
+.report-card__row {
+  display: flex;
+  align-items: center;
+}
+
+.report-card__main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 14px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.report-card__main:hover {
+  background: var(--color-hover);
+}
+
+.report-card__thumb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 46px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 2px;
+}
+
+.report-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 2px;
+}
+
+.report-card__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.report-card__name {
+  overflow: hidden;
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-card__meta {
+  color: var(--color-ink-faint);
+  font-size: var(--text-sm);
+}
+
+.report-card__open {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+
+.report-card__open:hover {
+  border-color: var(--color-rule-strong);
+  color: var(--color-ink);
+}
+
+/* where an unassigned report can go */
+.assign {
+  padding: 2px 14px 12px 70px;
+}
+
+.assign__title {
+  margin-bottom: 4px;
+  color: var(--color-ink-faint);
+  font-size: var(--text-sm);
+}
+
+.assign__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.attach__reports {
+  margin: 0 -14px;
+}
+
+.report-card__preview {
+  padding: 2px 14px 6px 70px;
+}

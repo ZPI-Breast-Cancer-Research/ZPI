@@ -24,7 +24,7 @@ import { applyAnswers, FIELDS, lesionFields, lesionSummary, matchLesion, type Fi
 import { fromExtraction } from "./report";
 import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
-import ReportOriginal from "./ReportOriginal";
+import ReportOriginal, { scanOf } from "./ReportOriginal";
 import ReportPreview from "./ReportPreview";
 
 type Values = Partial<Record<FieldKey, string>>;
@@ -597,7 +597,7 @@ export default function CaseReview({ data, queue }: Props) {
       </div>
       {report && (
         <ReportOriginal
-          report={report}
+          scan={scanOf(report)}
           open={showOriginal}
           onClose={() => setShowOriginal(false)}
           lesion={

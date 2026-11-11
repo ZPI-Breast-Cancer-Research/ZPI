@@ -14,7 +14,7 @@ import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
 import { fieldLabel, FIELDS, lesionSummary, optionLabel } from "../review/fields";
 import { fromExtraction } from "../review/report";
-import ReportOriginal from "../review/ReportOriginal";
+import ReportOriginal, { scanOf } from "../review/ReportOriginal";
 import ReportPreview from "../review/ReportPreview";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
@@ -208,7 +208,7 @@ export default function LesionOverviewPage() {
                     </tbody>
                   </table>
                   <ReportOriginal
-                    report={report.source}
+                    scan={scanOf(report.source)}
                     open={showOriginal}
                     onClose={() => setShowOriginal(false)}
                     lesion={lesion ? { number: lesionIndex + 1, quotes: lesion.observations.map((o) => o.quote) } : null}
