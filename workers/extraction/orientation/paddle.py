@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from .._paddle import import_paddleocr, result_data
 from ..errors import OrientationError
+from ..utils.paddle import import_paddleocr, result_data
 from .base import OrientationDetector
 
 MODEL_NAME = "PP-LCNet_x1_0_doc_ori"

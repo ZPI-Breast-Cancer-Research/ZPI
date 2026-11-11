@@ -4,7 +4,7 @@ import os
 from types import ModuleType
 from typing import Any
 
-from .errors import ExtractionError
+from ..errors import ExtractionError
 
 
 def import_paddleocr(error: type[ExtractionError]) -> ModuleType:

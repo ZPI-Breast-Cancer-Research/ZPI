@@ -209,7 +209,7 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `documents.py` | input documents: `find_documents` (file / directory / page folders), `Document`, supported suffixes |
 | `errors.py` | all exceptions; `ExtractionError` is the base of `LLMError`, `OcrError`, `OrientationError`, `ParseError` |
 | `ocr/` | OCR interface, PaddleOCR engine, registry |
-| `_paddle.py` | PaddleOCR import and result helpers shared by `ocr/paddle.py` and `orientation/paddle.py` |
+| `utils/` | technical helpers: `plugins.py` loads a registered class by name on demand (used by the registries); `<library>.py` holds helpers for one library shared by several components, e.g. `paddle.py` (PaddleOCR import and result format for `ocr/paddle.py` and `orientation/paddle.py`) |
 | `orientation/` | page orientation detector (PaddleOCR document classifier), rotation, registry |
 | `llm/` | LLM interface + local-host guard, HTTP client for `/v1/chat/completions`, registry |
 | `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” and the footer („Wykonał/a:”, „Opis:”) |

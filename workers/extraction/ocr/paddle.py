@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Any
 
-from .._paddle import import_paddleocr, result_data
 from ..errors import OcrError
+from ..utils.paddle import import_paddleocr, result_data
 from .base import Box, OcrEngine, OcrPage, boxes_to_lines
 
 

@@ -1,6 +1,6 @@
 from typing import Any
 
-from ..plugins import load_class
+from ..utils.plugins import load_class
 from .base import OrientationDetector
 
 DETECTORS = {

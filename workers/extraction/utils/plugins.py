@@ -1,6 +1,6 @@
 from importlib import import_module
 
-from .errors import UnknownComponentError
+from ..errors import UnknownComponentError
 
 
 def load_class(
