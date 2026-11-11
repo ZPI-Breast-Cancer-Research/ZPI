@@ -37,14 +37,18 @@ function kindOf(description: string): Series | null {
   const d = description.toLowerCase();
   if (/sub|0000/.test(d)) return "sub";
   if (/\bpre\b|pre[-_ ]|przed|native|bez kontr|0001/.test(d)) return "pre";
-  if (/post|1st|ph1|dyn|\+c|kontr|contrast|0002/.test(d)) return "post";
+  if (/post|1st|\bph[1-9]|\+c|kontr|contrast|0002/.test(d)) return "post";
+  // a dynamic series with no phase number or contrast mark is the one before contrast (Duke: "ax 3d dyn")
+  if (/dyn/.test(d)) return "pre";
   return null;
 }
 
 export async function findSeries(studyUid: string): Promise<Partial<Record<Series, string>>> {
   const list: SeriesInfo[] = (await get(`/studies/${studyUid}/series`))
     .filter((s) => tag(s, "00080060") === "MR")
-    .map((s) => ({ uid: String(tag(s, "0020000E")), description: String(tag(s, "0008103E") ?? "") }));
+    .map((s) => ({ uid: String(tag(s, "0020000E")), description: String(tag(s, "0008103E") ?? "") }))
+    // the first match of a kind wins, so Ph1 comes before Ph2
+    .sort((a, b) => a.description.localeCompare(b.description));
   if (!list.length) throw new DicomWebError("no-series");
 
   const found: Partial<Record<Series, string>> = {};
