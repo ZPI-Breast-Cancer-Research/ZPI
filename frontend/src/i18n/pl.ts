@@ -406,6 +406,7 @@ export const pl = {
   "review.error": "Nie udało się wczytać badania",
   "review.mask": "Maska",
   "review.mask.proposed": "Propozycja modelu",
+  "review.mask.empty": "Model nie znalazł zmian",
   "review.mask.corrected": "Maska poprawiona",
   "review.mask.restore": "Przywróć maskę modelu",
   "review.mask.approve": "Potwierdź maskę",

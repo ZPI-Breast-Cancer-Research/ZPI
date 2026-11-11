@@ -1,7 +1,7 @@
 import { api } from "../api";
 import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
-import type { MaskSource } from "../viewer/types";
+import type { SegRef } from "../viewer/types";
 import type { FieldKey } from "./fields";
 
 export interface QueueEntry {
@@ -33,7 +33,8 @@ export interface ReviewCase {
   segmentationVersion: string;
   extractionVersion: string | null;
   studyUid: string | null;
-  mask: MaskSource;
+  // the model's mask as DICOM SEG; null while there is none (processing, rejected, nothing found)
+  mask: SegRef | null;
   report: ReportPart[] | null;
   proposals: Partial<Record<FieldKey, Proposal>>;
   measurements: { volume: number | null; size: number | null; sizeInReport: number | null };
@@ -71,8 +72,6 @@ const REPORT: ReportPart[] = [
   { text: "BI-RADS", field: "birads" },
   { text: "." },
 ];
-
-const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10] };
 
 const approved = new Set<string>();
 const masksApproved = new Map<string, "confirmed" | "corrected">();
@@ -117,7 +116,8 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
       segmentationVersion: "7",
       extractionVersion: noReport ? null : "3",
       studyUid,
-      mask: MOCK_MASK,
+      // mock studies are not in Orthanc, so there is no SEG to point to
+      mask: null,
       report: noReport ? null : REPORT,
       proposals: noReport
         ? {}

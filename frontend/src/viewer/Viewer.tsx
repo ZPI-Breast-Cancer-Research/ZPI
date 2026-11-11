@@ -14,13 +14,13 @@ import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, use
 
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
-import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
+import { ENGINE_ID, getEngine, historyMemo } from "./cornerstone";
 import { paintSeg } from "./dicomSeg";
-import { DicomWebError, findSeries, latestSeg, seriesImageIds } from "./dicomweb";
+import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
 import { applyPatch, interpolateMask, maskExtent, maskPatch, restoreSlice, type Extent, type MaskPatch } from "./maskTools";
 import SliceStrip from "./SliceStrip";
-import type { BrushShape, MaskSource, MaskState, Plane, Series, Tool } from "./types";
+import type { BrushShape, MaskState, Plane, Series, SegRef, Tool } from "./types";
 import "./viewer.css";
 
 const ERASER = "Eraser";
@@ -53,9 +53,10 @@ type Problem = DicomWebError["kind"] | "no-study";
 
 interface Props {
   studyUid: string | null;
-  // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline
-  mask: MaskSource | null;
-  modelMask?: MaskSource | null;
+  // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline;
+  // null starts from an empty labelmap
+  mask: SegRef | null;
+  modelMask?: SegRef | null;
   series: Series;
   maskState: MaskState;
   showMask: boolean;
@@ -111,10 +112,11 @@ async function loadVolume(studyUid: string, seriesUid: string) {
   return cache.getVolume(volumeId);
 }
 
-function addMask(segmentationId: string, volume: Types.IImageVolume, source: MaskSource | null) {
+// an empty labelmap over the volume's grid, with the SEG painted into it when there is one
+async function addMask(segmentationId: string, volume: Types.IImageVolume, seg: SegRef | null) {
   const labelmap = volumeLoader.createAndCacheDerivedLabelmapVolume(volume.volumeId, { volumeId: segmentationId });
-  if (source) paintMask(labelmap, source);
   segmentation.addSegmentations([{ segmentationId, representation: { type: Labelmap, data: { volumeId: segmentationId } } }]);
+  return seg ? (await paintSeg(labelmap, seg)).center : null;
 }
 
 function sameGrid(a: Types.IImageVolume, b: Types.IImageVolume) {
@@ -366,19 +368,11 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       // masks live on the main (post-contrast) series grid
       const main = await loadVolume(studyUid, found.post!);
       if (cancelled || !main) return;
-      addMask(ids.mask, main, mask);
-      const labelmap = cache.getVolume(ids.mask)!;
-      maskCenter.current = mask ? maskCenterWorld(labelmap, mask) : null;
-      // the model's real mask from Orthanc replaces the placeholder when the study has one
-      const seg = await latestSeg(studyUid);
+      maskCenter.current = await addMask(ids.mask, main, mask);
       if (cancelled) return;
-      if (seg) {
-        const painted = await paintSeg(labelmap, studyUid, seg);
-        if (cancelled) return;
-        maskCenter.current = painted.center;
-      }
       original.current = (cache.getVolume(ids.mask)!.voxelManager!.getCompleteScalarDataArray!() as Uint8Array).slice();
-      if (modelMask) addMask(ids.model, main, modelMask);
+      if (modelMask) await addMask(ids.model, main, modelMask);
+      if (cancelled) return;
       setLoaded(true);
     })().catch((error) => !cancelled && setProblem(error instanceof DicomWebError ? error.kind : "unavailable"));
 
@@ -590,8 +584,9 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       undo: () => historyMemo.undo(),
       restoreModel: () => {
         const labelmap = cache.getVolume(ids.mask);
-        if (!labelmap || !mask) return;
-        paintMask(labelmap, mask);
+        if (!labelmap || !original.current) return;
+        // the copy taken when the SEG was loaded, so no second download
+        labelmap.voxelManager!.setCompleteScalarDataArray!(original.current.slice());
         segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
       },
       resetWindow,
@@ -647,7 +642,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     }),
     // resetWindow only reads refs and stable ids
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ids, mask, viewports],
+    [ids, viewports],
   );
 
   function resetWindow() {

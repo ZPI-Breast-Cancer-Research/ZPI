@@ -1,6 +1,6 @@
 import { mockDelay, mockScenario, mockStudyUid, MOCK_API } from "../mock";
 import type { FieldKey } from "../review/fields";
-import type { MaskSource } from "../viewer/types";
+import type { SegRef } from "../viewer/types";
 import {api, handleApiError} from "../api"
 
 export interface Overview {
@@ -13,7 +13,7 @@ export interface Overview {
   status: "verified" | "saving";
   studyUid: string | null;
   // approved mask and the model's original one
-  masks: { approved: MaskSource; model: MaskSource };
+  masks: { approved: SegRef | null; model: SegRef | null };
   mask: { corrected: boolean; version: number; date: string; by: string };
   measurements: { volume: number | null; dimensions: [number, number, number] | null; intensity: number | null };
   report: { field: FieldKey; value: string; corrected: boolean }[] | null;
@@ -37,10 +37,8 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
       description: "MR piersi z kontrastem",
       status: saving ? "saving" : "verified",
       studyUid,
-      masks: {
-        approved: { center: [0.69, 0.585, 0.53], radius: [13, 11, 12] },
-        model: { center: [0.685, 0.58, 0.53], radius: [11, 9, 10] },
-      },
+      // mock studies are not in Orthanc, so there is no SEG to point to
+      masks: { approved: null, model: null },
       mask: { corrected: true, version: 1, date: "2026-10-21", by: "Użytkownik" },
       measurements: { volume: null, dimensions: null, intensity: null },
       report: noReport
