@@ -457,5 +457,5 @@ def test_apply_form_without_a_report_keeps_an_accepted_one():
     views._apply_form(extraction, {}, mock.Mock())
 
     assert extraction.status == views.StatusChoices.APPROVED
-    assert extraction.accepted_report == {"birads": "4C"}
+    assert extraction.accepted_report == {"zmiany": [{"birads": "5"}]}
     extraction.save.assert_called_once_with()
