@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.http import HttpResponse
 from django.urls import reverse
+import mimetypes
 
 from patients.models import Study
 from patients.orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
@@ -53,6 +54,20 @@ def _option(mapping: dict, raw) -> str:
     raw = str(raw)
     return mapping.get(raw.lower(), raw)
 
+
+def _scan_key(extraction) -> str | None:
+    """report_path to klucz oryginału w MinIO (obraz lub .txt)."""
+    return extraction.report_path if extraction and extraction.report_path else None
+
+
+def _case_report(extraction, study_id):
+    if extraction is None:
+        return None
+    url = reverse("review-report-scan", args=[study_id]) if _scan_key(extraction) else None
+    result = extraction.result
+    if isinstance(result, dict) and result.get("provenance"):
+        return {"result": result, "originalUrl": url}
+    return None
 
 def _size_value(wymiary) -> str | None:
     """Samo liczba (pole ma osobną jednostkę); kwalifikator „około/do” się gubi."""
@@ -122,6 +137,43 @@ def _main_lesion(report: dict):
 
     return max(lesions, key=rank)
 
+def _lesion_fields(lesion: dict, conclusion: dict | None) -> dict:
+    """Jedna zmiana -> wartości formularza."""
+    fields = {}
+    birads = (lesion or {}).get("birads") or (conclusion or {}).get("birads")
+    if birads:
+        fields["birads"] = str(birads).upper()
+
+    observations = (lesion or {}).get("obserwacje") or []
+    if not observations:
+        return fields
+    obs = next((o for o in observations if o.get("wymiary")), observations[0])
+
+    if locations := obs.get("lokalizacje"):
+        fields["location"] = _ui_value("location", locations[0])
+    if (size := _size_value(obs.get("wymiary"))) is not None:
+        fields["size"] = size
+    if obs.get("ksztalt"):
+        fields["shape"] = _ui_value("shape", obs["ksztalt"])
+    if obs.get("brzeg"):
+        fields["margin"] = _ui_value("margin", obs["brzeg"])
+    return fields
+
+
+def _fields_by_lesion(report) -> dict[str, dict]:
+    """{"1": {...}, "2": {...}} z polskiego schematu (generated_report)."""
+    report = _unwrap_extraction(report)
+    conclusion = report.get("wniosek")
+    return {
+        str(lesion.get("id", i)): _lesion_fields(lesion, conclusion)
+        for i, lesion in enumerate(report.get("zmiany") or [], start=1)
+    }
+
+
+def _fields_from_schema(report: dict) -> dict:
+    report = _unwrap_extraction(report)
+    return _lesion_fields(_main_lesion(report), report.get("wniosek"))
+
 
 def _mask_measurements(segmentation) -> dict | None:
     """Measurements the worker stored for the model mask. A corrected mask has none yet (#25)."""
@@ -175,46 +227,6 @@ def _ui_value(field: str, value):
 
     return mapping.get(value.lower(), reverse_mapping.get(value.lower(), value))
 
-def _fields_from_schema(report: dict) -> dict:
-    """Polski schemat ekstrakcji -> wartości zgodne z formularzem frontendu."""
-
-    report = _unwrap_extraction(report)
-    lesion = _main_lesion(report)
-    fields = {}
-
-    birads = (
-        (lesion or {}).get("birads")
-        or (report.get("wniosek") or {}).get("birads")
-    )
-
-    if birads:
-        fields["birads"] = str(birads).upper()
-
-    observations = (lesion or {}).get("obserwacje") or []
-
-    if not observations:
-        return fields
-
-    obs = next(
-        (o for o in observations if o.get("wymiary")),
-        observations[0],
-    )
-
-    locations = obs.get("lokalizacje") or []
-    if locations:
-        fields["location"] = _ui_value("location", locations[0])
-
-    if (size := _size_value(obs.get("wymiary"))) is not None:
-        fields["size"] = size
-
-    if obs.get("ksztalt"):
-        fields["shape"] = _ui_value("shape", obs["ksztalt"])
-
-    if obs.get("brzeg"):
-        fields["margin"] = _ui_value("margin", obs["brzeg"])
-
-    return fields
-
 def _as_fields(report) -> dict:
     if not isinstance(report, dict):
         return {}
@@ -240,40 +252,25 @@ def _as_fields(report) -> dict:
     return _fields_from_schema(report)
 
 
-def _load_case_report(extraction, study_id):
-    """Load the legacy MinIO report wrapper and expose its scan URL, when present."""
-    if not extraction or not extraction.report_path:
-        return None
-    try:
-        report = json.loads(get_bytes(BUCKET_REPORTS, extraction.report_path))
-    except Exception:
-        logger.exception("Nie udało się wczytać raportu %s", extraction.report_path)
-        return None
-
-    scan_key = report.pop("scanKey", None)  # klucz w MinIO nie wychodzi do przeglądarki
-
-    if not isinstance(report.get("result"), dict):
-        report = {"result": report}
-
-    report["originalUrl"] = reverse("review-report-scan", args=[study_id]) if scan_key else None
-    return report
-
 
 @api_view(["GET"])
 @require_permission("review")
 def report_scan(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
     extraction = study.extractions.order_by("-id").first()
+    key = _scan_key(extraction)
+    
+    if not key:
+        return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
+        
     try:
-        report = json.loads(get_bytes(BUCKET_REPORTS, extraction.report_path))
-        key = report.get("scanKey")
-        if not key:
-            return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
         data = get_bytes(BUCKET_REPORTS, key)
     except Exception:
         logger.exception("Nie udało się wczytać skanu badania %s", study_id)
         return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
-    return HttpResponse(data, content_type="image/png")
+        
+    content_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
+    return HttpResponse(data, content_type=content_type)
 
 
 def _answers(extraction) -> dict:
@@ -290,80 +287,72 @@ def _answers(extraction) -> dict:
     }
 
 
-def _overview_report(extraction, answers, study_id):
-    if extraction is None or not extraction.accepted_report:
-        return None
-
-    source = _load_case_report(extraction, study_id)
-
-    accepted = _as_fields(extraction.accepted_report)
-
-    lesion = _main_lesion(extraction.generated_report)
-
-    if lesion is None and source:
-        lesion = _main_lesion(source)
-
-    lesion_id = lesion.get("id") if lesion else None
-
-    lesions = {}
-
-    if lesion_id is not None:
-        lesions[str(lesion_id)] = answers
-
+def _accepted_lesions(extraction) -> dict[str, dict]:
+    accepted = extraction.accepted_report
+    if isinstance(accepted, dict) and isinstance(accepted.get("lesions"), dict):
+        return accepted["lesions"]
+    # legacy: płaski słownik = główna zmiana
+    main = _main_lesion(extraction.generated_report) or {}
+    flat = _as_fields(accepted)
+    generated = _as_fields(extraction.generated_report)
     return {
-        "source": source,
-        "accepted": accepted,
-        "lesions": lesions,
+        str(main.get("id", 1)): {
+            k: {"value": v, "state": "confirmed" if generated.get(k) == v else "corrected"}
+            for k, v in flat.items()
+        }
     }
 
+
+def _overview_report(extraction, study_id):
+    if extraction is None or not extraction.accepted_report:
+        return None
+    accepted = extraction.accepted_report
+    return {
+        "source": _case_report(extraction, study_id),
+        "accepted": accepted.get("report") if "lesions" in accepted else None,
+        "lesions": _accepted_lesions(extraction),
+    }
+
+def _normalize_answers(answers, generated: dict) -> dict:
+    out = {}
+    for key in REPORT_FIELDS:
+        raw = (answers or {}).get(key)
+        value = raw.get("value") if isinstance(raw, dict) else raw
+        if value is None:
+            continue
+        value = str(value).upper() if key == "birads" else _ui_value(key, value)
+        state = raw.get("state") if isinstance(raw, dict) else None
+        if state == "confirmed" and generated.get(key) != value:
+            state = "corrected"
+        if state not in ("confirmed", "corrected"):
+            state = "confirmed" if generated.get(key) == value else "corrected"
+        out[key] = {"value": str(value), "state": state}
+    return out
+
+
 def _apply_form(extraction, submitted, user):
-    new_status = StatusChoices.APPROVED
+    submitted = submitted if isinstance(submitted, dict) else {}
+    generated = _fields_by_lesion(extraction.generated_report)
 
-    if isinstance(submitted, dict) and submitted:
-        answers = submitted
+    raw_lesions = submitted.get("lesions")
+    if not isinstance(raw_lesions, dict) or not raw_lesions:
+        # stary kształt: płaskie "fields" -> główna zmiana
+        main = _main_lesion(extraction.generated_report) or {}
+        raw_lesions = {str(main.get("id", 1)): submitted.get("fields") or {}}
 
-        if isinstance(submitted.get("lesions"), dict) and submitted["lesions"]:
-            lesions = submitted["lesions"]
-            main_lesion = _main_lesion(extraction.generated_report) if isinstance(extraction.generated_report, dict) else None
-            lesion_id = (main_lesion or {}).get("id")
+    lesions = {
+        str(lid): _normalize_answers(answers, generated.get(str(lid), {}))
+        for lid, answers in raw_lesions.items()
+    }
 
-            answers = None
-
-            if lesion_id is not None:
-                answers = lesions.get(str(lesion_id))
-                if answers is None:
-                    answers = lesions.get(lesion_id)
-
-            if answers is None:
-                answers = next(iter(lesions.values()))
-
-        elif isinstance(submitted.get("fields"), dict):
-            answers = submitted["fields"]
-
-        elif isinstance(submitted.get("report"), dict):
-            answers = submitted["report"]
-
-        extraction.accepted_report = _as_fields(answers)
-
-        if any(
-            isinstance(value, dict) and value.get("state") == "corrected"
-            for value in answers.values()
-        ):
-            new_status = StatusChoices.CORRECTED
-        else:
-            generated = _as_fields(extraction.generated_report)
-            accepted = _as_fields(answers)
-            if any(
-                key in generated and value != generated[key]
-                for key, value in accepted.items()
-            ):
-                new_status = StatusChoices.CORRECTED
-
-    extraction.status = new_status
+    extraction.accepted_report = {"report": submitted.get("report"), "lesions": lesions}
+    corrected = any(
+        a["state"] == "corrected" for answers in lesions.values() for a in answers.values()
+    )
+    extraction.status = StatusChoices.CORRECTED if corrected else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()
     extraction.save()
-
 
 @api_view(["GET"])
 @require_permission("review")
@@ -444,7 +433,34 @@ def review_case_detail(request, study_id):
 
     segmentation = SegmentationResult.objects.filter(study=study).order_by("-id").first()
     extraction = ExtractionResult.objects.filter(study=study).order_by("-id").first()
+    if extraction:
+        generated = extraction.generated_report
 
+        logger.warning(
+            "GENERATED_REPORT dla study #%s:\n%s",
+            study.id,
+            json.dumps(
+                generated,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            ),
+        )
+
+        unwrapped = _unwrap_extraction(generated)
+        lesions = unwrapped.get("zmiany") or []
+
+        logger.warning(
+            "GENERATED_REPORT SUMMARY | study=%s | lesions_count=%s | lesion_ids=%s",
+            study.id,
+            len(lesions),
+            [lesion.get("id") for lesion in lesions],
+        )
+    else:
+        logger.warning(
+            "BRAK EXTRACTION dla study #%s",
+            study.id,
+        )
     try:
         orthanc_client = OrthancClient()
         o_studies = orthanc_client.list_studies()
@@ -472,7 +488,17 @@ def review_case_detail(request, study_id):
     if extraction and extraction.status not in (StatusChoices.PENDING, StatusChoices.PROCESSING):
         proposals = _proposals(extraction.generated_report)
 
-    report = _load_case_report(extraction, study.orthanc_path)
+        proposals["lesions"] = {
+            lesion_id: {
+                key: {"value": value}
+                for key, value in fields.items()
+            }
+            for lesion_id, fields in _fields_by_lesion(
+                extraction.generated_report
+            ).items()
+        }
+
+    report = _case_report(extraction, study.orthanc_path)
 
     if (
         report is None
@@ -689,9 +715,10 @@ def review_overview(request, study_id):
     corrected = segmentation.status == StatusChoices.CORRECTED
     saving = corrected and not segmentation.accepted_path
 
-    answers = _answers(extraction) if extraction and extraction.accepted_report else {}
-    report = _overview_report(extraction, answers, study.orthanc_path)
-    by_field = {k: v["value"] for k, v in answers.items()}
+    lesions = _accepted_lesions(extraction) if extraction and extraction.accepted_report else {}
+    report = _overview_report(extraction, study.orthanc_path)
+    main_id = str((_main_lesion(extraction.generated_report) or {}).get("id", 1)) if extraction else None
+    by_field = {k: v["value"] for k, v in lesions.get(main_id, {}).items()}
     measured = _mask_measurements(segmentation)
     seg_version = str(segmentation.model_id) if segmentation.model_id else None
     ext_version = str(extraction.model_id) if extraction and extraction.model_id else None
