@@ -27,7 +27,14 @@ export interface Overview {
   report: OverviewReport | null;
   reportPending?: boolean;
   comparison: { feature: "largestSize" | "quadrant"; fromMask: string | null; fromReport: string | null; match: boolean | null }[];
-  verification: { by: string; date: string; editingSeconds: number; segmentationVersion: string; extractionVersion: string | null };
+  verification: {
+    by: string;
+    date: string;
+    // the model's mask against the approved one
+    agreement: { dice: number | null; iou: number | null; volumeMl: number | null } | null;
+    segmentationVersion: string;
+    extractionVersion: string | null;
+  };
 }
 
 // ?mock=saving / ?mock=no-report preview the other states
@@ -57,13 +64,24 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
         { feature: "largestSize", fromMask: null, fromReport: "16 mm", match: null },
         { feature: "quadrant", fromMask: null, fromReport: "KGZ", match: null },
       ],
-      verification: { by: "Użytkownik", date: "2026-10-21", editingSeconds: 74, segmentationVersion: "7", extractionVersion: noReport ? null : "3" },
+      verification: {
+        by: "Użytkownik",
+        date: "2026-10-21",
+        agreement: { dice: 0.87, iou: 0.77, volumeMl: 1.2 },
+        segmentationVersion: "7",
+        extractionVersion: noReport ? null : "3",
+      },
     });
   }
   try {
     const { data } = await api.get<Overview>(`/api/review/cases/${encodeURIComponent(studyId)}/review-overview/`);
     const ready = !!data.report && isCaseReport(data.report.source);
-    return { ...data, report: ready ? data.report : null, reportPending: !ready && !!data.report };
+    return {
+      ...data,
+      report: ready ? data.report : null,
+      reportPending: !ready && !!data.report,
+      verification: { ...data.verification, agreement: data.verification.agreement ?? null },
+    };
   } catch (error) {
     handleApiError(error);
   }

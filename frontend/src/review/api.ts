@@ -51,7 +51,6 @@ export interface FormPayload {
 export interface ApprovalPayload extends Partial<FormPayload> {
   mask: "confirmed" | "corrected";
   edits: number;
-  editingSeconds: number;
 }
 
 const QUEUE: QueueEntry[] = [0.71, 0.66, 0.62, 0.58, 0.55].map((uncertainty, i) => ({

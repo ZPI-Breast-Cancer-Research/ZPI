@@ -55,7 +55,6 @@ export default function CaseReview({ data, queue }: Props) {
   const toast = useToast();
   const mask = useMaskEditor();
   const undoMask = mask.undo;
-  const startedAt = useRef(Date.now());
   // looking comes first, so a case opens with the hand
   const [tool, setTool] = useState<Tool>("pan");
   const [preferred] = usePreferences();
@@ -223,7 +222,6 @@ export default function CaseReview({ data, queue }: Props) {
         mask: maskApproved ?? "confirmed",
         edits: mask.edits,
         ...formPayload.current(),
-        editingSeconds: Math.round((Date.now() - startedAt.current) / 1000),
       }).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
       deleteDraft(data.studyId);
       toast(t("review.verifiedToast", { n: data.studyNumber }), { label: t("review.openOverview"), to: `/badania/${data.studyId}` });

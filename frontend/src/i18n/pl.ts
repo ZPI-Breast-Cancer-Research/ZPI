@@ -594,7 +594,9 @@ export const pl = {
   "overview.verification": "Weryfikacja",
   "overview.verifiedBy": "Zweryfikował(a)",
   "overview.date": "Data",
-  "overview.editTime": "Czas edycji",
+  "overview.agreement": "Zgodność z maską modelu",
+  "overview.agreement.same": "bez zmian",
+  "overview.agreement.value": "Dice {dice} · objętość {volume}",
   "overview.loading": "Wczytywanie przeglądu…",
 
   "settings.profile": "Moje dane",

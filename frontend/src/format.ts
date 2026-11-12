@@ -46,13 +46,6 @@ export function formatPercent(value: number | null | undefined): string {
   return percent.format(value);
 }
 
-// seconds -> m:ss
-export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return "—";
-  const s = Math.round(seconds);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-}
-
 export function formatMetric(value: number | null, unit = ""): string {
   return value === null ? "—" : `${formatDecimal(value)}${unit}`;
 }

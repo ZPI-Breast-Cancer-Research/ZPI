@@ -7,9 +7,9 @@ import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
-import { formatDate, formatDuration, formatMetric } from "../format";
+import { formatDate, formatMetric, formatOneDecimal } from "../format";
 import { t } from "../i18n";
-import { fetchOverview } from "../lesion-overview/api";
+import { fetchOverview, type Overview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
 import { fieldLabel, FIELDS, lesionSummary, optionLabel } from "../review/fields";
@@ -23,6 +23,14 @@ import { usePreferences } from "../settings/preferences";
 import { useViewerLayout } from "../viewer/layout";
 import Viewer from "../viewer/Viewer";
 import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
+
+function agreement({ mask, verification }: Overview): string {
+  if (!mask.corrected) return t("overview.agreement.same");
+  const a = verification.agreement;
+  if (!a || a.dice === null) return "—";
+  const volume = a.volumeMl === null ? "—" : `${a.volumeMl > 0 ? "+" : ""}${formatOneDecimal(a.volumeMl)} ml`;
+  return t("overview.agreement.value", { dice: formatMetric(a.dice), volume });
+}
 
 export default function LesionOverviewPage() {
   const { studyId = "" } = useParams();
@@ -279,8 +287,8 @@ export default function LesionOverviewPage() {
                     <td className="cell-right">{formatDate(data.verification.date)}</td>
                   </tr>
                   <tr>
-                    <th>{t("overview.editTime")}</th>
-                    <td className="cell-right">{formatDuration(data.verification.editingSeconds)}</td>
+                    <th>{t("overview.agreement")}</th>
+                    <td className="cell-right">{agreement(data)}</td>
                   </tr>
                   <tr>
                     <th>{t("review.segmentation")}</th>
