@@ -74,6 +74,22 @@ def test_successful_extraction_is_saved_as_completed(monkeypatch, storage):
     assert row.error == ""
 
 
+def test_full_result_with_the_ocr_text_is_saved_for_the_frontend(monkeypatch, storage):
+    # Arrange: the frontend (review/extraction.ts) reads the whole ExtractionResult, text included
+    use_llm(monkeypatch, answer_json())
+    row = ExtractionRow.objects.create(report_path=KEY)
+
+    # Act
+    returned = tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.result == returned
+    assert row.result["status"] == "ok"
+    assert row.result["text"]
+    assert row.result["data"] == row.generated_report
+
+
 def test_generated_report_is_what_the_review_form_reads(monkeypatch, storage):
     # Arrange: review/views.py reads "zmiany" and "wniosek" at the top level of generated_report.
     from review.views import _as_fields
@@ -102,6 +118,10 @@ def test_llm_error_is_saved_as_failed_with_the_reason(monkeypatch, storage):
     assert row.status == StatusChoices.FAILED
     assert row.error == "LLM: Cannot connect to http://localhost:1234/v1"
     assert row.generated_report is None
+    # the frontend shows a failed extraction from the result, with the text OCR read
+    assert row.result["status"] == "error"
+    assert row.result["error"] == row.error
+    assert row.result["text"]
 
 
 def test_download_error_is_saved_as_failed(monkeypatch):
@@ -120,6 +140,26 @@ def test_download_error_is_saved_as_failed(monkeypatch):
     assert row.status == StatusChoices.FAILED
     assert row.error == "OSError: MinIO unreachable"
     assert returned["status"] == "error"
+    assert row.result is None
+
+
+def test_retry_clears_the_previous_result(monkeypatch):
+    # Arrange: a failed row with the result of its first attempt; the retry cannot even download
+    def download_file(bucket, key, path):
+        raise OSError("MinIO unreachable")
+
+    monkeypatch.setattr(tasks, "download_file", download_file)
+    row = ExtractionRow.objects.create(
+        report_path=KEY, status=StatusChoices.FAILED, result={"status": "error", "text": "old"}
+    )
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.status == StatusChoices.FAILED
+    assert row.result is None
 
 
 def test_without_production_model_extraction_runs_and_model_stays_empty(monkeypatch, storage):
