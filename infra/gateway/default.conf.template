@@ -2,6 +2,18 @@ server {
     listen 80;
     client_max_body_size 2g;
 
+    # Lossless compression for whatever the browser accepts gzip for. DICOMweb frames are raw
+    # pixel data (multipart/related) and shrink ~2.5x on MRI, which matters on a slow uplink.
+    gzip on;
+    gzip_proxied any;
+    gzip_comp_level 4;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types
+        multipart/related application/dicom+json application/octet-stream
+        application/javascript text/javascript text/css application/json application/wasm
+        image/svg+xml;
+
     location /api/ {
         proxy_pass http://backend:8000;
         proxy_set_header Host $host;
