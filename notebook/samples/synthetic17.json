@@ -1,0 +1,156 @@
+{
+  "source": "synthetic17.jpg",
+  "data": {
+    "modalnosci": [
+      "mammografia",
+      "usg"
+    ],
+    "piersi": {
+      "lewa": {
+        "budowa": "gruczołowo-tłuszczowe",
+        "obrzek": null,
+        "zwapnienia": null,
+        "mikrozwapnienia": true,
+        "zmiany_ogniskowe": true,
+        "skora": {
+          "stan": "prawidłowy",
+          "naciek": null
+        }
+      },
+      "prawa": {
+        "budowa": "gruczołowo-tłuszczowe",
+        "obrzek": null,
+        "zwapnienia": null,
+        "mikrozwapnienia": false,
+        "zmiany_ogniskowe": false,
+        "skora": {
+          "stan": "prawidłowy",
+          "naciek": null
+        }
+      }
+    },
+    "zmiany": [
+      {
+        "id": 1,
+        "strona": "lewa",
+        "birads": "5",
+        "obserwacje": [
+          {
+            "modalnosc": "mammografia",
+            "lokalizacje": [
+              "kw górno-zewn."
+            ],
+            "godzina": null,
+            "odleglosc_od_brodawki": null,
+            "typ": "zmiana ogniskowa",
+            "wymiary": {
+              "wartosci": [
+                24.0
+              ],
+              "jednostka": "mm",
+              "kwalifikator": "dokładny"
+            },
+            "glebokosc": null,
+            "ksztalt": "nieregularny",
+            "brzeg": "spikularny",
+            "echogenicznosc": null,
+            "jednorodnosc": null,
+            "naciek_skory": null,
+            "cytat": "W piersi lewej w kw górno-zewn. nieregularna zmiana ogniskowa o zarysach spikularnych wlk 24mm, w jej obrębie poj mikrozwapnienia."
+          },
+          {
+            "modalnosc": "usg",
+            "lokalizacje": [],
+            "godzina": "2",
+            "odleglosc_od_brodawki": {
+              "wartosc": 5.0,
+              "jednostka": "cm"
+            },
+            "typ": "ognisko hypoechogeniczne",
+            "wymiary": {
+              "wartosci": [
+                22.0,
+                17.0
+              ],
+              "jednostka": "mm",
+              "kwalifikator": "dokładny"
+            },
+            "glebokosc": {
+              "wartosc": 13.0,
+              "jednostka": "mm"
+            },
+            "ksztalt": "nieregularny",
+            "brzeg": "nieostry",
+            "echogenicznosc": "hipoechogeniczna",
+            "jednorodnosc": null,
+            "naciek_skory": null,
+            "cytat": "W badaniu usg w piersi lewej na godz 2-5cm od brodawki nieregularne, nieostro odgraniczone ognisko hypoechogeniczne z cieniem akustycznym, wym 22x17mm, gł 13mm."
+          }
+        ],
+        "polaczenie_obserwacji": {
+          "pewne": false,
+          "powod": "ta sama pierś i okolica, zbliżony wymiar"
+        }
+      }
+    ],
+    "wezly": [
+      {
+        "modalnosc": "mammografia",
+        "strona": "lewa",
+        "okolica": "dół pachowy",
+        "liczba": null,
+        "wymiary": {
+          "wartosci": [
+            19.0
+          ],
+          "jednostka": "mm",
+          "kwalifikator": "dokładny"
+        },
+        "patologiczne": true,
+        "uwagi": null,
+        "cytat": "W lewym dole pachowym patologiczny węzeł chłonny wlk 19mm."
+      },
+      {
+        "modalnosc": "mammografia",
+        "strona": "prawa",
+        "okolica": "dół pachowy",
+        "liczba": null,
+        "wymiary": null,
+        "patologiczne": false,
+        "uwagi": null,
+        "cytat": "Dół pachowy prawy bez cech patologii."
+      },
+      {
+        "modalnosc": "usg",
+        "strona": "lewa",
+        "okolica": "dół pachowy",
+        "liczba": "pojedynczy",
+        "wymiary": {
+          "wartosci": [
+            18.0
+          ],
+          "jednostka": "mm",
+          "kwalifikator": "dokładny"
+        },
+        "patologiczne": true,
+        "uwagi": "o zatartej budowie",
+        "cytat": "W lewym dole pachowym poj węzeł chłonny wlk 18mm o zatartej budowie - patologiczny."
+      },
+      {
+        "modalnosc": "usg",
+        "strona": "prawa",
+        "okolica": "dół pachowy",
+        "liczba": null,
+        "wymiary": null,
+        "patologiczne": false,
+        "uwagi": null,
+        "cytat": "Prawy dół pachowy bez cech patologii."
+      }
+    ],
+    "wniosek": {
+      "birads": "5",
+      "tekst": "Zmiana w piersi lewej o cechach malign",
+      "zalecenie": "do BMU + foto próbki"
+    }
+  }
+}
