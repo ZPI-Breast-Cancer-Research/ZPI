@@ -9,6 +9,7 @@ export type Shape = "oval" | "round" | "irregular";
 export type Margin = "circumscribed" | "indistinct" | "obscured" | "microlobulated" | "angular" | "spiculated";
 export type Echo = "anechoic" | "hypoechoic" | "isoechoic" | "hyperechoic" | "complex";
 export type Quadrant = "upper_outer" | "upper_inner" | "lower_outer" | "lower_inner" | "central";
+export type LesionType = "mass" | "distortion" | "calcifications" | "cyst" | "other";
 export type Unit = "mm" | "cm";
 export type Qualifier = "exact" | "about" | "up_to";
 
@@ -88,7 +89,7 @@ export const TO_WIRE = {
   birads: (value: BiRads) => value.toLowerCase() as WireBiRads,
 };
 
-// Polish on purpose: these match the report's own text. Quadrant names as in LOCATION_VALUES.
+// Polish on purpose: these match the report's own text
 const REPORT_WORDS = {
   central: /zabrodawk|centraln/,
   upper: /górn|gorn/,
@@ -97,13 +98,26 @@ const REPORT_WORDS = {
   inner: /wewn/,
   birads: /bi-?rads/i,
 };
-export const QUADRANT_WIRE: Record<Quadrant, string> = {
-  upper_outer: "kwadrant górny-zewnętrzny",
-  upper_inner: "kwadrant górny-wewnętrzny",
-  lower_outer: "kwadrant dolny-zewnętrzny",
-  lower_inner: "kwadrant dolny-wewnętrzny",
-  central: "centralnie",
+
+// the worker keeps the type as written; most specific first, so "ognisko zaburzonej architektoniki" is a distortion
+const TYPE_WORDS: [LesionType, RegExp][] = [
+  ["distortion", /architekt/i],
+  ["calcifications", /zwapnie/i],
+  ["cyst", /torbiel/i],
+  ["mass", /ognisk|guz|zmian/i],
+];
+export const TYPE_WIRE: Record<LesionType, string> = {
+  mass: "zmiana ogniskowa",
+  distortion: "zaburzenie architektoniki",
+  calcifications: "skupisko mikrozwapnień",
+  cyst: "torbiel",
+  other: "inna",
 };
+
+export function lesionType(type: string | null): LesionType | null {
+  if (!type) return null;
+  return TYPE_WORDS.find(([, words]) => words.test(type))?.[0] ?? "other";
+}
 
 const toBiRads = (value: WireBiRads | null) => (value ? (value.toUpperCase() as BiRads) : null);
 const size = (s: WireSize | null): Size | null => (s ? { values: s.wartosci, unit: s.jednostka, qualifier: QUALIFIERS[s.kwalifikator] } : null);

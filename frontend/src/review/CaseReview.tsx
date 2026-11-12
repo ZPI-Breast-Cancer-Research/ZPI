@@ -20,14 +20,13 @@ import { approveCase, approveForm, approveMask, reopenCase, type FieldAnswers, t
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
-import { applyAnswers, FIELDS, lesionFields, lesionSummary, type FieldKey, type Proposals } from "./fields";
+import { applyAnswers, FIELDS, keysFor, lesionFields, lesionSummary, type FieldKey, type Proposals, type Values } from "./fields";
 import { fromExtraction } from "./report";
 import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
 import ReportOriginal, { scanOf } from "./ReportOriginal";
 import ReportPreview from "./ReportPreview";
 
-type Values = Partial<Record<FieldKey, string>>;
 type States = Partial<Record<FieldKey, FieldState>>;
 
 const FULL_VIEW_KEY = "maria.review.fullView";
@@ -81,19 +80,23 @@ export default function CaseReview({ data, queue }: Props) {
   const model = useMemo(() => (extraction ? fromExtraction(extraction) : null), [extraction]);
   const lesions = useMemo(() => model?.lesions ?? [], [model]);
   const proposals = useMemo(
-    () => Object.fromEntries(lesions.map((l) => [l.id, lesionFields(l, model!.conclusion)])) as Record<number, Proposals>,
+    () => Object.fromEntries(lesions.map((l) => [l.id, lesionFields(l, model!.conclusion, lesions.length)])) as Record<number, Proposals>,
     [lesions, model],
   );
-  const keysOf = useCallback((id: number) => FIELDS.map((f) => f.key).filter((key) => proposals[id]?.[key]), [proposals]);
+  // every proposed value, also the ones the picked type hides
   const fresh = useCallback(
-    () => Object.fromEntries(lesions.map((l) => [l.id, Object.fromEntries(keysOf(l.id).map((key) => [key, proposals[l.id][key]!.value]))])) as Record<number, Values>,
-    [lesions, keysOf, proposals],
+    () =>
+      Object.fromEntries(
+        lesions.map((l) => [l.id, Object.fromEntries(FIELDS.filter((f) => proposals[l.id][f.key]).map((f) => [f.key, proposals[l.id][f.key]!.value]))]),
+      ) as Record<number, Values>,
+    [lesions, proposals],
   );
 
   // every lesion in the report is confirmed before the case is verified
   const [current, setCurrent] = useState<number | null>(lesions[0]?.id ?? null);
   const [values, setValues] = useState<Record<number, Values>>(fresh);
   const [states, setStates] = useState<Record<number, States>>({});
+  const keysOf = (id: number) => keysFor(proposals[id] ?? {}, values[id] ?? {});
   const [showOriginal, setShowOriginal] = useState(false);
   const originalOpen = useRef(false);
   originalOpen.current = showOriginal;
@@ -114,10 +117,10 @@ export default function CaseReview({ data, queue }: Props) {
     setValues((v) => ({ ...v, [current]: { ...v[current], [key]: value } }));
     setStates((s) => ({ ...s, [current]: { ...s[current], [key]: stateOf(current, key, value) } }));
   };
-  const confirm = (key: FieldKey) => {
+  const confirm = (keys: FieldKey[]) => {
     if (current === null) return;
     touch();
-    setStates((s) => ({ ...s, [current]: { ...s[current], [key]: stateOf(current, key, values[current]?.[key] ?? "") } }));
+    setStates((s) => ({ ...s, [current]: { ...s[current], ...Object.fromEntries(keys.map((key) => [key, stateOf(current, key, values[current]?.[key] ?? "")])) } }));
   };
   // just the lesion on screen
   const confirmAll = () => {
@@ -547,6 +550,7 @@ export default function CaseReview({ data, queue }: Props) {
                     <div className="empty-box">{t("review.original.noLesions")}</div>
                   ) : (
                     <BiradsForm
+                      keys={keysOf(current)}
                       proposals={proposals[current]}
                       values={values[current] ?? {}}
                       states={states[current] ?? {}}

@@ -5,7 +5,7 @@ import Panel from "../components/layout/Panel";
 import { EmptyState } from "../components/State";
 import { formatDate, formatMetric, formatPercent } from "../format";
 import { t } from "../i18n";
-import { fieldLabel, FIELDS, type FieldKey } from "../review/fields";
+import { anyFieldLabel } from "../review/fields";
 import ChangeDialog from "./ChangeDialog";
 import { fetchExtractionGate, type ExtractionOverview, type ExtractionPart, type ExtractionProposal, type ExtractionVersion } from "./extraction";
 import FewShotDialog from "./FewShotDialog";
@@ -22,8 +22,6 @@ const STATUS_CLASS: Record<ExtractionVersion["status"], string> = {
   rejected: "status status--warning",
 };
 
-// an older backend sends labels instead of field keys
-const label = (field: string) => (FIELDS.some((f) => f.key === field) ? fieldLabel(field as FieldKey) : field);
 
 function periods(v: ExtractionVersion): string {
   if (!v.periods.length) return "—";
@@ -86,7 +84,7 @@ function ProposalPanel({ data, proposal }: { data: ExtractionOverview; proposal:
               <tbody>
                 {(proposal.fields ?? []).map((f) => (
                   <tr key={f.field}>
-                    <th>{label(f.field)}</th>
+                    <th>{anyFieldLabel(f.field)}</th>
                     <td className="cell-right">{formatPercent(f.current)}</td>
                     <td className="cell-right cell-strong">{formatPercent(f.next)}</td>
                   </tr>
@@ -146,7 +144,7 @@ function InUsePanel({ data }: { data: ExtractionOverview }) {
             <tbody>
               {data.fields.map((f) => (
                 <tr key={f.field}>
-                  <th>{label(f.field)}</th>
+                  <th>{anyFieldLabel(f.field)}</th>
                   <td className="cell-right">{formatPercent(f.accuracy)}</td>
                   <td className="cell-right">{formatPercent(f.corrected)}</td>
                 </tr>

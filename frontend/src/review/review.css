@@ -352,6 +352,22 @@
   color: var(--color-warning);
 }
 
+.birads__controls {
+  display: flex;
+  gap: 6px;
+}
+
+.birads__control {
+  flex: 1;
+  min-width: 0;
+  max-width: 210px;
+}
+
+.birads__control--narrow {
+  flex: none;
+  width: 84px;
+}
+
 .birads__num {
   display: flex;
   align-items: center;
@@ -359,7 +375,8 @@
 }
 
 .birads__num .input {
-  width: 76px;
+  flex: 1;
+  min-width: 0;
 }
 
 .birads__note {
