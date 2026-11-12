@@ -71,31 +71,12 @@ export async function listMrStudies(): Promise<string[]> {
     .map((s) => s.uid);
 }
 
-export interface SegRef {
-  seriesUid: string;
-  sopUid: string;
-  // the series the SEG was drawn on; its frames are matched to that series' images
-  referencedSeriesUid: string;
-}
-
-// TODO: stand-in until the review API says which SEG belongs to the case; takes the newest SEG in the study
-export async function latestSeg(studyUid: string): Promise<SegRef | null> {
-  let series: DicomJson[];
-  try {
-    series = await get(`/studies/${studyUid}/series?Modality=SEG&includefield=00080021&includefield=00080031`);
-  } catch (error) {
-    if (error instanceof DicomWebError && error.kind === "not-found") return null;
-    throw error;
-  }
-  const when = (s: DicomJson) => `${tag(s, "00080021") ?? ""}${tag(s, "00080031") ?? ""}`;
-  const newest = series.sort((a, b) => when(b).localeCompare(when(a)))[0];
-  if (!newest) return null;
-  const seriesUid = String(tag(newest, "0020000E"));
-  const [instance] = await get(`/studies/${studyUid}/series/${seriesUid}/metadata`);
+// the series a SEG was drawn on; its frames are matched to that series' images
+export async function referencedSeries(studyUid: string, seriesUid: string): Promise<string> {  const [instance] = await get(`/studies/${studyUid}/series/${seriesUid}/metadata`);
   const referenced = instance?.["00081115"]?.Value?.[0] as DicomJson | undefined;
-  const referencedSeriesUid = referenced && tag(referenced, "0020000E");
-  if (!instance || !referencedSeriesUid) return null;
-  return { seriesUid, sopUid: String(tag(instance, "00080018")), referencedSeriesUid: String(referencedSeriesUid) };
+  const uid = referenced && tag(referenced, "0020000E");
+  if (!uid) throw new DicomWebError("not-found");
+  return String(uid);
 }
 
 // WADO-RS answers with multipart/related even for one instance; this returns the DICOM part of it

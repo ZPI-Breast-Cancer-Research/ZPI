@@ -47,6 +47,29 @@ def _user_name(user):
     return f"{user.first_name} {user.last_name}".strip() or user.username
  
  
+def _seg_ref(study_uid, series_uid, sop_uid):
+    """Where the viewer finds a DICOM SEG over DICOMweb, or None when there is none."""
+    if not (study_uid and series_uid and sop_uid):
+        return None
+    return {"studyUid": study_uid, "seriesUid": series_uid, "sopUid": sop_uid}
+
+
+def _model_seg(segmentation, study_uid):
+    if segmentation is None:
+        return None
+    return _seg_ref(study_uid, segmentation.model_seg_series_uid, segmentation.model_seg_sop_uid)
+
+
+def _approved_seg(segmentation, study_uid):
+    """The approved SEG; approved without changes, the model's own SEG is the same mask."""
+    approved = _seg_ref(
+        study_uid, segmentation.approved_seg_series_uid, segmentation.approved_seg_sop_uid
+    )
+    if approved is None and segmentation.status == StatusChoices.APPROVED:
+        return _model_seg(segmentation, study_uid)
+    return approved
+
+
 def _main_lesion(report: dict):
     """The lesion with the highest BI-RADS (first one on ties). TODO: pick the one that matches the mask."""
     lesions = report.get("zmiany") or []
@@ -253,7 +276,8 @@ def review_case_detail(request, study_id):
         "segmentationVersion": str(segmentation.model_id) if segmentation and segmentation.model_id else "-",
         "extractionVersion": str(extraction.model_id) if extraction and extraction.model_id else None,
         "studyUid": o_study.get("study_instance_uid"),
-        "mask": {"center": [0.69, 0.585, 0.53], "radius": [16, 9, 10]},
+        # null while there is no SEG: still processing, rejected, or the model found nothing
+        "mask": _model_seg(segmentation, o_study.get("study_instance_uid")),
         "report": extraction.report_path if extraction else None,
         "proposals": proposals,
         "measurements": {"volume": None, "size": None, "sizeInReport": None},
@@ -413,8 +437,10 @@ def review_overview(request, study_id):
         "description": o_data.get("description") or "",
         "status": "saving" if saving else "verified",
         "studyUid": o_data.get("study_instance_uid"),
-        # TODO: needs the mask geometry (center/radius) or a file endpoint
-        "masks": { "approved": {"center": [0.69, 0.585, 0.53], "radius": [16, 9, 10]}, "model": {"center": [0.69, 0.585, 0.53], "radius": [16, 9, 10]} },
+        "masks": {
+            "approved": _approved_seg(segmentation, o_data.get("study_instance_uid")),
+            "model": _model_seg(segmentation, o_data.get("study_instance_uid")),
+        },
         "mask": {
             "corrected": corrected,
             "version": segmentation.model_id,

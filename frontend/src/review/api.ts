@@ -1,7 +1,7 @@
 import { api } from "../api";
 import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
-import type { MaskSource } from "../viewer/types";
+import type { SegRef } from "../viewer/types";
 import { isCaseReport, type CaseReport, type Extraction } from "./extraction";
 import type { FieldKey } from "./fields";
 
@@ -28,7 +28,7 @@ export interface ReviewCase {
   segmentationVersion: string;
   extractionVersion: string | null;
   studyUid: string | null;
-  mask: MaskSource;
+  mask: SegRef | null;
   report: CaseReport | null;
   reportPending: boolean;
   segmentation: SegmentationInfo | null;
@@ -57,7 +57,6 @@ const QUEUE: QueueEntry[] = [0.71, 0.66, 0.62, 0.58, 0.55].map((uncertainty, i) 
   uncertainty,
 }));
 
-const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10] };
 
 const approved = new Set<string>();
 const masksApproved = new Map<string, "confirmed" | "corrected">();
@@ -100,11 +99,10 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
       segmentationVersion: "7",
       extractionVersion: noReport ? null : "3",
       studyUid,
-      mask: MOCK_MASK,
+      mask: null,
       report: null,
       reportPending: false,
-      segmentation: { series: null },
-      measurements: { volume: null, size: null, sizeInReport: null },
+      segmentation: { series: null },      measurements: { volume: null, size: null, sizeInReport: null },
       maskApproved: masksApproved.get(studyId) ?? null,
     });
   }
