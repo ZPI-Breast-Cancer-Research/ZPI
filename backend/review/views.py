@@ -82,6 +82,28 @@ def _main_lesion(report: dict):
  
     return max(lesions, key=rank)
 
+def _mask_measurements(segmentation) -> dict | None:
+    """Measurements the worker stored for the model mask. A corrected mask has none yet (#25)."""
+    if segmentation is None or segmentation.status == StatusChoices.CORRECTED:
+        return None
+    return segmentation.measurements
+
+
+def _largest_mm(measured: dict | None) -> float | None:
+    dimensions = (measured or {}).get("dimensions_mm")
+    return max(dimensions) if dimensions else None
+
+
+def _report_size_mm(report) -> float | None:
+    """Largest dimension of the main lesion in the report, in mm."""
+    lesion = _main_lesion(report) if isinstance(report, dict) else None
+    size = (lesion or {}).get("wymiary") or {}
+    values = [v for v in size.get("wartosci") or [] if isinstance(v, (int, float))]
+    if not values:
+        return None
+    return float(max(values)) * (10 if size.get("jednostka") == "cm" else 1)
+
+
 def _proposals(report) -> dict:
     """{"birads": "4C"} -> {"birads": {"value": "4C"}} (kształt, którego oczekuje front)."""
     return {key: {"value": value} for key, value in _as_fields(report).items()}
@@ -333,6 +355,7 @@ def review_case_detail(request, study_id):
         elif segmentation.status == StatusChoices.CORRECTED:
             mask_approved_val = "corrected"
     
+    measured = _mask_measurements(segmentation)
     proposals = {}
     if extraction and extraction.status not in (StatusChoices.PENDING, StatusChoices.PROCESSING):
         proposals = _proposals(extraction.generated_report)
@@ -352,7 +375,11 @@ def review_case_detail(request, study_id):
         "mask": _model_seg(segmentation, o_study.get("study_instance_uid")),
         "report": _report_payload(extraction),
         "proposals": proposals,
-        "measurements": {"volume": None, "size": None, "sizeInReport": None},
+        "measurements": {
+            "volume": (measured or {}).get("volume_ml"),
+            "size": _largest_mm(measured),
+            "sizeInReport": _report_size_mm(extraction.generated_report) if extraction else None,
+        },
         "maskApproved": mask_approved_val,
     }
 
@@ -493,6 +520,7 @@ def review_overview(request, study_id):
     corrected = segmentation.status == StatusChoices.CORRECTED
     saving = corrected and not segmentation.accepted_path
  
+    measured = _mask_measurements(segmentation)
     by_field = {row["field"]: row["value"] for row in _report_rows(extraction) or []}
  
     seg_version = str(segmentation.model_id) if segmentation.model_id else None
@@ -518,11 +546,13 @@ def review_overview(request, study_id):
             "date": accepted_at,
             "by": _user_name(segmentation.accepted_by),
         },
-        # TODO: has to be computed from the mask
-        "measurements": {"volume": None, "dimensions": None, "intensity": None},
-        "report": _overview_report(extraction),
-        "comparison": [
-            {"feature": "largestSize", "fromMask": None, "fromReport": by_field.get("size"), "match": None},
+        "measurements": {
+            "volume": (measured or {}).get("volume_ml"),
+            "dimensions": (measured or {}).get("dimensions_mm"),
+            "intensity": None,
+        },
+        "report": _overview_report(extraction),        "comparison": [
+            {"feature": "largestSize", "fromMask": _largest_mm(measured), "fromReport": by_field.get("size"), "match": None},
             {"feature": "quadrant", "fromMask": None, "fromReport": by_field.get("location"), "match": None},
         ],
         "verification": {
