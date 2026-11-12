@@ -144,20 +144,6 @@ export function lesionSummary(lesion: Lesion): string {
   return [t(`review.lesion.side.${lesion.side}`), where, sized !== null && sizeText(lesion.observations[sized].size!)].filter(Boolean).join(" · ");
 }
 
-// same breast first, then the closest size; sure only when one lesion fits
-export function matchLesion(lesions: Lesion[], side: "left" | "right" | null, sizeMm: number | null): { id: number; certain: boolean } | null {
-  if (!lesions.length) return null;
-  const sameSide = side ? lesions.filter((l) => l.side === side) : [];
-  const pool = sameSide.length ? sameSide : lesions;
-  const rank = (l: Lesion) => {
-    const sized = sizeSource(l);
-    const mm = sized === null ? null : largestMm(l.observations[sized].size!);
-    return sizeMm != null && mm != null ? -Math.abs(mm - sizeMm) : Number.parseInt(l.birads ?? "0", 10);
-  };
-  const best = pool.reduce((a, b) => (rank(b) > rank(a) ? b : a));
-  return { id: best.id, certain: sameSide.length === 1 };
-}
-
 // so the approved report has the model's shape
 export function applyAnswers(data: Extraction, lesions: Record<number, { proposals: Proposals; values: Partial<Record<FieldKey, string>> }>): Extraction {
   const copy: Extraction = structuredClone(data);

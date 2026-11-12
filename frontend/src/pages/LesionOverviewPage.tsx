@@ -15,6 +15,7 @@ import "../review/review.css";
 import { fieldLabel, FIELDS, lesionSummary, optionLabel } from "../review/fields";
 import { fromExtraction } from "../review/report";
 import ReportOriginal, { scanOf } from "../review/ReportOriginal";
+import LesionSwitcher from "../review/LesionSwitcher";
 import ReportPreview from "../review/ReportPreview";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
@@ -45,6 +46,7 @@ export default function LesionOverviewPage() {
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [layout, setLayout] = useViewerLayout();
   const [showOriginal, setShowOriginal] = useState(false);
+  const [lesionAt, setLesionAt] = useState(0);
   const reviews = useCan()("review");
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
@@ -69,9 +71,9 @@ export default function LesionOverviewPage() {
   const report = data.report;
   const extracted = report?.source.result.data;
   const lesions = extracted ? fromExtraction(extracted).lesions : [];
-  const lesionIndex = lesions.findIndex((l) => l.id === report?.onImage);
-  const lesion = lesionIndex >= 0 ? lesions[lesionIndex] : null;
-  const answers = report && report.onImage !== null ? (report.lesions[report.onImage] ?? {}) : {};
+  const lesionIndex = Math.min(lesionAt, Math.max(0, lesions.length - 1));
+  const lesion = lesions[lesionIndex] ?? null;
+  const answers = report && lesion ? (report.lesions[lesion.id] ?? {}) : {};
   const rows = FIELDS.filter((f) => answers[f.key]);
 
   return (
@@ -185,9 +187,14 @@ export default function LesionOverviewPage() {
                     <ReportPreview report={report.source} onOpen={() => setShowOriginal(true)} />
                   </div>
                   {lesion && lesions.length > 1 && (
-                    <p className="muted" style={{ marginBottom: 6 }}>
-                      {t("review.lesion.of", { n: lesionIndex + 1, total: lesions.length })} · {lesionSummary(lesion)} · {t("review.lesion.onImage")}
-                    </p>
+                    <LesionSwitcher
+                      index={lesionIndex}
+                      total={lesions.length}
+                      summary={lesionSummary(lesion)}
+                      note={null}
+                      onPrev={() => setLesionAt(lesionIndex - 1)}
+                      onNext={() => setLesionAt(lesionIndex + 1)}
+                    />
                   )}
                   <table className="kv">
                     <thead>

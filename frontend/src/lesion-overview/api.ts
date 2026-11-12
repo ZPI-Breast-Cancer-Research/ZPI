@@ -8,7 +8,6 @@ export interface OverviewReport {
   source: CaseReport;
   accepted: Extraction;
   lesions: Record<number, FieldAnswers>;
-  onImage: number | null;
 }
 
 export interface Overview {

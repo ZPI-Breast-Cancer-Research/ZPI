@@ -20,7 +20,7 @@ import { approveCase, approveForm, approveMask, reopenCase, type FieldAnswers, t
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
-import { applyAnswers, FIELDS, lesionFields, lesionSummary, matchLesion, type FieldKey, type Proposals } from "./fields";
+import { applyAnswers, FIELDS, lesionFields, lesionSummary, type FieldKey, type Proposals } from "./fields";
 import { fromExtraction } from "./report";
 import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
@@ -90,11 +90,8 @@ export default function CaseReview({ data, queue }: Props) {
     [lesions, keysOf, proposals],
   );
 
-  // only the lesion on the image is required
-  const match = useMemo(() => matchLesion(lesions, data.segmentation?.side ?? null, data.segmentation?.sizeMm ?? null), [lesions, data.segmentation]);
-  const [onImage, setOnImage] = useState<number | null>(match?.id ?? null);
-  const [onImageSure, setOnImageSure] = useState(match?.certain ?? false);
-  const [current, setCurrent] = useState<number | null>(match?.id ?? null);
+  // every lesion in the report is confirmed before the case is verified
+  const [current, setCurrent] = useState<number | null>(lesions[0]?.id ?? null);
   const [values, setValues] = useState<Record<number, Values>>(fresh);
   const [states, setStates] = useState<Record<number, States>>({});
   const [showOriginal, setShowOriginal] = useState(false);
@@ -133,7 +130,7 @@ export default function CaseReview({ data, queue }: Props) {
   };
 
   const openOf = (id: number) => keysOf(id).filter((key) => !states[id]?.[key]);
-  const openFields = onImage === null ? [] : openOf(onImage);
+  const openFields = lesions.flatMap((l) => openOf(l.id).map((key) => ({ id: l.id, key })));
   const currentOpen = current === null ? [] : openOf(current);
   const flagged = currentOpen.filter((key) => proposals[current!]?.[key]?.check).length;
   const complete = lesions.filter((l) => keysOf(l.id).length && !openOf(l.id).length).map((l) => l.id);
@@ -206,10 +203,10 @@ export default function CaseReview({ data, queue }: Props) {
     unapproveForm(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
   }
   useEffect(() => {
-    if (!extraction || onImage === null || openFields.length || sentFor.current === completeKey) return;
+    if (!extraction || !lesions.length || openFields.length || sentFor.current === completeKey) return;
     sentFor.current = completeKey;
     approveForm(data.studyId, formPayload.current()!).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
-  }, [extraction, onImage, openFields.length, completeKey, data.studyId, queryClient]);
+  }, [extraction, lesions.length, openFields.length, completeKey, data.studyId, queryClient]);
 
   // verified = the mask approved and every field confirmed, in either order; leaving keeps it
   const verified = maskApproved !== null && openFields.length === 0;
@@ -234,10 +231,12 @@ export default function CaseReview({ data, queue }: Props) {
   nextRef.current = goOn;
 
   const showOpenField = () => {
+    const first = openFields[0];
     setFullView(false);
+    if (first) setCurrent(first.id);
     // the form comes back on the next render
     requestAnimationFrame(() => {
-      const field = document.getElementById(`field-${openFields[0]}`);
+      const field = first && document.getElementById(`field-${first.key}`);
       field?.scrollIntoView({ block: "center" });
       field?.focus();
     });
@@ -299,10 +298,6 @@ export default function CaseReview({ data, queue }: Props) {
         const form = draft.form;
         setValues((v) => ({ ...v, ...form.values }));
         setStates(form.states);
-        if (form.onImage !== null) {
-          setOnImage(form.onImage);
-          setCurrent(form.onImage);
-        }
       }
       pendingPatch.current = draft.mask;
       setRestoredAt(draft.savedAt);
@@ -330,12 +325,12 @@ export default function CaseReview({ data, queue }: Props) {
         await deleteDraft(data.studyId);
         setSavedAt(null);
       } else {
-        setSavedAt(await saveDraft(data.studyId, { form: { values, states, onImage }, mask: patch }));
+        setSavedAt(await saveDraft(data.studyId, { form: { values, states }, mask: patch }));
       }
       setRestoredAt(null);
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [data.studyId, values, states, onImage, maskInfo, mask.viewer, locked]);
+  }, [data.studyId, values, states, maskInfo, mask.viewer, locked]);
 
   function discardDraft() {
     deleteDraft(data.studyId);
@@ -540,23 +535,9 @@ export default function CaseReview({ data, queue }: Props) {
                     index={index}
                     total={lesions.length}
                     summary={lesionSummary(lesions[index])}
-                    onImage={current === onImage}
-                    note={
-                      current === onImage
-                        ? t(onImageSure ? "review.lesion.onImage" : "review.lesion.onImageGuess")
-                        : t(complete.includes(current) ? "review.lesion.confirmed" : "review.lesion.optional")
-                    }
+                    note={complete.includes(current) ? t("review.lesion.confirmed") : null}
                     onPrev={() => setCurrent(lesions[index - 1].id)}
                     onNext={() => setCurrent(lesions[index + 1].id)}
-                    onMarkOnImage={
-                      current !== onImage && !onImageSure
-                        ? () => {
-                            touch();
-                            setOnImage(current);
-                            setOnImageSure(true);
-                          }
-                        : undefined
-                    }
                   />
                 )}
                 <div className="review__section">
@@ -571,7 +552,8 @@ export default function CaseReview({ data, queue }: Props) {
                       states={states[current] ?? {}}
                       onChange={change}
                       onConfirm={confirm}
-                      maskSizeMm={current === onImage ? maskInfo?.sizeMm : null}
+                      // with one lesion the mask can only be that one
+                      maskSizeMm={lesions.length === 1 ? maskInfo?.sizeMm : null}
                     />
                   )}
                 </div>

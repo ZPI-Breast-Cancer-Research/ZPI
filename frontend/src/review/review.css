@@ -563,6 +563,11 @@
   border-bottom: 1px solid var(--color-rule);
 }
 
+/* keeps room for the note line, so the form doesn't jump */
+.lesion-switch__body {
+  min-height: 41px;
+}
+
 .lesion-switch__arrow {
   height: 30px;
   background: #16243d;
@@ -587,10 +592,6 @@
   margin-top: 1px;
   color: var(--color-ink-faint);
   font-size: 12.5px;
-}
-
-.lesion-switch__note--image {
-  color: var(--color-primary);
 }
 
 /* report popup */

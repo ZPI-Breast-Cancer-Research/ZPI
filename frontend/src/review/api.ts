@@ -13,9 +13,6 @@ export interface QueueEntry {
 }
 
 export interface SegmentationInfo {
-  side: "left" | "right" | null;
-  sizeMm: number | null;
-  volumeMl: number | null;
   // roles as in workers/segmentation/channels.py
   series: { pre: string | null; post1: string | null; post2: string | null } | null;
 }
@@ -106,7 +103,7 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
       mask: MOCK_MASK,
       report: null,
       reportPending: false,
-      segmentation: { side: "right", sizeMm: 17, volumeMl: 1.8, series: null },
+      segmentation: { series: null },
       measurements: { volume: null, size: null, sizeInReport: null },
       maskApproved: masksApproved.get(studyId) ?? null,
     });

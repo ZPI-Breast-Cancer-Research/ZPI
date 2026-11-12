@@ -11,7 +11,6 @@ export interface Draft {
   form?: {
     values: Record<number, Partial<Record<FieldKey, string>>>;
     states: Record<number, Partial<Record<FieldKey, FieldState>>>;
-    onImage: number | null;
   };
   mask: MaskPatch | null;
 }
