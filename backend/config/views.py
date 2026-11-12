@@ -1,4 +1,3 @@
-from datetime import datetime
 from django.db import DatabaseError, connection
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -7,7 +6,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from mlops.mlflow_client import MlflowClient
-from patients.orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
+from patients.orthanc_client import OrthancClient
 from common.storage import is_avaible
 from users.permissions import require_permission
 
@@ -20,81 +19,52 @@ def _database_ok() -> bool:
     return True
 
 
+# Orthanc client status -> state of the "orthanc" component on the status page
+ORTHANC_STATES = {"ok": "ok", "unauthorized": "unknown", "unreachable": "down"}
+
+
+def _component(key, state, detail=None) -> dict:
+    return {"key": key, "state": state, "since": None, "detail": detail}
+
+
 @api_view(["GET"])
 def health(request):
+    """200 while the API and DB are up (the rest is reported only); 503 if the DB is down.
+
+    The top-level keys are what the PACS indicator and the container healthcheck read;
+    "components" feeds the status page. A component nothing checks yet is "unknown", not "ok".
+    """
     db_ok = _database_ok()
-    
-    orthanc_status = "ok"
-    orthanc_detail = None
-    try:
-        o_status = OrthancClient().status()
-        if o_status != "ok":
-            orthanc_status = "down"
-    except OrthancUnauthorized:
-        orthanc_status = "unknown"
-        orthanc_detail = "401"
-    except OrthancUnavailable:
-        orthanc_status = "down"
-
-    try:
-        mlflow_ok = MlflowClient().status() == "ok"
-    except Exception:
-        mlflow_ok = False
-
-    components = [
-        {
-            "key": "orthanc",
-            "state": orthanc_status,
-            "since": None,
-            "detail": orthanc_detail,
-        },
-        {
-            "key": "pacs",
-            "state": "ok" if orthanc_status == "ok" else "down",
-            "since": None,
-            "detail": "AE MARIA → PACS_SZPITAL",
-        },
-        {
-            "key": "segmentation",
-            "state": "ok" if db_ok else "down",
-            "since": None,
-            "detail": "Kolejka aktywna",
-        },
-        {
-            "key": "extraction",
-            "state": "ok" if db_ok else "down",
-            "since": None,
-            "detail": None,
-        },
-        {
-            "key": "training",
-            "state": "ok",
-            "since": None,
-            "detail": None,
-        },
-        {
-            "key": "llm",
-            "state": "ok",
-            "since": None,
-            "detail": None,
-        },
-        {
-            "key": "registry",
-            "state": "ok" if mlflow_ok else "down",
-            "since": None,
-            "detail": "MLflow",
-        },
-    ]
+    orthanc = OrthancClient().status()
+    mlflow = MlflowClient().status()
+    # the workers need the database; while it is up nothing here checks them yet
+    worker_state = "unknown" if db_ok else "down"
 
     body = {
+        "status": "ok" if db_ok else "error",
+        "database": "ok" if db_ok else "error",
+        "orthanc": orthanc,
+        "mlflow": mlflow,
+        "storage": "ok" if is_avaible() else "error",
         "checkedAt": timezone.now().isoformat(),
-        "components": components,
+        "components": [
+            _component(
+                "orthanc",
+                ORTHANC_STATES.get(orthanc, "unknown"),
+                "401" if orthanc == "unauthorized" else None,
+            ),
+            _component("pacs", "unknown"),
+            _component("segmentation", worker_state),
+            _component("extraction", worker_state),
+            _component("training", worker_state),
+            _component("llm", "unknown"),
+            _component("registry", "ok" if mlflow == "ok" else "down", "MLflow"),
+        ],
         "profile": getattr(settings, "SYSTEM_PROFILE", "gpu1"),
         "retraining": getattr(settings, "RETRAIN_ENABLED", True),
     }
+    return Response(body, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
-    http_status = status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE
-    return Response(body, status=http_status)
 
 @api_view(["GET"])
 @require_permission(["review"])

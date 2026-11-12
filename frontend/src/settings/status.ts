@@ -43,7 +43,7 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
   }
 
   try {
-    const { data } = await api.get<SystemStatus>("/api/health/");
+    const { data } = await api.get<SystemStatus>("/api/health");
     return data;
   } catch (error) {
     handleApiError(error);

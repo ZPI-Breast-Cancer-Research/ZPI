@@ -5,16 +5,18 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from patients.orthanc_client import OrthancUnauthorized
 from users.models import Role, User
 from users.permissions import PERMISSIONS
 
 
 class HealthTests(TestCase):
-    url = "/api/health/"
+    url = "/api/health"
 
     def setUp(self):
         self.client = APIClient()
+        storage = mock.patch("config.views.is_avaible", return_value=True)
+        storage.start()
+        self.addCleanup(storage.stop)
 
     @mock.patch("config.views._database_ok", return_value=True)
     @mock.patch("config.views.OrthancClient.status", return_value="ok")
@@ -37,13 +39,16 @@ class HealthTests(TestCase):
         }
 
         self.assertEqual(components["orthanc"]["state"], "ok")
-        self.assertEqual(components["pacs"]["state"], "ok")
-        self.assertEqual(components["segmentation"]["state"], "ok")
-        self.assertEqual(components["extraction"]["state"], "ok")
         self.assertEqual(components["registry"]["state"], "ok")
+        # nothing checks these yet, so they must not claim to be fine
+        for key in ("pacs", "segmentation", "extraction", "training", "llm"):
+            self.assertEqual(components[key]["state"], "unknown")
+        # the PACS indicator and the container healthcheck read the top-level keys
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["orthanc"], "ok")
 
     @mock.patch("config.views._database_ok", return_value=True)
-    @mock.patch("config.views.OrthancClient.status", return_value="down")
+    @mock.patch("config.views.OrthancClient.status", return_value="unreachable")
     @mock.patch("config.views.MlflowClient.status", return_value="ok")
     def test_orthanc_unreachable_is_still_200(
         self,
@@ -61,13 +66,9 @@ class HealthTests(TestCase):
         }
 
         self.assertEqual(components["orthanc"]["state"], "down")
-        self.assertEqual(components["pacs"]["state"], "down")
 
     @mock.patch("config.views._database_ok", return_value=True)
-    @mock.patch(
-        "config.views.OrthancClient.status",
-        side_effect=OrthancUnauthorized(),
-    )
+    @mock.patch("config.views.OrthancClient.status", return_value="unauthorized")
     @mock.patch("config.views.MlflowClient.status", return_value="ok")
     def test_orthanc_unauthorized_is_reported(
         self,
