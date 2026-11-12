@@ -155,6 +155,15 @@ export function lesionSummary(lesion: Lesion): string {
   return [t(`review.lesion.side.${lesion.side}`), where, sized !== null && sizeText(lesion.observations[sized].size!)].filter(Boolean).join(" · ");
 }
 
+const WIRE_FIELD: Partial<Record<FieldKey, string>> = { type: "typ", clock: "godzina", distance: "odleglosc_od_brodawki", size: "wymiary", shape: "ksztalt", margin: "brzeg" };
+
+// where an answer of the short form lives in the worker's JSON
+export function wirePath(lesionIndex: number, key: FieldKey, proposal?: Proposal): (string | number)[] {
+  if (key === "side") return ["zmiany", lesionIndex, "strona"];
+  if (key === "birads") return ["zmiany", lesionIndex, "birads"];
+  return ["zmiany", lesionIndex, "obserwacje", proposal?.from ?? 0, WIRE_FIELD[key]!];
+}
+
 // so the approved report has the model's shape
 export function applyAnswers(data: Extraction, lesions: Record<number, { proposals: Proposals; values: Values }>): Extraction {
   const copy: Extraction = structuredClone(data);

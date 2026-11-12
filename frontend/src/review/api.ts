@@ -3,6 +3,7 @@ import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
 import type { MaskSource } from "../viewer/types";
 import { isCaseReport, type CaseReport, type Extraction } from "./extraction";
+import type { FieldCheck } from "./details";
 import type { FieldKey } from "./fields";
 
 export interface QueueEntry {
@@ -43,6 +44,8 @@ export type FieldAnswers = Partial<Record<FieldKey, { value: string; state: "con
 export interface FormPayload {
   report: Extraction;
   lesions: Record<number, FieldAnswers>;
+  // "zmiany.0.obserwacje.1.brzeg" → confirmed, corrected or unverified
+  fields: Record<string, FieldCheck>;
 }
 
 export interface ApprovalPayload extends Partial<FormPayload> {

@@ -20,6 +20,7 @@ import { measureText, sizeText } from "./fields";
 
 export type Path = (string | number)[];
 export const pathKey = (path: Path) => path.join(".");
+const pathOf = (key: string): Path => key.split(".").map((step) => (/^\d+$/.test(step) ? Number(step) : step));
 
 export type Kind = "text" | "list" | "bool" | "measure" | "size" | "fixed" | readonly string[];
 
@@ -54,6 +55,22 @@ export interface Details {
 
 export const NO_DETAILS: Details = { edits: {}, agreed: [] };
 
+export type FieldCheck = "confirmed" | "corrected" | "unverified";
+
+// changed, confirmed (in the form or a whole section) or neither
+export function fieldChecks(original: Extraction, current: Extraction, confirmed: Set<string>, sections: { rows: DetailRow[]; agreed: boolean }[]): Record<string, FieldCheck> {
+  const agreed = new Set(sections.flatMap((s) => (s.agreed ? s.rows.flatMap((r) => r.cells.map((c) => pathKey(c.path))) : [])));
+  const paths = new Map<string, Path>();
+  for (const cell of sections.flatMap((s) => s.rows.flatMap((r) => r.cells))) paths.set(pathKey(cell.path), cell.path);
+  for (const key of confirmed) paths.set(key, pathOf(key));
+  const checks: Record<string, FieldCheck> = {};
+  for (const [key, path] of paths) {
+    const changed = JSON.stringify(getAt(current, path) ?? null) !== JSON.stringify(getAt(original, path) ?? null);
+    checks[key] = changed ? "corrected" : confirmed.has(key) || agreed.has(key) ? "confirmed" : "unverified";
+  }
+  return checks;
+}
+
 export function getAt(data: unknown, path: Path): unknown {
   return path.reduce<unknown>((node, step) => (node == null ? undefined : (node as Record<string | number, unknown>)[step]), data);
 }
@@ -65,7 +82,7 @@ function setAt(data: unknown, path: Path, value: unknown) {
 
 export function applyDetails(data: Extraction, edits: Edits): Extraction {
   const copy: Extraction = structuredClone(data);
-  for (const [key, value] of Object.entries(edits)) setAt(copy, key.split(".").map((step) => (/^\d+$/.test(step) ? Number(step) : step)), value);
+  for (const [key, value] of Object.entries(edits)) setAt(copy, pathOf(key), value);
   return copy;
 }
 

@@ -17,11 +17,11 @@ import ViewerToolRail from "../viewer/ViewerToolRail";
 import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
 import { approveCase, approveForm, approveMask, reopenCase, type FieldAnswers, type FormPayload, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
-import { applyDetails, caseGroups, getAt, lesionRows, NO_DETAILS, pathKey, type Details, type Path } from "./details";
+import { applyDetails, caseGroups, fieldChecks, getAt, lesionRows, NO_DETAILS, pathKey, type Details, type Path } from "./details";
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
-import { applyAnswers, FIELDS, keysFor, lesionFields, lesionSummary, type FieldKey, type Proposals, type Values } from "./fields";
+import { applyAnswers, FIELDS, keysFor, lesionFields, lesionSummary, wirePath, type FieldKey, type Proposals, type Values } from "./fields";
 import { fromExtraction } from "./report";
 import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
@@ -168,9 +168,16 @@ export default function CaseReview({ data, queue }: Props) {
       Object.fromEntries(
         keysOf(id).map((key) => [key, { value: values[id]?.[key] ?? "", state: states[id]?.[key] === "corrected" ? "corrected" : "confirmed" }]),
       );
+    const report = applyDetails(applyAnswers(extraction, answered(complete)), details.edits);
+    const confirmed = new Set(lesions.flatMap((l, i) => (complete.includes(l.id) ? keysOf(l.id).map((key) => pathKey(wirePath(i, key, proposals[l.id][key]))) : [])));
+    const sections = [
+      ...lesions.map((l, i) => ({ rows: lesionRows(extraction, i), agreed: details.agreed.includes(`lesion:${l.id}`) })),
+      { rows: caseGroups(extraction).flatMap((g) => g.rows), agreed: details.agreed.includes("case") },
+    ];
     return {
-      report: applyDetails(applyAnswers(extraction, answered(complete)), details.edits),
+      report,
       lesions: Object.fromEntries(complete.map((id) => [id, answers(id)])),
+      fields: fieldChecks(extraction, report, confirmed, sections),
     };
   };
   // edits that all ended up undone or restored leave the model's mask as it was
