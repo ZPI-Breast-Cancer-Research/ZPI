@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import Select from "../components/Select";
 import WarningIcon from "../components/WarningIcon";
 import { t } from "../i18n";
@@ -46,14 +48,7 @@ export default function BiradsForm({ keys, proposals, values, states, onChange, 
     }
     return (
       <span key={field.key} className={`birads__control birads__num${narrow}`}>
-        <input
-          id={id}
-          className="input"
-          inputMode="decimal"
-          aria-label={fieldLabel(field.key)}
-          value={value}
-          onChange={(event) => onChange(field.key, event.target.value.replace(",", "."))}
-        />
+        <NumberInput id={id} label={fieldLabel(field.key)} value={value} onChange={(next) => onChange(field.key, next)} />
         <span className="muted">{field.unit}</span>
       </span>
     );
@@ -119,5 +114,26 @@ export default function BiradsForm({ keys, proposals, values, states, onChange, 
         })}
       </tbody>
     </table>
+  );
+}
+
+// "4." stays on screen on the way to "4.5"
+function NumberInput({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
+  const [typing, setTyping] = useState<string | null>(null);
+  return (
+    <input
+      id={id}
+      className="input"
+      inputMode="decimal"
+      aria-label={label}
+      value={typing ?? value}
+      onFocus={() => setTyping(value)}
+      onBlur={() => setTyping(null)}
+      onChange={(event) => {
+        const next = event.target.value.replace(",", ".");
+        setTyping(next);
+        if (!next.trim() || Number.isFinite(Number(next))) onChange(next);
+      }}
+    />
   );
 }

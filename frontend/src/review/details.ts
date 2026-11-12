@@ -37,6 +37,8 @@ export interface DetailRow {
   cells: Cell[];
   // MG and USG should agree
   compare?: boolean;
+  // a warning, from the report as it reads now
+  check?: (current: Extraction) => string | null;
 }
 
 export interface DetailGroup {
@@ -47,13 +49,14 @@ export interface DetailGroup {
 
 export type Edits = Record<string, unknown>;
 
-// edits outside the short form and the sections the radiologist said agree with the report
+// changed values by path, fields confirmed in the form, sections that agree with the report
 export interface Details {
   edits: Edits;
+  confirmed: string[];
   agreed: string[];
 }
 
-export const NO_DETAILS: Details = { edits: {}, agreed: [] };
+export const NO_DETAILS: Details = { edits: {}, confirmed: [], agreed: [] };
 
 export type FieldCheck = "confirmed" | "corrected" | "unverified";
 
@@ -152,9 +155,20 @@ export function caseGroups(data: Extraction): DetailGroup[] {
     {
       key: "conclusion",
       title: label("conclusion"),
-      rows: [single("birads", ["wniosek", "birads"], WIRE_BIRADS), single("text", ["wniosek", "tekst"], "text"), single("recommendation", ["wniosek", "zalecenie"], "text")],
+      rows: [
+        { ...single("birads", ["wniosek", "birads"], WIRE_BIRADS), check: conclusionBirads },
+        single("text", ["wniosek", "tekst"], "text"),
+        single("recommendation", ["wniosek", "zalecenie"], "text"),
+      ],
     },
   ];
+}
+
+// the conclusion carries the highest category of its lesions
+function conclusionBirads(report: Extraction): string | null {
+  const rank = (b: string | null) => (b ? WIRE_BIRADS.indexOf(b as (typeof WIRE_BIRADS)[number]) : -1);
+  const highest = report.zmiany.map((z) => z.birads).reduce<string | null>((a, b) => (rank(b) > rank(a) ? b : a), null);
+  return highest && highest !== report.wniosek.birads ? t("detail.biradsNotHighest", { v: highest.toUpperCase() }) : null;
 }
 
 export const isEmpty = (value: unknown) => value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length);

@@ -565,6 +565,7 @@ export const pl = {
   "detail.agrees": "Zgadza się z opisem",
   "detail.undo": "Cofnij",
   "detail.disagree": "MG i USG się różnią",
+  "detail.biradsNotHighest": "Najwyższy BI-RADS zmian to {v}.",
   "detail.linked": "Połączone przez model",
   "detail.linkedGuess": "Model uznał obserwacje z MG i USG za jedną zmianę: {why}",
   "detail.yes": "tak",
@@ -628,8 +629,8 @@ export const pl = {
   "review.original.pendingBody": "Formularz pojawi się, gdy opis zostanie odczytany. Maskę można zweryfikować już teraz.",
   "review.original.failed": "Nie udało się odczytać opisu",
   "review.original.noLesions": "W opisie nie ma zmian ogniskowych.",
-  "review.unconfirmForm": "Cofnij potwierdzenie",
-  "review.unconfirmFormTitle": "Przywraca propozycje modelu we wszystkich polach; trzeba je potwierdzić od nowa",
+  "review.unconfirmLesion": "Cofnij potwierdzenie",
+  "review.unconfirmLesionTitle": "Pola tej zmiany znowu czekają na potwierdzenie; poprawki zostają",
   "review.unverified": "—",
 
   "overview.title": "Przegląd zmiany",

@@ -51,7 +51,7 @@ export default function Select({ id, value, options, mark, placeholder = "—", 
   };
   useEffect(() => {
     if (!startOpen) return;
-    box.current?.querySelector("button")?.focus();
+    box.current?.querySelector("button")?.focus({ preventScroll: true });
     show();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

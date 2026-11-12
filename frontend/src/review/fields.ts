@@ -1,12 +1,14 @@
 import { formatNumber } from "../format";
 import { hasMessage, t, type MessageKey } from "../i18n";
-import type { Extraction } from "./extraction";
+import type { WireMargin, WireMeasure, WireShape, WireSide, WireSize } from "./extraction";
 import {
+  FROM_WIRE,
   largestMm,
   lesionType,
   quadrantOfClock,
   quadrantOfPlaces,
   quotesBirads,
+  sizeOfWire,
   TO_WIRE,
   toMm,
   TYPE_WIRE,
@@ -141,10 +143,10 @@ export function lesionFields(lesion: Lesion, conclusion: Conclusion, lesionCount
   };
 
   const shapeAt = pick((o) => o.shape);
-  fields.shape = shapeAt === undefined ? { value: "", hints: missing() } : { value: obs[shapeAt].shape!, from: shapeAt };
+  fields.shape = shapeAt === undefined ? { value: "", hints: missing() } : { value: obs[shapeAt].shape!, from: shapeAt, hints: [modality(obs[shapeAt])] };
 
   const marginAt = pick((o) => o.margin);
-  fields.margin = marginAt === undefined ? { value: "", hints: missing() } : { value: obs[marginAt].margin!, from: marginAt };
+  fields.margin = marginAt === undefined ? { value: "", hints: missing() } : { value: obs[marginAt].margin!, from: marginAt, hints: [modality(obs[marginAt])] };
   return fields;
 }
 
@@ -164,31 +166,39 @@ export function wirePath(lesionIndex: number, key: FieldKey, proposal?: Proposal
   return ["zmiany", lesionIndex, "obserwacje", proposal?.from ?? 0, WIRE_FIELD[key]!];
 }
 
-// so the approved report has the model's shape
-export function applyAnswers(data: Extraction, lesions: Record<number, { proposals: Proposals; values: Values }>): Extraction {
-  const copy: Extraction = structuredClone(data);
-  for (const wire of copy.zmiany) {
-    const answer = lesions[wire.id];
-    if (!answer) continue;
-    const { proposals, values } = answer;
-    const changed = (key: FieldKey) => values[key] !== undefined && values[key] !== proposals[key]?.value;
-    const at = (key: FieldKey) => wire.obserwacje[proposals[key]?.from ?? 0];
-    const number = (key: FieldKey) => (values[key] && Number.isFinite(Number(values[key])) ? Number(values[key]) : null);
+const parse = (value: string) => (value.trim() && Number.isFinite(Number(value)) ? Number(value) : null);
 
-    if (changed("side")) wire.strona = TO_WIRE.side[values.side as Side];
-    if (changed("type") && at("type")) at("type").typ = values.type ? TYPE_WIRE[values.type as LesionType] : null;
-    if (changed("clock") && at("clock")) at("clock").godzina = values.clock || null;
-    if (changed("distance") && at("distance")) {
-      const cm = number("distance");
-      at("distance").odleglosc_od_brodawki = cm === null ? null : { wartosc: cm, jednostka: "cm" };
-    }
-    if (changed("size") && at("size")) {
-      const mm = number("size");
-      at("size").wymiary = mm === null ? null : { wartosci: [mm], jednostka: "mm", kwalifikator: "dokładny" };
-    }
-    if (changed("birads")) wire.birads = values.birads ? TO_WIRE.birads(values.birads as BiRads) : null;
-    if (changed("shape") && at("shape")) at("shape").ksztalt = values.shape ? TO_WIRE.shape[values.shape as Shape] : null;
-    if (changed("margin") && at("margin")) at("margin").brzeg = values.margin ? TO_WIRE.margin[values.margin as Margin] : null;
+// a value in the worker's JSON as the short form shows it
+export function formValue(key: FieldKey, wire: unknown): string {
+  if (wire === null || wire === undefined || wire === "") return "";
+  if (key === "side") return FROM_WIRE.side[wire as WireSide];
+  if (key === "birads") return (wire as string).toUpperCase();
+  if (key === "type") return lesionType(wire as string) ?? "";
+  if (key === "clock") return String(Number.parseInt(wire as string, 10) || "");
+  if (key === "distance") return round(toMm((wire as WireMeasure).wartosc, (wire as WireMeasure).jednostka) / 10);
+  if (key === "size") return round(largestMm(sizeOfWire(wire as WireSize)!) ?? 0);
+  if (key === "shape") return FROM_WIRE.shape[wire as WireShape];
+  return FROM_WIRE.margin[wire as WireMargin];
+}
+
+// back in the worker's shape; a size keeps its other dimensions and qualifier
+export function wireValue(key: FieldKey, value: string, previous: unknown): unknown {
+  if (!value) return null;
+  if (key === "side") return TO_WIRE.side[value as Side];
+  if (key === "birads") return TO_WIRE.birads(value as BiRads);
+  if (key === "type") return lesionType(previous as string | null) === value ? previous : TYPE_WIRE[value as LesionType];
+  if (key === "clock") return value;
+  if (key === "shape") return TO_WIRE.shape[value as Shape];
+  if (key === "margin") return TO_WIRE.margin[value as Margin];
+  const number = parse(value);
+  if (number === null) return previous ?? null;
+  if (key === "distance") {
+    const unit = (previous as WireMeasure | null)?.jednostka ?? "cm";
+    return { wartosc: unit === "mm" ? number * 10 : number, jednostka: unit };
   }
-  return copy;
+  const size = previous as WireSize | null;
+  if (!size?.wartosci.length) return { wartosci: [number], jednostka: "mm", kwalifikator: "dokładny" };
+  const largest = size.wartosci.indexOf(Math.max(...size.wartosci));
+  const wartosci = size.wartosci.map((v, i) => (i === largest ? (size.jednostka === "cm" ? number / 10 : number) : v));
+  return { ...size, wartosci };
 }

@@ -48,11 +48,12 @@ export default function ReportDetails({ title, groups, current, original, confir
     const id = `${group}.${r.key}`;
     const values = r.cells.map((c) => getAt(current, c.path));
     const corrected = r.cells.some((c) => !same(getAt(current, c.path), getAt(original, c.path)));
-    const warn = !!r.compare && disagree(r.kind, values);
+    const note = r.check?.(current) ?? null;
+    const warn = (!!r.compare && disagree(r.kind, values)) || !!note;
     return (
       <tr key={r.key} className={corrected ? "details__row details__row--corrected" : "details__row"}>
         <th>
-          {warn && <WarningIcon label={t("detail.disagree")} />}
+          {warn && <WarningIcon label={note ?? t("detail.disagree")} />}
           {r.label}
         </th>
         <td>
@@ -72,6 +73,7 @@ export default function ReportDetails({ title, groups, current, original, confir
               </div>
             ))
           )}
+          {note && <p className="details__note">{note}</p>}
         </td>
         <td className="details__status">{corrected && <span className="status status--corrected">{t("review.field.corrected")}</span>}</td>
       </tr>

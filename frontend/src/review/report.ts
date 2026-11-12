@@ -80,6 +80,8 @@ const QUALIFIERS: Record<WireQualifier, Qualifier> = { dokładny: "exact", okoł
 const invert = <W extends string, A extends string>(map: Record<W, A>) =>
   Object.fromEntries(Object.entries(map).map(([wire, code]) => [code, wire])) as Record<A, W>;
 
+export const FROM_WIRE = { side: SIDES, shape: SHAPES, margin: MARGINS };
+
 // for saving the doctor's answers in the worker's schema
 export const TO_WIRE = {
   side: invert(SIDES),
