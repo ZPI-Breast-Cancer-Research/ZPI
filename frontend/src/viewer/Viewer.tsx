@@ -10,7 +10,7 @@ import {
   WindowLevelTool,
   ZoomTool,
 } from "@cornerstonejs/tools";
-import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
@@ -56,7 +56,9 @@ interface Props {
   // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline;
   // null starts from an empty labelmap
   mask: SegRef | null;
-  modelMask?: SegRef | null;
+  modelMask?: SegRef | null
+  // the series the model read; without them we guess by name
+  roles?: { pre: string | null; post1: string | null; post2: string | null } | nu
   series: Series;
   maskState: MaskState;
   showMask: boolean;
@@ -144,6 +146,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     studyUid,
     mask,
     modelMask = null,
+    roles = null,
     series,
     maskState,
     showMask,
@@ -206,6 +209,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const [grab, setGrab] = useState(false);
 
   const { main, single, split } = layout;
+  // the zoom slider runs on log2, so 1×, 2×, 4× and 8× are evenly spaced
+  const zoomLevel = Math.min(3, Math.max(0, Math.log2(zoom ?? 1)));
   const mainRef = useRef(main);
   mainRef.current = main;
   const viewports = useMemo(() => PLANES.map((plane) => ids[plane]), [ids]);
@@ -361,7 +366,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       return;
     }
     (async () => {
-      const found = await findSeries(studyUid);
+      const found = roles?.post1 ? { post: roles.post1, ...(roles.pre ? { pre: roles.pre } : {}) } : await findSeries(studyUid);
       if (cancelled) return;
       seriesUids.current = found;
       callbacks.current.onSeriesFound?.(Object.keys(found) as Series[]);
@@ -381,7 +386,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       removeMask(ids.mask);
       removeMask(ids.model);
     };
-  }, [ids, studyUid, mask, modelMask, attempt]);
+  }, [ids, studyUid, mask, modelMask, roles, attempt]);
 
   // series on screen; keeps the slice and zoom when switching
   useEffect(() => {
@@ -556,11 +561,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       } else if (event.key === "v") {
         setLayout((l) => ({ ...l, single: !l.single }));
       } else if (event.key === "+" || event.key === "=" || event.key === "-") {
-        const viewport = viewportOf(mainRef.current);
-        if (!viewport) return;
-        startZoom(mainRef.current);
-        viewport.setZoom(viewport.getZoom() * (event.key === "-" ? 0.8 : 1.25));
-        viewport.render();
+        zoomBy(event.key === "-" ? 0.8 : 1.25);
       } else if (event.key === "0") {
         fit();
       }
@@ -662,6 +663,18 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     return base && scale ? base / scale : null;
   }
 
+  function zoomBy(factor: number) {
+    const viewport = engine.current?.getViewport(ids[mainRef.current]);
+    if (!viewport) return;
+    startZoom(mainRef.current);
+    viewport.setZoom(viewport.getZoom() * factor);
+    viewport.render();
+  }
+
+  function zoomTo(target: number) {
+    zoomBy(target / (zoomOf(mainRef.current) ?? 1));
+  }
+
   function fit() {
     const plane = mainRef.current;
     const viewport = engine.current?.getViewport(ids[plane]);
@@ -755,13 +768,30 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
                 </span>
               )}
               <span className="viewer__head-end">
-                {isMain && zoom !== null && (
-                  <>
-                    <span>{t("viewer.zoom", { n: formatOneDecimal(zoom) })}</span>
-                    <button type="button" className="viewer__head-btn" title={t("viewer.fitTitle")} onClick={fit}>
+                {isMain && (
+                  <span className="viewer__zoom">
+                    <button type="button" className="viewer__head-btn" aria-label={t("viewer.zoomOut")} title={t("viewer.zoomOutTitle")} onClick={() => zoomBy(0.8)}>
+                      −
+                    </button>
+                    <input
+                      type="range"
+                      className="viewer__zoom-range"
+                      style={{ "--fill": `${(zoomLevel / 3) * 100}%` } as CSSProperties}
+                      min={0}
+                      max={3}
+                      step={0.05}
+                      value={zoomLevel}
+                      aria-label={t("viewer.zoomLabel")}
+                      onChange={(event) => zoomTo(2 ** Number(event.target.value))}
+                    />
+                    <button type="button" className="viewer__head-btn" aria-label={t("viewer.zoomIn")} title={t("viewer.zoomInTitle")} onClick={() => zoomBy(1.25)}>
+                      +
+                    </button>
+                    <span className="viewer__zoom-value">{t("viewer.zoom", { n: formatOneDecimal(zoom ?? 1) })}</span>
+                    <button type="button" className="viewer__head-btn" title={t("viewer.fitTitle")} disabled={zoom === null} onClick={fit}>
                       {t("viewer.fit")}
                     </button>
-                  </>
+                  </span>
                 )}
                 {isMain && windowChanged && (
                   <button type="button" className="viewer__head-btn" title={t("viewer.windowRestoreTitle")} onClick={resetWindow}>

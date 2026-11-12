@@ -1,7 +1,9 @@
 import { api, ApiError, handleApiError, API_URL } from "../api";
 import { toIsoDate } from "../format";
+import { t } from "../i18n";
 import { MOCK_API, mockDelay } from "../mock";
 import { reviewProgress } from "../review/api";
+import { isCaseReport, type CaseReport } from "../review/extraction";
 
 export type ImageStatus =
   | "queued"
@@ -12,10 +14,12 @@ export type ImageStatus =
   | "verified_unchanged"
   | "verified_corrected";
 
-export type ReportStatus = "missing" | "extracting" | "ready" | "to_review" | "verified";
+export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified";
 
 export interface Study {
   orthanc_id: string;
+  // the study's number in MARIA, e.g. "0012"
+  number?: string | null;
   study_instance_uid: string | null;
   patient_id: string | null;
   study_date: string | null;
@@ -44,6 +48,10 @@ export interface UnassignedReport {
   fileName: string;
   kind: "text" | "scan";
   addedAt: string;
+  // the uploaded file, there before anyone reads it
+  originalUrl: string | null;
+  // null until the extraction worker has read it
+  report: CaseReport | null;
 }
 
 export type StepState = "done" | "running" | "waiting" | "waiting_report" | "error";
@@ -113,6 +121,7 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   APPROVED: "verified",
   CORRECTED: "verified",
   REJECTED: "to_review",
+  FAILED: "error",
   missing: "missing",
 };
 
@@ -122,10 +131,10 @@ export async function listStudies(): Promise<StudyRow[]> {
   try {
     const { data } = await api.get<Study[]>("/api/studies");
     // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
-    // if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
+    if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
     return data.map((study) => ({
       id: study.orthanc_id,
-      number: null,
+      number: study.number ?? null,
       patientId: study.patient_id ?? "—",
       studyDate: dicomDateToIso(study.study_date),
       image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
@@ -134,24 +143,27 @@ export async function listStudies(): Promise<StudyRow[]> {
       verifiedAt: null,
     }));
   } catch (error) {
-    handleApiError(error);
+    handleApiError(error, url);
   }
-
 }
 
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
   if (MOCK_API) {
     return mockDelay([
-      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24" },
-      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22" },
+      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", originalUrl: null, report: null },
+      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null },
     ]);
   }
-  const reports = await api.get<{ id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string }[]>("/api/reports/unassigned/");
+  const reports = await api.get<
+    { id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string; originalUrl?: string | null; report?: unknown }[]
+  >("/api/reports/unassigned/");
   return reports.data.map((report) => ({
     id: report.id,
     fileName: report.file_name ?? report.fileName ?? "",
     kind: report.kind,
     addedAt: report.added_at ?? report.addedAt ?? "",
+    originalUrl: report.originalUrl ?? null,
+    report: isCaseReport(report.report) ? report.report : null,
   }));
 }
 
@@ -164,7 +176,14 @@ export async function getProcessingSteps(study: StudyRow): Promise<ProcessingSte
     { key: "segmentation", state: done ? "done" : study.image === "processing" ? "running" : "waiting" },
     {
       key: "extraction",
-      state: study.report === "missing" ? "waiting_report" : study.report === "extracting" ? "running" : "done",
+      state:
+        study.report === "missing"
+          ? "waiting_report"
+          : study.report === "extracting"
+            ? "running"
+            : study.report === "error"
+              ? "error"
+              : "done",
     },
   ]);
 }

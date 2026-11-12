@@ -19,6 +19,7 @@ from rest_framework.response import Response
 
 from common.storage import put_bytes
 from extraction.models import ExtractionResult
+from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
 
@@ -35,6 +36,10 @@ SERVER_ERROR = {
     "code": "server_error",
     "detail": "Wystąpił nieoczekiwany błąd serwera.",
 }
+
+# What the extraction worker can read (workers/extraction/documents.py); the same list as the
+# file picker in the frontend (AttachReport.tsx).
+REPORT_SUFFIXES = (".txt", ".jpg", ".jpeg", ".png")
 
 
 # ---------------------------------------------------------------- helpers
@@ -178,6 +183,19 @@ def _orthanc_study_id(orthanc_response) -> str | None:
     return str(item) if item else None
 
 
+def _check_report_file(report_file) -> Response | None:
+    """An error response for a report file the extractor cannot read, otherwise None."""
+    if report_file.name.lower().endswith(REPORT_SUFFIXES):
+        return None
+    return Response(
+        {
+            "code": "unsupported_report_type",
+            "detail": f"Nieobsługiwany typ pliku opisu; dozwolone: {', '.join(REPORT_SUFFIXES)}.",
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 def _store_report(report_file, study) -> ExtractionResult:
     """Saves the file, creates the row and schedules extraction once the transaction commits."""
     # uuid folder: two reports with the same file name must not overwrite each other
@@ -240,6 +258,9 @@ def study_import(request):
 
     if not archive_file and not report_file:
         return Response({"detail": "No files were provided for import."}, status=status.HTTP_400_BAD_REQUEST)
+    # before the archive goes to Orthanc, so a bad report leaves nothing behind
+    if report_file and (error := _check_report_file(report_file)):
+        return error
 
     archive_bytes = None
     orthanc_study_id = None
@@ -309,6 +330,8 @@ def attach_report_to_study(request, orthanc_id):
     report_file = request.FILES.get("report")
     if not report_file:
         return Response({"detail": "No report file provided."}, status=status.HTTP_400_BAD_REQUEST)
+    if error := _check_report_file(report_file):
+        return error
 
     try:
         with transaction.atomic():
@@ -345,7 +368,7 @@ def unassigned_reports_list(request):
         file_name = item.report_path.split("/")[-1] if item.report_path else "unknown"
         ext = file_name.rsplit(".", 1)[-1].lower()
         kind = "scan" if ext in ("jpg", "jpeg", "png") else "text"
-        created_at = getattr(item, "created_at", None)
+        created_at = item.created_at
 
         response_data.append(
             {
@@ -353,6 +376,9 @@ def unassigned_reports_list(request):
                 "fileName": file_name,
                 "kind": kind,
                 "addedAt": created_at.strftime("%Y-%m-%d") if created_at else None,
+                # these reports are not on the dashboard, so a failed extraction shows only here
+                "status": item.status,
+                "error": item.error if item.status == ExtractionStatus.FAILED else "",
             }
         )
 
@@ -374,6 +400,7 @@ def dashboard_view(request):
     processing_count = 0
     to_review_count = 0
     missing_reports_count = 0
+    failed_studies = []
     for idx, o_study in enumerate(orthanc_studies):
         db_study = db_studies.get(o_study.get("orthanc_id"))
         if not db_study: continue
@@ -390,6 +417,8 @@ def dashboard_view(request):
             uncertainty = 0.5
 
         study_number = str(idx + 1).zfill(4)
+        if ext_status == ExtractionStatus.FAILED:
+            failed_studies.append(study_number)
 
         if seg_status in ("PROCESSING", "PENDING") or ext_status in ("PROCESSING", "PENDING"):
             processing_count += 1
@@ -414,7 +443,10 @@ def dashboard_view(request):
             )
 
 
-    attention_items = []
+    attention_items = [
+        {"kind": "processing_error", "subject": number, "href": "/badania"}
+        for number in failed_studies
+    ]
     if missing_reports_count > 0:
         attention_items.append(
             {"kind": "missing_report", "subject": "", "count": missing_reports_count, "href": "/badania"}

@@ -7,8 +7,11 @@ import type { FieldKey } from "./fields";
 export interface Draft {
   // local date and time, YYYY-MM-DDTHH:MM
   savedAt: string;
-  values: Partial<Record<FieldKey, string>>;
-  states: Partial<Record<FieldKey, FieldState>>;
+  // older drafts don't have it
+  form?: {
+    values: Record<number, Partial<Record<FieldKey, string>>>;
+    states: Record<number, Partial<Record<FieldKey, FieldState>>>;
+  };
   mask: MaskPatch | null;
 }
 

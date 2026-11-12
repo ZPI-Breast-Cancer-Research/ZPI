@@ -11,8 +11,9 @@ import { useToast } from "../components/Toast";
 import { t, type MessageKey } from "../i18n";
 import AttachReport from "../studies/AttachReport";
 import DropZone from "../studies/DropZone";
-import { FileTag, ImportTable, UnpairedReports } from "../studies/ImportReview";
+import { ImportTable, UnpairedReports } from "../studies/ImportReview";
 import ProcessingSteps from "../studies/ProcessingSteps";
+import UnassignedReports from "../studies/UnassignedReports";
 import StudiesTable, { matches, parseFilter, parsePart } from "../studies/StudiesTable";
 import { listStudies, listUnassignedReports, sendStudy, type StudyRow } from "../studies/api";
 import { groupFiles, type GroupedFiles } from "../studies/files";
@@ -218,32 +219,7 @@ const send = useMutation({
                     </div>
                   </Panel>
                   <Panel title={t("studies.unassigned")} aux={unassigned.data?.length ?? ""}>
-                    {unassigned.data && unassigned.data.length > 0 ? (
-                      <table className="table">
-                        <tbody>
-                          {unassigned.data.map((report) => (
-                            <tr key={report.id}>
-                              <td>
-                                <FileTag file={{ name: report.fileName }} />
-                              </td>
-                              <td className="cell-right">
-                                {selected?.report === "missing" ? (
-                                  <button type="button" className="link" onClick={() => attach(selected)}>
-                                    {t("studies.unassigned.assign")}
-                                  </button>
-                                ) : (
-                                  <button type="button" className="link" onClick={() => updateParams({ filtr: "no_report" })}>
-                                    {t("studies.unassigned.assign")}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="note">{t("studies.unassigned.none")}</p>
-                    )}
+                    <UnassignedReports reports={unassigned.data ?? []} studies={studies.data ?? []} selected={selected} />
                   </Panel>
                 </>
               )}

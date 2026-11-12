@@ -452,3 +452,79 @@
   margin-left: auto;
   font-size: 10.5px;
 }
+
+/* zoom bar in the main view's header */
+.viewer__zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viewer__zoom .viewer__head-btn {
+  justify-content: center;
+  min-width: 22px;
+  padding: 0 6px;
+}
+
+.viewer__zoom .viewer__head-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.viewer__zoom-value {
+  min-width: 34px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.viewer__zoom-range {
+  width: 80px;
+  height: 14px;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+}
+
+.viewer__zoom-range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(to right, var(--color-primary) var(--fill), var(--color-rule-strong) var(--fill));
+  border-radius: 2px;
+}
+
+.viewer__zoom-range::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  background: var(--color-ink);
+  border: 0;
+  border-radius: 50%;
+  appearance: none;
+}
+
+.viewer__zoom-range::-moz-range-track {
+  height: 4px;
+  background: var(--color-rule-strong);
+  border-radius: 2px;
+}
+
+.viewer__zoom-range::-moz-range-progress {
+  height: 4px;
+  background: var(--color-primary);
+  border-radius: 2px;
+}
+
+.viewer__zoom-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--color-ink);
+  border: 0;
+  border-radius: 50%;
+}
+
+.viewer__zoom-range:focus-visible {
+  outline: none;
+}
+
+.viewer__zoom-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(236, 111, 152, 0.35);
+}

@@ -61,9 +61,18 @@ export async function findSeries(studyUid: string): Promise<Partial<Record<Serie
   return found;
 }
 
+// MR studies in Orthanc, most series first
+export async function listMrStudies(): Promise<string[]> {
+  const studies = await get("/studies?ModalitiesInStudy=MR&includefield=00201206");
+  return studies
+    .map((s) => ({ uid: String(tag(s, "0020000D") ?? ""), series: Number(tag(s, "00201206") ?? 0) }))
+    .filter((s) => s.uid)
+    .sort((a, b) => b.series - a.series)
+    .map((s) => s.uid);
+}
+
 // the series a SEG was drawn on; its frames are matched to that series' images
-export async function referencedSeries(studyUid: string, seriesUid: string): Promise<string> {
-  const [instance] = await get(`/studies/${studyUid}/series/${seriesUid}/metadata`);
+export async function referencedSeries(studyUid: string, seriesUid: string): Promise<string> {  const [instance] = await get(`/studies/${studyUid}/series/${seriesUid}/metadata`);
   const referenced = instance?.["00081115"]?.Value?.[0] as DicomJson | undefined;
   const uid = referenced && tag(referenced, "0020000E");
   if (!uid) throw new DicomWebError("not-found");

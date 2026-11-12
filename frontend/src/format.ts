@@ -27,6 +27,12 @@ export function formatDayMonth(iso: string): string {
   return formatDate(iso).slice(0, 5);
 }
 
+const plain = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 });
+
+export function formatNumber(value: number): string {
+  return plain.format(value);
+}
+
 const oneDecimal = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export function formatOneDecimal(value: number): string {
@@ -38,13 +44,6 @@ const percent = new Intl.NumberFormat("pl-PL", { style: "percent", maximumFracti
 export function formatPercent(value: number | null | undefined): string {
   if (value == null) return "—";
   return percent.format(value);
-}
-
-// seconds -> m:ss
-export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return "—";
-  const s = Math.round(seconds);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 export function formatMetric(value: number | null, unit = ""): string {
