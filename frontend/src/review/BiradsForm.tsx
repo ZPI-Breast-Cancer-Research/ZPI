@@ -1,6 +1,6 @@
+import Select from "../components/Select";
 import WarningIcon from "../components/WarningIcon";
 import { t } from "../i18n";
-import FieldSelect from "./FieldSelect";
 import { fieldLabel, FIELDS, optionLabel, type FieldKey, type Proposals } from "./fields";
 
 export type FieldState = "proposed" | "confirmed" | "corrected";
@@ -41,11 +41,11 @@ export default function BiradsForm({ proposals, values, states, onChange, onConf
               </td>
               <td>
                 {field.options ? (
-                  <FieldSelect
+                  <Select
                     id={id}
                     value={value}
                     options={field.options}
-                    proposal={proposal.value}
+                    mark={{ value: proposal.value, text: t("review.field.model") }}
                     label={(code) => optionLabel(field.key, code)}
                     onChange={(next) => onChange(field.key, next)}
                   />
