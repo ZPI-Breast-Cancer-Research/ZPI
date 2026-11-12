@@ -71,6 +71,7 @@
 | **provenance** | json | What produced the result: LLM model, prompt and schema version, OCR engine, page rotation. |
 | **created_at** | datetime | When the report was uploaded. |
 | **updated_at** | datetime | Last status change; lets a stage stuck in PROCESSING be detected. |
+| **assigned_at** | datetime | When the report was assigned to its study (at upload or later). A study can have several reports; the active one is the one assigned last. |
 
 ## 2. Orthanc PACS
 * **Linked from:** `Study.orthanc_path`

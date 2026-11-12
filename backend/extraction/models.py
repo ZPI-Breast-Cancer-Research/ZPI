@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import F
 
 class StatusChoices(models.TextChoices):
     PENDING = 'PENDING', 'Oczekujący'
@@ -8,6 +9,22 @@ class StatusChoices(models.TextChoices):
     CORRECTED = 'CORRECTED', 'Poprawiony'
     REJECTED = 'REJECTED', 'Odrzucony'
     FAILED = 'FAILED', 'Błąd'
+
+class ExtractionQuerySet(models.QuerySet):
+    """A study can have several reports; the active one is the one assigned to it last.
+
+    Not the highest id: a report uploaded earlier and assigned later (attach-existing-report)
+    is older by id but is the one the user just chose.
+    """
+
+    def oldest_assigned_first(self):
+        # rows from before assigned_at existed (NULL) count as the oldest
+        return self.order_by(F("assigned_at").asc(nulls_first=True), "id")
+
+    def active(self):
+        """The active report of the filtered rows, or None."""
+        return self.order_by(F("assigned_at").desc(nulls_last=True), "-id").first()
+
 
 class ExtractionResult(models.Model):
     """
@@ -53,6 +70,8 @@ class ExtractionResult(models.Model):
         help_text="LLM model, prompt, schema and OCR that produced the result",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # When the report was assigned to its study (at upload or later); picks the active report.
+    assigned_at = models.DateTimeField(blank=True, null=True)
     # Changes on every status change, so a stage stuck in PROCESSING can be detected.
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -65,6 +84,8 @@ class ExtractionResult(models.Model):
         related_name='accepted_extractions'
     )
     accepted_at = models.DateField(blank=True, null=True)
+
+    objects = ExtractionQuerySet.as_manager()
 
     class Meta:
         db_table = 'extraction_results'
