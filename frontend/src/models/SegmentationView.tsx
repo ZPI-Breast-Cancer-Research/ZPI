@@ -8,8 +8,10 @@ import { EmptyState } from "../components/State";
 import { formatDate, formatMetric, formatOneDecimal, formatPercent } from "../format";
 import { t, type MessageKey } from "../i18n";
 import type { ModelVersion, Proposal, SegmentationOverview, ValidationMetrics } from "./api";
+import { fetchGate } from "./api";
 import ChangeDialog from "./ChangeDialog";
 import GateList from "./GateList";
+import ProposalActions from "./ProposalActions";
 import { useModelActions } from "./useModelActions";
 
 const STATUS_CLASS: Record<ModelVersion["status"], string> = {
@@ -98,10 +100,7 @@ function trainingLine(training: Proposal["training"]): string | null {
 
 function ProposalPanel({ proposal, versions }: { proposal: Proposal; versions: ModelVersion[] }) {
   const actions = useModelActions();
-  const manages = useCan()("manageModels");
   const mine = useAuth().user?.login === proposal.author.login;
-  const [rejecting, setRejecting] = useState(false);
-  const [reason, setReason] = useState("");
   const trained = trainingLine(proposal.training);
 
   return (
@@ -125,54 +124,15 @@ function ProposalPanel({ proposal, versions }: { proposal: Proposal; versions: M
           <MetricsTable current={versions.find((v) => v.version === proposal.replaces)} next={versions.find((v) => v.version === proposal.version)} />
         </div>
       </div>
-      <div className="models__actions">
-        {manages ? (
-          rejecting ? (
-            <div className="reason">
-              <label className="field__help" htmlFor="reject-reason">
-                {t("models.reject.reason")}
-              </label>
-              <textarea id="reject-reason" className="textarea" value={reason} onChange={(event) => setReason(event.target.value)} autoFocus />
-              <div className="reason__row">
-                <button type="button" className="btn" onClick={() => setRejecting(false)}>
-                  {t("models.reject.cancel")}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={!reason.trim() || actions.reject.isPending}
-                  onClick={() => actions.reject.mutate({ version: proposal.version, reason: reason.trim() })}
-                >
-                  {t("models.reject.confirm", { v: proposal.version })}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <button type="button" className="btn" onClick={() => setRejecting(true)}>
-                {t("models.reject")}
-              </button>
-              <button
-                type="button"
-                className="btn btn--primary"
-                disabled={actions.promote.isPending || actions.rollback.isPending}
-                onClick={() => (proposal.restore ? actions.rollback : actions.promote).mutate({ version: proposal.version })}
-              >
-                {t(proposal.restore ? "models.restoreTo" : "models.promote", { v: proposal.version })}
-              </button>
-            </>
-          )
-        ) : (
-          <>
-            <span className="models__waiting">{t("models.proposal.waiting")}</span>
-            {mine && (
-              <button type="button" className="btn" disabled={actions.withdraw.isPending} onClick={() => actions.withdraw.mutate(proposal.version)}>
-                {t("models.proposal.withdraw")}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      <ProposalActions
+        name={proposal.version}
+        approveLabel={t(proposal.restore ? "models.restoreTo" : "models.promote", { v: proposal.version })}
+        mine={mine}
+        pending={actions.promote.isPending || actions.rollback.isPending || actions.reject.isPending || actions.withdraw.isPending}
+        onApprove={() => (proposal.restore ? actions.rollback : actions.promote).mutate({ version: proposal.version })}
+        onReject={(reason) => actions.reject.mutate({ version: proposal.version, reason })}
+        onWithdraw={() => actions.withdraw.mutate(proposal.version)}
+      />
     </Panel>
   );
 }
@@ -344,6 +304,29 @@ function TrainingPanel({ training }: { training: NonNullable<SegmentationOvervie
   );
 }
 
+function SegmentationChange({ version, replaces, restore, proposing, onClose }: { version: string; replaces: string; restore: boolean; proposing: boolean; onClose: () => void }) {
+  const actions = useModelActions();
+  const title = proposing
+    ? t(restore ? "models.dialog.proposeRestore" : "models.dialog.propose", { v: version, old: replaces })
+    : t(restore ? "models.dialog.restore" : "models.dialog.change", { v: version, old: replaces });
+  return (
+    <ChangeDialog
+      title={title}
+      proposing={proposing}
+      submitLabel={t(proposing ? "models.dialog.send" : restore ? "models.restore" : "models.dialog.changeButton")}
+      gate={{ key: ["segmentation", version], load: () => fetchGate(version) }}
+      pending={actions.propose.isPending || actions.promote.isPending || actions.rollback.isPending}
+      error={actions.propose.error ?? actions.promote.error ?? actions.rollback.error}
+      onSubmit={(reason, done) => {
+        const options = { onSuccess: done };
+        if (proposing) actions.propose.mutate({ version, reason, restore }, options);
+        else (restore ? actions.rollback : actions.promote).mutate({ version, reason }, options);
+      }}
+      onClose={onClose}
+    />
+  );
+}
+
 function VersionsPanel({ data }: { data: SegmentationOverview }) {
   const can = useCan();
   const manages = can("manageModels");
@@ -410,15 +393,7 @@ function VersionsPanel({ data }: { data: SegmentationOverview }) {
           {set && <p className="note">{t("models.versions.set", { set: t(`models.set.${set}`) })}</p>}
         </>
       )}
-      {change && data.inUse && (
-        <ChangeDialog
-          mode={manages ? "change" : "propose"}
-          version={change.version}
-          replaces={data.inUse.version}
-          restore={change.restore}
-          onClose={() => setChange(null)}
-        />
-      )}
+      {change && data.inUse && <SegmentationChange {...change} replaces={data.inUse.version} proposing={!manages} onClose={() => setChange(null)} />}
     </Panel>
   );
 }

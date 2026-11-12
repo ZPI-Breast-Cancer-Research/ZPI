@@ -3,43 +3,33 @@ import { useEffect, useRef, useState } from "react";
 
 import { errorText } from "../api";
 import { t } from "../i18n";
-import { fetchGate } from "./api";
+import type { GateCheck } from "./api";
 import GateList from "./GateList";
-import { useModelActions } from "./useModelActions";
 
 interface Props {
-  // a researcher proposes, an admin changes the version on their own
-  mode: "propose" | "change";
-  version: string;
-  replaces: string;
-  restore: boolean;
+  title: string;
+  // a researcher's proposal, or an admin's own change
+  proposing: boolean;
+  submitLabel: string;
+  gate: { key: unknown[]; load: () => Promise<GateCheck[] | null> };
+  pending: boolean;
+  error: unknown;
+  onSubmit: (reason: string, done: () => void) => void;
   onClose: () => void;
 }
 
-export default function ChangeDialog({ mode, version, replaces, restore, onClose }: Props) {
+export default function ChangeDialog({ title, proposing, submitLabel, gate, pending, error, onSubmit, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
-  const gate = useQuery({ queryKey: ["models", "gate", version], queryFn: () => fetchGate(version) });
-  const actions = useModelActions();
-  const proposing = mode === "propose";
-  const pending = actions.propose.isPending || actions.promote.isPending || actions.rollback.isPending;
-  const error = actions.propose.error ?? actions.promote.error ?? actions.rollback.error;
+  const checks = useQuery({ queryKey: ["models", "gate", ...gate.key], queryFn: gate.load });
 
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
 
-  const title = proposing
-    ? t(restore ? "models.dialog.proposeRestore" : "models.dialog.propose", { v: version, old: replaces })
-    : t(restore ? "models.dialog.restore" : "models.dialog.change", { v: version, old: replaces });
-
   const submit = () => {
     const text = reason.trim();
-    if (!text) return;
-    const done = { onSuccess: () => dialog.current?.close() };
-    if (proposing) actions.propose.mutate({ version, reason: text, restore }, done);
-    else if (restore) actions.rollback.mutate({ version, reason: text }, done);
-    else actions.promote.mutate({ version, reason: text }, done);
+    if (text) onSubmit(text, () => dialog.current?.close());
   };
 
   return (
@@ -53,7 +43,7 @@ export default function ChangeDialog({ mode, version, replaces, restore, onClose
       >
         <div className="model-dialog__head">{title}</div>
         <div className="model-dialog__body">
-          {gate.isPending ? <p className="models__empty">{t("models.loading")}</p> : <GateList gate={gate.data ?? null} />}
+          {checks.isPending ? <p className="models__empty">{t("models.loading")}</p> : <GateList gate={checks.data ?? null} />}
           <label className="models__label" htmlFor="change-reason">
             {t(proposing ? "models.dialog.reason" : "models.dialog.adminReason")}
           </label>
@@ -74,7 +64,7 @@ export default function ChangeDialog({ mode, version, replaces, restore, onClose
             {t("models.reject.cancel")}
           </button>
           <button type="submit" className="btn btn--primary" disabled={!reason.trim() || pending}>
-            {t(proposing ? "models.dialog.send" : restore ? "models.restore" : "models.dialog.changeButton")}
+            {submitLabel}
           </button>
         </div>
       </form>
