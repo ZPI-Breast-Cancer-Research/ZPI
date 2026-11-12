@@ -33,7 +33,7 @@ function linesOf(row: DetailRow, values: unknown[]): Line[] {
   const tag = (cells: Cell[]) => cells.map((c) => c.tag).filter((x): x is string => !!x);
   if (new Set(present.map((c) => JSON.stringify(c.value))).size === 1) {
     const cells = present.map((c) => c.cell);
-    return [{ cells, value: present[0].value, tags: tag(cells) }];
+    return [{ cells, value: present[0].value, tags: cells.length === row.cells.length && row.allTag ? [row.allTag] : tag(cells) }];
   }
   return present.map((c) => ({ cells: [c.cell], value: c.value, tags: tag([c.cell]) }));
 }
@@ -63,9 +63,9 @@ export default function ReportDetails({ title, groups, current, original, confir
             linesOf(r, values).map((line) => (
               <div key={pathKey(line.cells[0].path)} className="details__line">
                 {r.kind === "fixed" ? (
-                  <span>{formatValue(r.kind, line.value)}</span>
+                  <span className={isEmpty(line.value) ? "details__value--empty" : undefined}>{formatValue(r.kind, line.value)}</span>
                 ) : (
-                  <button type="button" className="details__value" onClick={() => setEditing(id)}>
+                  <button type="button" className={isEmpty(line.value) ? "details__value details__value--empty" : "details__value"} onClick={() => setEditing(id)}>
                     {formatValue(r.kind, line.value)}
                   </button>
                 )}

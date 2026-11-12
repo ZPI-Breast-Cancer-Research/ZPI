@@ -568,6 +568,7 @@ export const pl = {
   "detail.biradsNotHighest": "Najwyższy BI-RADS zmian to {v}.",
   "detail.linked": "Połączone przez model",
   "detail.linkedGuess": "Model uznał obserwacje z MG i USG za jedną zmianę: {why}",
+  "detail.bothBreasts": "obie",
   "detail.yes": "tak",
   "detail.no": "nie",
   "detail.type": "Typ",

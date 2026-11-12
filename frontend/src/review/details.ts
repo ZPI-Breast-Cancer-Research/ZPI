@@ -37,6 +37,8 @@ export interface DetailRow {
   cells: Cell[];
   // MG and USG should agree
   compare?: boolean;
+  // "obie" when both breasts agree
+  allTag?: string;
   // a warning, from the report as it reads now
   check?: (current: Extraction) => string | null;
 }
@@ -125,7 +127,8 @@ export function caseGroups(data: Extraction): DetailGroup[] {
     key,
     label: label(key),
     kind,
-    cells: (["lewa", "prawa"] as const).map((side) => ({ tag: t(`field.side.${SIDES[side]}` as MessageKey), path: ["piersi", side, ...field] })),
+    cells: (["lewa", "prawa"] as const).map((side) => ({ tag: t(`field.side.${SIDES[side]}` as MessageKey).toLowerCase(), path: ["piersi", side, ...field] })),
+    allTag: t("detail.bothBreasts"),
   });
   return [
     { key: "study", title: null, rows: [single("modalities", ["modalnosci"], "fixed")] },
@@ -144,7 +147,7 @@ export function caseGroups(data: Extraction): DetailGroup[] {
     },
     ...data.wezly.map((node, i) => ({
       key: `node${i}`,
-      title: [label("node"), node.okolica, t(`field.side.${SIDES[node.strona]}` as MessageKey), modality(node.modalnosc)].join(" · "),
+      title: [label("node"), node.okolica, t(`field.side.${SIDES[node.strona]}` as MessageKey).toLowerCase(), modality(node.modalnosc)].join(" · "),
       rows: [
         single("pathological", ["wezly", i, "patologiczne"], "bool"),
         single("count", ["wezly", i, "liczba"], WIRE_COUNTS),
