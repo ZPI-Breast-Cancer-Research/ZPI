@@ -51,6 +51,8 @@ export interface GateCheck {
   value: number | null;
   baseline: number | null;
   studyNumber: string | null;
+  // the form field a rule points at, for extraction
+  field?: string | null;
   passed: boolean | null;
 }
 
@@ -170,13 +172,6 @@ function fromOld(old: OldOverview): SegmentationOverview {
       };
     }),
   };
-}
-
-export interface ExtractionOverview {
-  version: string | null;
-  since: string | null;
-  fields: { field: string; f1: number | null; correctedShare: number | null }[];
-  examplePool: number;
 }
 
 const KOWALSKA: Person = { login: "j.kowalska", name: "J. Kowalska" };
@@ -330,27 +325,6 @@ export async function fetchSegmentation(): Promise<SegmentationOverview> {
 export async function fetchGate(version: string): Promise<GateCheck[] | null> {
   if (MOCK_API) return mockDelay(version === "1.2.0" ? GATE : null);
   const { data } = await api.get<GateCheck[] | null>(`/api/models/${version}/gate/`);
-  return data;
-}
-
-export async function fetchExtraction(): Promise<ExtractionOverview> {
-  if (MOCK_API) {
-    return mockDelay({
-      version: "3",
-      since: "2026-09-20",
-      examplePool: 46,
-      fields: [
-        { field: "BI-RADS", f1: null, correctedShare: 0.06 },
-        { field: "Lokalizacja", f1: null, correctedShare: 0.09 },
-        { field: "Wymiar", f1: null, correctedShare: 0.12 },
-        { field: "Kształt", f1: null, correctedShare: 0.14 },
-        { field: "Brzegi", f1: null, correctedShare: 0.27 },
-        { field: "Krzywa", f1: null, correctedShare: 0.11 },
-      ],
-    });
-  }
-
-  const { data } = await api.get<ExtractionOverview>("/api/models/extraction/");
   return data;
 }
 

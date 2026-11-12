@@ -7,17 +7,19 @@ import { ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
 import ExtractionView from "../models/ExtractionView";
 import SegmentationView from "../models/SegmentationView";
-import { fetchExtraction, fetchSegmentation } from "../models/api";
+import { fetchSegmentation } from "../models/api";
+import { fetchExtraction } from "../models/extraction";
 import "../models/models.css";
 
 export default function ModelsPage({ module }: { module: "segmentation" | "extraction" }) {
   const { search } = useLocation();
 
-  // segmentation always loads, its tab says when a version waits for a decision
+  // both always load, a tab says when a version waits for a decision
   const segmentation = useQuery({ queryKey: ["models", "segmentation", search], queryFn: fetchSegmentation });
-  const extraction = useQuery({ queryKey: ["models", "extraction"], queryFn: fetchExtraction, enabled: module === "extraction" });
+  const extraction = useQuery({ queryKey: ["models", "extraction", search], queryFn: fetchExtraction });
   const query = module === "segmentation" ? segmentation : extraction;
   const seg = segmentation.data;
+  const ext = extraction.data;
 
   // a tab speaks only when its model needs attention; the panels below give the details
   const segState = seg?.proposal ? (
@@ -27,6 +29,11 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
   ) : seg?.versions.some((v) => v.status === "new") ? (
     <span className="tabs__state">{t("models.tab.new")}</span>
   ) : null;
+  const extState = ext?.proposal ? (
+    <span className="tabs__state tabs__state--waiting">{t("models.tab.waiting")}</span>
+  ) : [...(ext?.models ?? []), ...(ext?.fewShots ?? [])].some((v) => v.status === "new") ? (
+    <span className="tabs__state">{t("models.tab.new")}</span>
+  ) : null;
 
   const tabs = (
     <nav className="tabs" aria-label={t("models.module")}>
@@ -34,7 +41,10 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
         {t("models.segmentation")}
         {segState}
       </NavLink>
-      <NavLink to={`/modele/ekstrakcja${search}`}>{t("models.extraction")}</NavLink>
+      <NavLink to={`/modele/ekstrakcja${search}`}>
+        {t("models.extraction")}
+        {extState}
+      </NavLink>
     </nav>
   );
 
