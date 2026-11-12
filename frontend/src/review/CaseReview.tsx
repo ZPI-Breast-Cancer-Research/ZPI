@@ -17,6 +17,7 @@ import ViewerToolRail from "../viewer/ViewerToolRail";
 import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
 import { approveCase, approveForm, approveMask, reopenCase, type FieldAnswers, type FormPayload, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
+import { applyDetails, caseGroups, getAt, lesionRows, NO_DETAILS, pathKey, type Details, type Path } from "./details";
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
@@ -25,6 +26,7 @@ import { fromExtraction } from "./report";
 import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
 import ReportOriginal, { scanOf } from "./ReportOriginal";
+import ReportDetails from "./ReportDetails";
 import ReportPreview from "./ReportPreview";
 
 type States = Partial<Record<FieldKey, FieldState>>;
@@ -97,6 +99,7 @@ export default function CaseReview({ data, queue }: Props) {
   const [values, setValues] = useState<Record<number, Values>>(fresh);
   const [states, setStates] = useState<Record<number, States>>({});
   const keysOf = (id: number) => keysFor(proposals[id] ?? {}, values[id] ?? {});
+  const [details, setDetails] = useState<Details>(NO_DETAILS);
   const [showOriginal, setShowOriginal] = useState(false);
   const originalOpen = useRef(false);
   originalOpen.current = showOriginal;
@@ -139,6 +142,24 @@ export default function CaseReview({ data, queue }: Props) {
   const complete = lesions.filter((l) => keysOf(l.id).length && !openOf(l.id).length).map((l) => l.id);
   const index = lesions.findIndex((l) => l.id === current);
 
+  const answered = (ids: number[]) => Object.fromEntries(ids.map((id) => [id, { proposals: proposals[id], values: values[id] ?? {} }]));
+  // the report as it reads now, for the details under the form
+  const currentReport = extraction ? applyDetails(applyAnswers(extraction, answered(lesions.map((l) => l.id))), details.edits) : null;
+  const editDetail = (path: Path, value: unknown) => {
+    if (!extraction) return;
+    touch();
+    const key = pathKey(path);
+    setDetails((d) => {
+      const edits = { ...d.edits, [key]: value };
+      if (JSON.stringify(getAt(extraction, path) ?? null) === JSON.stringify(value ?? null)) delete edits[key];
+      return { ...d, edits };
+    });
+  };
+  const agree = (section: string, yes: boolean) => {
+    touch();
+    setDetails((d) => ({ ...d, agreed: yes ? [...d.agreed, section] : d.agreed.filter((s) => s !== section) }));
+  };
+
   // only fully confirmed lesions go out
   const formPayload = useRef<() => FormPayload | undefined>(() => undefined);
   formPayload.current = () => {
@@ -148,7 +169,7 @@ export default function CaseReview({ data, queue }: Props) {
         keysOf(id).map((key) => [key, { value: values[id]?.[key] ?? "", state: states[id]?.[key] === "corrected" ? "corrected" : "confirmed" }]),
       );
     return {
-      report: applyAnswers(extraction, Object.fromEntries(complete.map((id) => [id, { proposals: proposals[id], values: values[id] ?? {} }]))),
+      report: applyDetails(applyAnswers(extraction, answered(complete)), details.edits),
       lesions: Object.fromEntries(complete.map((id) => [id, answers(id)])),
     };
   };
@@ -196,12 +217,14 @@ export default function CaseReview({ data, queue }: Props) {
 
   // confirming another lesion later sends the form again
   const sentFor = useRef<string | null>(null);
-  const completeKey = complete.join(",");
+  // edits in the details after that send it again too
+  const completeKey = `${complete.join(",")}|${JSON.stringify(details)}`;
   // back to the model's proposals, every lesion
   function unconfirmForm() {
     touch();
     setValues(fresh());
     setStates({});
+    setDetails(NO_DETAILS);
     sentFor.current = null;
     unapproveForm(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
   }
@@ -301,6 +324,7 @@ export default function CaseReview({ data, queue }: Props) {
         const form = draft.form;
         setValues((v) => ({ ...v, ...form.values }));
         setStates(form.states);
+        setDetails(form.details ?? NO_DETAILS);
       }
       pendingPatch.current = draft.mask;
       setRestoredAt(draft.savedAt);
@@ -324,21 +348,23 @@ export default function CaseReview({ data, queue }: Props) {
     const timer = window.setTimeout(async () => {
       // an approved mask is saved for real, so the draft keeps only the form
       const patch = locked ? null : (mask.viewer.current?.getPatch() ?? null);
-      if (!patch && Object.values(states).every((s) => !Object.keys(s ?? {}).length)) {
+      const formLeft = Object.values(states).some((s) => Object.keys(s ?? {}).length) || Object.keys(details.edits).length || details.agreed.length;
+      if (!patch && !formLeft) {
         await deleteDraft(data.studyId);
         setSavedAt(null);
       } else {
-        setSavedAt(await saveDraft(data.studyId, { form: { values, states }, mask: patch }));
+        setSavedAt(await saveDraft(data.studyId, { form: { values, states, details }, mask: patch }));
       }
       setRestoredAt(null);
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [data.studyId, values, states, maskInfo, mask.viewer, locked]);
+  }, [data.studyId, values, states, details, maskInfo, mask.viewer, locked]);
 
   function discardDraft() {
     deleteDraft(data.studyId);
     setValues(fresh());
     setStates({});
+    setDetails(NO_DETAILS);
     mask.restoreModel();
     touched.current = false;
     setRestoredAt(null);
@@ -558,6 +584,33 @@ export default function CaseReview({ data, queue }: Props) {
                       onConfirm={confirm}
                       // with one lesion the mask can only be that one
                       maskSizeMm={lesions.length === 1 ? maskInfo?.sizeMm : null}
+                    />
+                  )}
+                  {extraction && currentReport && current !== null && (
+                    <ReportDetails
+                      title={t("detail.fromReport")}
+                      groups={[{ key: "lesion", title: null, rows: lesionRows(extraction, index) }]}
+                      current={currentReport}
+                      original={extraction}
+                      confirmed={details.agreed.includes(`lesion:${current}`)}
+                      linkWarning={
+                        extraction.zmiany[index].polaczenie_obserwacji?.pewne === false
+                          ? t("detail.linkedGuess", { why: extraction.zmiany[index].polaczenie_obserwacji?.powod ?? "—" })
+                          : null
+                      }
+                      onEdit={editDetail}
+                      onConfirm={(yes) => agree(`lesion:${current}`, yes)}
+                    />
+                  )}
+                  {extraction && currentReport && (
+                    <ReportDetails
+                      title={t("detail.wholeStudy")}
+                      groups={caseGroups(extraction)}
+                      current={currentReport}
+                      original={extraction}
+                      confirmed={details.agreed.includes("case")}
+                      onEdit={editDetail}
+                      onConfirm={(yes) => agree("case", yes)}
                     />
                   )}
                 </div>

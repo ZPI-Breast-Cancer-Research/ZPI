@@ -1,6 +1,7 @@
 import { toIsoDate } from "../format";
 import type { MaskPatch } from "../viewer/maskTools";
 import type { FieldState } from "./BiradsForm";
+import type { Details } from "./details";
 import type { FieldKey } from "./fields";
 
 // work on a case that is not approved yet, kept so leaving and coming back loses nothing
@@ -11,6 +12,8 @@ export interface Draft {
   form?: {
     values: Record<number, Partial<Record<FieldKey, string>>>;
     states: Record<number, Partial<Record<FieldKey, FieldState>>>;
+    // older drafts don't have it either
+    details?: Details;
   };
   mask: MaskPatch | null;
 }

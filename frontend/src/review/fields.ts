@@ -83,8 +83,8 @@ export function keysFor(proposals: Proposals, values: Values): FieldKey[] {
 }
 
 const modality = (o: Observation) => t(`modality.${o.modality}`);
-const measureText = (m: Measure) => `${formatNumber(m.value)} ${m.unit}`;
-const sizeText = (s: Size) => t(`report.size.${s.qualifier}`, { v: s.values.map(formatNumber).join("×"), unit: s.unit });
+export const measureText = (m: Measure) => `${formatNumber(m.value)} ${m.unit}`;
+export const sizeText = (s: Size) => t(`report.size.${s.qualifier}`, { v: s.values.map(formatNumber).join("×"), unit: s.unit });
 const round = (n: number) => String(Math.round(n * 10) / 10);
 
 // exact before "about", then the larger one

@@ -120,18 +120,18 @@ export function lesionType(type: string | null): LesionType | null {
 }
 
 const toBiRads = (value: WireBiRads | null) => (value ? (value.toUpperCase() as BiRads) : null);
-const size = (s: WireSize | null): Size | null => (s ? { values: s.wartosci, unit: s.jednostka, qualifier: QUALIFIERS[s.kwalifikator] } : null);
-const measure = (m: { wartosc: number; jednostka: WireUnit } | null): Measure | null => (m ? { value: m.wartosc, unit: m.jednostka } : null);
+export const sizeOfWire = (s: WireSize | null): Size | null => (s ? { values: s.wartosci, unit: s.jednostka, qualifier: QUALIFIERS[s.kwalifikator] } : null);
+export const measureOfWire = (m: { wartosc: number; jednostka: WireUnit } | null): Measure | null => (m ? { value: m.wartosc, unit: m.jednostka } : null);
 
 function observation(o: WireObservation): Observation {
   return {
     modality: MODALITIES[o.modalnosc],
     places: o.lokalizacje,
     clock: o.godzina,
-    fromNipple: measure(o.odleglosc_od_brodawki),
+    fromNipple: measureOfWire(o.odleglosc_od_brodawki),
     type: o.typ,
-    size: size(o.wymiary),
-    depth: measure(o.glebokosc),
+    size: sizeOfWire(o.wymiary),
+    depth: measureOfWire(o.glebokosc),
     shape: o.ksztalt ? SHAPES[o.ksztalt] : null,
     margin: o.brzeg ? MARGINS[o.brzeg] : null,
     echo: o.echogenicznosc ? ECHOES[o.echogenicznosc] : null,

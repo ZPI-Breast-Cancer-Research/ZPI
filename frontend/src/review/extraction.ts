@@ -10,6 +10,17 @@ export type WireShape = "okrągły" | "owalny" | "nieregularny";
 export type WireMargin = "obwiedziony" | "nieostry" | "zatarty" | "mikropłatowaty" | "kątowy" | "spikularny";
 export type WireEcho = "bezechowa" | "hipoechogeniczna" | "izoechogeniczna" | "hiperechogeniczna" | "złożona";
 export type WireHomogeneity = "jednorodna" | "niejednorodna";
+export type WireCount = "pojedynczy" | "mnogie";
+
+// the same values as lists, for picking one
+export const WIRE_BIRADS = ["0", "1", "2", "3", "4", "4a", "4b", "4c", "5", "6"] as const satisfies readonly WireBiRads[];
+export const WIRE_UNITS = ["mm", "cm"] as const satisfies readonly WireUnit[];
+export const WIRE_QUALIFIERS = ["dokładny", "około", "do"] as const satisfies readonly WireQualifier[];
+export const WIRE_SHAPES = ["owalny", "okrągły", "nieregularny"] as const satisfies readonly WireShape[];
+export const WIRE_MARGINS = ["obwiedziony", "nieostry", "zatarty", "mikropłatowaty", "kątowy", "spikularny"] as const satisfies readonly WireMargin[];
+export const WIRE_ECHOES = ["bezechowa", "hipoechogeniczna", "izoechogeniczna", "hiperechogeniczna", "złożona"] as const satisfies readonly WireEcho[];
+export const WIRE_HOMOGENEITY = ["jednorodna", "niejednorodna"] as const satisfies readonly WireHomogeneity[];
+export const WIRE_COUNTS = ["pojedynczy", "mnogie"] as const satisfies readonly WireCount[];
 
 export interface WireMeasure {
   wartosc: number;
@@ -60,7 +71,7 @@ export interface WireNode {
   modalnosc: WireModality;
   strona: WireSide;
   okolica: string;
-  liczba: "pojedynczy" | "mnogie" | null;
+  liczba: WireCount | null;
   wymiary: WireSize | null;
   patologiczne: boolean | null;
   uwagi: string | null;
