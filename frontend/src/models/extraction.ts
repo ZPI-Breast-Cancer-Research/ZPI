@@ -111,7 +111,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 const FIELDS_NOW = { side: 0.96, birads: 0.58, clock: 0.79, size: 0.88, shape: 0.71, margin: 0.67, echo: 0.75 };
 const FIELDS_V7 = { side: 0.96, birads: 0.83, clock: 0.79, size: 0.92, shape: 0.71, margin: 0.65, echo: 0.75 };
-const CORRECTED = { side: 0.02, birads: 0.22, location: 0.09, size: 0.12, shape: 0.14, margin: 0.27, echo: 0.11 };
+const CORRECTED = { side: 0.02, birads: 0.22, clock: 0.09, size: 0.12, shape: 0.14, margin: 0.27, echo: 0.11 };
 
 function fewShotProposal(author: Proposal["author"]): ExtractionProposal {
   return {
