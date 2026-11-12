@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.conf import settings
+from django.utils import timezone
 
 from mlops.mlflow_client import MlflowClient
 from patients.orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
@@ -86,7 +87,7 @@ def health(request):
     ]
 
     body = {
-        "checkedAt": timezone.now().isoformat() if 'timezone' in globals() else datetime.utcnow().isoformat() + "Z",
+        "checkedAt": timezone.now().isoformat(),
         "components": components,
         "profile": getattr(settings, "SYSTEM_PROFILE", "gpu1"),
         "retraining": getattr(settings, "RETRAIN_ENABLED", True),

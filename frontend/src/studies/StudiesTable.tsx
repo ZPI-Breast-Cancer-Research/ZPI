@@ -42,7 +42,8 @@ const REPORT_CLASS: Record<ReportStatus, string> = {
   error: "status status--warning",
   ready: "status",
   to_review: "status",
-  verified: "status status--confirmed",
+  verified_unchanged: "status status--confirmed",
+  verified_corrected: "status status--corrected",
 };
 
 export function parseFilter(value: string | null): Filter {

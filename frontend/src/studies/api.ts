@@ -14,7 +14,7 @@ export type ImageStatus =
   | "verified_unchanged"
   | "verified_corrected";
 
-export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified";
+export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified_unchanged" |"verified_corrected";;
 
 export interface Study {
   orthanc_id: string;
@@ -118,8 +118,8 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   PENDING: "extracting",
   PROCESSING: "extracting",
   COMPLETED: "to_review",
-  APPROVED: "verified",
-  CORRECTED: "verified",
+  APPROVED: "verified_unchanged",
+  CORRECTED: "verified_corrected",
   REJECTED: "to_review",
   FAILED: "error",
   missing: "missing",

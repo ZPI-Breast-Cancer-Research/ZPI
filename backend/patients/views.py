@@ -26,6 +26,7 @@ from audit.utils import record_audit
 from .models import Study
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
 
+import json
 logger = logging.getLogger(__name__)
 
 # The list and the dashboard both ask Orthanc for the same thing; a few seconds of cache is enough.
@@ -244,6 +245,10 @@ def study_list(request):
                 "uncertainty": _pick_uncertainty(segmentation, extraction),
             }
         )
+    logger.warning(
+        "OVERVIEW REPORT: %s",
+        json.dumps(response_data, ensure_ascii=False, default=str)
+    )
 
     return Response(response_data)
 
@@ -378,7 +383,7 @@ def attach_existing_report(request, orthanc_id):
             object=str(orthanc_id),
             detail=f"Dołączono nowy plik raportu: {report_id}"
     )
-    
+
     return Response({"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK)
 
 
