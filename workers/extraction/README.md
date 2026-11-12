@@ -186,6 +186,36 @@ experiment. The reasoning (hypothesis → result → decision) goes into
 `notebook/02_extraction_experiments.ipynb` plots the history (needs `matplotlib` and `jupyter` –
 the `dev` dependency group).
 
+### Synthetic reports
+
+`data/synthetic/` (git-ignored) holds made-up reports in the layout of `data/ground_truth`:
+`<name>.json` gold and `text/<name>.txt` with a fictional header and footer. They are written in
+the clinic's style but describe no patient. `render` turns them into images that look like phone
+photos of printouts, so the whole pipeline (orientation, OCR, LLM) can be tested on them:
+
+```powershell
+python -m workers.extraction render data/synthetic/text --out-dir data/synthetic/images --seed 0
+python -m workers.extraction run data/synthetic/images --out data/eval/runs/synthetic.jsonl
+python -m workers.extraction eval data/eval/runs/synthetic.jsonl --gold data/synthetic
+```
+
+Each image gets its own mix, picked from the seed and saved in `images/render.json`:
+- `level`: 0 is a clean scan; 1 and 2 are photos of the page on a squared-paper desk, with
+  perspective, tilt, uneven light, blur, noise and JPEG artefacts, stronger at 2;
+- `rotation`: 0, 90, 180 or 270°, for the orientation detector;
+- `marks`: red or blue pen notes over the text (a bracket in the margin, dates and roman
+  numerals next to the conclusion, a circled number), which OCR tends to read in;
+- `crop`: the photo starts at „Opis badania:”, without the header.
+
+`--level` with `--rotation`, `--marks` and `--crop` renders all images the same way, e.g. one
+folder per level to see how scores fall as photos get worse. Rendering needs `matplotlib` (for
+its DejaVu fonts) and `numpy`.
+
+Synthetic reports were written by a language model, so they are likely easier than real ones.
+Use them for broad checks (does a change break a kind of report, how OCR copes with bad photos)
+and keep the headline scores on `data/ground_truth`. Never copy them into `data/ground_truth` or
+the few-shot examples.
+
 ## Configuration
 
 Environment variables; the CLI flags `--ocr`, `--orientation`, `--base-url`, `--model`, `--few-shot` and
@@ -241,6 +271,7 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” and the footer („Wykonał/a:”, „Opis:”) |
 | `matching.py` | fuzzy text matching tolerant to OCR noise, case and diacritics: `fold`, `quote_similarity`, `text_similarity`; shared by checks and evaluation |
 | `structuring/` | report text → structured data: `prompting.py` + `prompts/` prompt, field list generated from the schema, few-shot examples; `parsing.py` JSON extraction from the answer + schema validation (one retry with feedback); `checks.py` warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions; `uncertainty.py` uncertainty of a result from its error, warnings, OCR confidence and retries |
+| `datagen/` | synthetic test data: `render.py` report text → image like a phone photo of a printout (`render`), with levels of difficulty, rotation, pen marks and cropping; never used by the worker |
 | `evaluation/` | scoring predictions against gold files (`eval`): `scoring.py` `evaluate` – which documents are scored (skipped, few-shot leak) and run-level data; `comparison.py` `Comparison` of one document – entity matching, per-field comparison; `scores.py` counters and metrics of one field (`FieldScore`), entity type (`EntityScore`) or OCR text (`OCRScore`: character error rate against the transcripts); `report.py` `Report` – all scores of a run, summary, JSON export; `loading.py` gold, transcript and prediction files; `formatting.py` text tables of a report and of the experiment history; `tracking.py` experiment history – records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
 | `experiments/` | experiment records (`runs/`) and journal `EXPERIMENTS.md` |
 | `__main__.py` | CLI |

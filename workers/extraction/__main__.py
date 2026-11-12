@@ -78,6 +78,29 @@ def cmd_ocr(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def cmd_render(args: argparse.Namespace, settings: Settings) -> int:
+    from .datagen import RenderOptions, render_directory
+
+    options = None
+    if args.level is not None:
+        options = RenderOptions(
+            level=args.level,
+            rotation=args.rotation,
+            marks=args.marks,
+            crop=args.crop,
+            seed=args.seed,
+        )
+    manifest = render_directory(args.input, args.out_dir, seed=args.seed, options=options)
+    for item in manifest:
+        print(
+            f"{item['image']}: level {item['level']}, rotation {item['rotation']}°, "
+            f"marks {'yes' if item['marks'] else 'no'}, crop {'yes' if item['crop'] else 'no'}",
+            file=sys.stderr,
+        )
+    print(f"{len(manifest)} images in {args.out_dir} (options in render.json)", file=sys.stderr)
+    return 0
+
+
 def cmd_extract(args: argparse.Namespace, settings: Settings) -> int:
     text = args.input.read_text(encoding="utf-8")
     result = _extractor(settings).extract_text(text, source=args.input.name)
@@ -290,6 +313,29 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", type=Path, help="image, or directory of images / page folders")
     p.add_argument("--out-dir", type=Path, help="also save each text as <name>.txt here")
     p.set_defaults(handler=cmd_ocr)
+
+    p = sub.add_parser(
+        "render", help="images of report texts, like phone photos (synthetic test data)"
+    )
+    p.add_argument("input", type=Path, help="directory of <name>.txt reports")
+    p.add_argument("--out-dir", type=Path, required=True, help="where <name>.jpg go")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--level",
+        type=int,
+        choices=(0, 1, 2),
+        help="0 clean scan, 1 decent photo, 2 poor photo; default: a random mix per report",
+    )
+    p.add_argument(
+        "--rotation",
+        type=int,
+        choices=(0, 90, 180, 270),
+        default=0,
+        help="with --level: page rotation",
+    )
+    p.add_argument("--marks", action="store_true", help="with --level: pen marks")
+    p.add_argument("--crop", action="store_true", help="with --level: no header in the frame")
+    p.set_defaults(handler=cmd_render)
 
     p = sub.add_parser("extract", parents=[common], help="LLM only: extract from a .txt file")
     p.add_argument("input", type=Path)
