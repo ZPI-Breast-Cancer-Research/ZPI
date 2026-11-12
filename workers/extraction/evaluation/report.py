@@ -3,7 +3,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .scores import EntityScore, FieldScore, OCRScore
+from .scores import EntityScore, FieldScore, OCRScore, UncertaintyScore
 
 SUMMARY_GROUPS = (
     "piersi",
@@ -24,6 +24,7 @@ class Report:
     entities: dict[str, EntityScore] = field(default_factory=dict)
     fields: dict[str, FieldScore] = field(default_factory=dict)
     ocr: OCRScore = field(default_factory=OCRScore)
+    uncertainty: UncertaintyScore = field(default_factory=UncertaintyScore)
 
     def field_score(self, name: str) -> FieldScore:
         return self.fields.setdefault(name, FieldScore())
@@ -55,6 +56,7 @@ class Report:
         summary["wniosek_birads_accuracy"] = birads.accuracy if birads else None
         summary["ocr_cer"] = self.ocr.mean
         summary["ocr_bow_wer"] = self.ocr.words_mean
+        summary["uncertainty_rho"] = self.uncertainty.rho()
         return summary
 
     def to_dict(self) -> dict[str, Any]:
@@ -74,4 +76,17 @@ class Report:
             "fields": scores(self.fields, ("n", "accuracy", "precision", "recall", "f1")),
             "ocr_cer": {"mean": self.ocr.mean, "documents": self.ocr.documents},
             "ocr_bow_wer": {"mean": self.ocr.words_mean, "documents": self.ocr.words},
+            "uncertainty": {
+                "rho": self.uncertainty.rho(),
+                "component_rho": self.uncertainty.component_rho(),
+                "top_k_hits": self.uncertainty.top_k_hits(),
+                "documents": {
+                    key: {
+                        "uncertainty": self.uncertainty.uncertainty[key],
+                        "components": self.uncertainty.components[key],
+                        "error_rate": self.uncertainty.errors[key],
+                    }
+                    for key in sorted(self.uncertainty.errors)
+                },
+            },
         }

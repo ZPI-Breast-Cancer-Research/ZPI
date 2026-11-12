@@ -45,9 +45,10 @@ def evaluate(
         if result.status != "ok" or result.data is None:
             # A failed document counts as nothing found.
             report.errors.append(key)
-            comparison.document(gold[key], EkstrakcjaBadania(modalnosci=[]))
+            doc = comparison.document(gold[key], EkstrakcjaBadania(modalnosci=[]))
         else:
-            comparison.document(gold[key], result.data)
+            doc = comparison.document(gold[key], result.data)
+        report.uncertainty.add(key, result.uncertainty, result.uncertainty_components, doc)
     return report
 
 

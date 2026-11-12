@@ -82,7 +82,8 @@ def _start(extraction_id: int) -> bool:
         row.error = ""
         # a retry must not show the previous attempt's result while it runs
         row.result = None
-        row.save(update_fields=["status", "model", "error", "result", "updated_at"])
+        row.uncertainty = None
+        row.save(update_fields=["status", "model", "error", "result", "uncertainty", "updated_at"])
     return True
 
 
@@ -112,6 +113,8 @@ def _save(extraction_id: int, result: ExtractionResult, dumped: dict) -> None:
         "result": dumped,
         "provenance": dumped["provenance"],
         "warnings": result.warnings,
+        # the column the review queue sorts by
+        "uncertainty": result.uncertainty,
     }
     if result.status == "ok" and result.data is not None:
         fields |= {
@@ -125,7 +128,10 @@ def _save(extraction_id: int, result: ExtractionResult, dumped: dict) -> None:
 
 
 def _save_failure(extraction_id: int, reason: str) -> None:
-    _update_processing(extraction_id, {"status": StatusChoices.FAILED, "error": reason})
+    # no result to judge, so the doctor must look at it: maximum uncertainty
+    _update_processing(
+        extraction_id, {"status": StatusChoices.FAILED, "error": reason, "uncertainty": 1.0}
+    )
 
 
 def _update_processing(extraction_id: int, fields: dict) -> None:
