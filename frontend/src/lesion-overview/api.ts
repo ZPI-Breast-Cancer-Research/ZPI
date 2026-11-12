@@ -1,11 +1,8 @@
 import { api, handleApiError } from "../api";
 import { mockDelay, mockScenario, mockStudyUid, MOCK_API } from "../mock";
-import type { FieldKey } from "../review/fields";
 import type { SegRef } from "../viewer/types";
-import {api, handleApiError} from "../api"
 import type { FieldAnswers } from "../review/api";
 import { isCaseReport, type CaseReport, type Extraction } from "../review/extraction";
-import type { MaskSource } from "../viewer/types";
 
 export interface OverviewReport {
   source: CaseReport;

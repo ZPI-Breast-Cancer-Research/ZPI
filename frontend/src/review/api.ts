@@ -28,16 +28,11 @@ export interface ReviewCase {
   segmentationVersion: string;
   extractionVersion: string | null;
   studyUid: string | null;
-  studyUid: string | null;
   mask: SegRef | null;
   report: CaseReport | null;
   reportPending: boolean;
   segmentation: SegmentationInfo | null;
   measurements: { volume: number | null; size: number | null; sizeInReport: number | null };
-  // the mask was approved on its own; the case still waits for the form
-  maskApproved: "confirmed" | "corrected" | null;
-}
-measurements: { volume: number | null; size: number | null; sizeInReport: number | null };
   // the mask was approved on its own; the case still waits for the form
   maskApproved: "confirmed" | "corrected" | null;
 }

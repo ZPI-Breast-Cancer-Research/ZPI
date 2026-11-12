@@ -56,9 +56,9 @@ interface Props {
   // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline;
   // null starts from an empty labelmap
   mask: SegRef | null;
-  modelMask?: SegRef | null
+  modelMask?: SegRef | null;
   // the series the model read; without them we guess by name
-  roles?: { pre: string | null; post1: string | null; post2: string | null } | nu
+  roles?: { pre: string | null; post1: string | null; post2: string | null } | null;
   series: Series;
   maskState: MaskState;
   showMask: boolean;
