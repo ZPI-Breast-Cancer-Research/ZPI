@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
@@ -21,7 +22,7 @@ from common.storage import BUCKET_REPORTS, get_bytes
 logger = logging.getLogger(__name__)
 
 VERIFIED = (StatusChoices.APPROVED, StatusChoices.CORRECTED)
-REPORT_FIELDS = ["birads", "location", "size", "shape", "margin", "curve"]
+REPORT_FIELDS = ["birads", "location", "size", "shape", "margin", "curve"] 
 BIRADS_ORDER = ["0", "1", "2", "3", "4", "4a", "4b", "4c", "5", "6"]
 
 LOCATION_VALUES = {
@@ -54,29 +55,20 @@ def _option(mapping: dict, raw) -> str:
 
 
 def _size_value(wymiary) -> str | None:
-    """Sama liczba (pole ma osobną jednostkę); kwalifikator „około/do” się gubi."""
+    """Samo liczba (pole ma osobną jednostkę); kwalifikator „około/do” się gubi."""
     if not wymiary or not wymiary.get("wartosci"):
         return None
     return f"{max(wymiary['wartosci']):g}"
 
 
 def _dicom_date(value):
-    """DICOM YYYYMMDD -> ISO date, or None when the date is unknown."""
-    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
-
-
-def _uncertainty(segmentation, extraction) -> float | None:
-    for result in (segmentation, extraction):
-        if result is not None and result.uncertainty is not None:
-            return float(result.uncertainty)
-    return None
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else ""
 
 
 def _user_name(user):
     if not user:
         return ""
     return f"{user.first_name} {user.last_name}".strip() or user.username
-
 
 def _unwrap_extraction(report):
     if not isinstance(report, dict):
@@ -183,9 +175,9 @@ def _ui_value(field: str, value):
 
     return mapping.get(value.lower(), reverse_mapping.get(value.lower(), value))
 
-
 def _fields_from_schema(report: dict) -> dict:
     """Polski schemat ekstrakcji -> wartości zgodne z formularzem frontendu."""
+
     report = _unwrap_extraction(report)
     lesion = _main_lesion(report)
     fields = {}
@@ -222,7 +214,6 @@ def _fields_from_schema(report: dict) -> dict:
         fields["margin"] = _ui_value("margin", obs["brzeg"])
 
     return fields
-
 
 def _as_fields(report) -> dict:
     if not isinstance(report, dict):
@@ -286,7 +277,7 @@ def report_scan(request, study_id):
 
 
 def _answers(extraction) -> dict:
-    """FieldAnswers: {field: {"value", "state"}}; corrected when it differs from the LLM proposal."""
+    """FieldAnswers: {field: {"value", "state"}}; 'corrected' gdy różni się od propozycji LLM."""
     accepted = _as_fields(extraction.accepted_report)
     generated = _as_fields(extraction.generated_report)
     return {
@@ -299,143 +290,76 @@ def _answers(extraction) -> dict:
     }
 
 
-def _report_payload(extraction, study_id=None):
-    """Return the report shape expected by the review screens."""
-    if extraction is None:
-        return None
-
-    result = extraction.result
-    if result is None and extraction.status == StatusChoices.FAILED:
-        result = _failed_result(extraction)  # failed before the pipeline ran, e.g. download
-    if result is None:
-        return "pending"
-
-    # Prefer the DB result, but preserve the legacy MinIO scan preview when its key is present.
-    original_url = None
-    if study_id and extraction.report_path:
-        stored_report = _load_case_report(extraction, study_id)
-        if stored_report:
-            original_url = stored_report.get("originalUrl")
-    return {"originalUrl": original_url, "result": result}
-
-
-def _failed_result(extraction) -> dict:
-    """A worker result for a report that failed before extraction, so the screen shows the error."""
-    return {
-        "source": "",
-        "status": "error",
-        "data": None,
-        "error": extraction.error or "unknown error",
-        "warnings": [],
-        "text": "",
-        "provenance": {
-            "ocr_engine": None,
-            "ocr_engine_version": None,
-            "ocr_mean_confidence": None,
-            "orientation_detector": None,
-            "page_rotations": [],
-            "llm_provider": "",
-            "llm_model": "",
-            "prompt_version": "",
-            "schema_version": "",
-        },
-        "attempts": 0,
-        "ocr_seconds": None,
-        "llm_seconds": None,
-        "created_at": extraction.updated_at.isoformat() if extraction.updated_at else "",
-    }
-
-
-def _overview_report(extraction, study_id=None):
-    """{source, accepted, lesions} of an approved form, as read by lesion-overview/api.ts."""
+def _overview_report(extraction, answers, study_id):
     if extraction is None or not extraction.accepted_report:
         return None
-    return {
-        "source": _report_payload(extraction, study_id),
-        "accepted": extraction.accepted_report,
-        "lesions": extraction.lesion_answers or {},
-    }
 
-
-def _is_corrected(lesions) -> bool:
-    if not isinstance(lesions, dict):
-        return False
-    return any(
-        isinstance(answer, dict) and answer.get("state") == "corrected"
-        for fields in lesions.values()
-        if isinstance(fields, dict)
-        for answer in fields.values()
-    )
-
-
-def _legacy_main_lesion_answers(extraction, lesions):
-    """Support the older payload where `lesions` contains answers but no top-level `report`."""
-    if not isinstance(lesions, dict) or not lesions:
-        return None
-
-    main_lesion = (
-        _main_lesion(extraction.generated_report)
-        if isinstance(extraction.generated_report, dict)
-        else None
-    )
-    lesion_id = (main_lesion or {}).get("id")
-
-    answers = None
-    if lesion_id is not None:
-        answers = lesions.get(str(lesion_id))
-        if answers is None:
-            answers = lesions.get(lesion_id)
-
-    if answers is None:
-        answers = next(iter(lesions.values()))
-    return answers
-
-
-def _apply_form(extraction, submitted, user):
-    """Store both current and legacy review-form payloads on the extraction."""
-    submitted = submitted if isinstance(submitted, dict) else {}
-    report = submitted.get("report")
-    fields = submitted.get("fields")
-    lesions = submitted.get("lesions")
-    lesions = lesions if isinstance(lesions, dict) else {}
-
-    if isinstance(report, dict):
-        # Current frontend sends the worker report schema and per-lesion field answers separately.
-        extraction.accepted_report = report
-        extraction.lesion_answers = lesions
-    elif isinstance(fields, dict):
-        # Older frontend sent normalized form fields in `fields`.
-        extraction.accepted_report = _as_fields(fields)
-        if isinstance(submitted.get("lesions"), dict):
-            extraction.lesion_answers = lesions
-    elif lesions:
-        # Older frontend may send only lesion answers. Preserve all answers and also populate
-        # accepted_report with the main lesion's normalized values for legacy consumers.
-        answers = _legacy_main_lesion_answers(extraction, lesions)
-        if isinstance(answers, dict):
-            extraction.accepted_report = _as_fields(answers)
-        elif not extraction.accepted_report:
-            extraction.accepted_report = extraction.generated_report
-        extraction.lesion_answers = lesions
-    elif any(key in submitted for key in REPORT_FIELDS):
-        # Also accept the legacy flat payload: {birads, location, size, ...}.
-        extraction.accepted_report = _as_fields(submitted)
-    elif not extraction.accepted_report:
-        # Empty approval means accepting the model proposal without edits.
-        extraction.accepted_report = extraction.generated_report
+    source = _load_case_report(extraction, study_id)
 
     accepted = _as_fields(extraction.accepted_report)
-    generated = _as_fields(extraction.generated_report)
-    changed_values = any(
-        key in generated and value != generated[key]
-        for key, value in accepted.items()
-    )
 
-    extraction.status = (
-        StatusChoices.CORRECTED
-        if _is_corrected(lesions) or changed_values
-        else StatusChoices.APPROVED
-    )
+    lesion = _main_lesion(extraction.generated_report)
+
+    if lesion is None and source:
+        lesion = _main_lesion(source)
+
+    lesion_id = lesion.get("id") if lesion else None
+
+    lesions = {}
+
+    if lesion_id is not None:
+        lesions[str(lesion_id)] = answers
+
+    return {
+        "source": source,
+        "accepted": accepted,
+        "lesions": lesions,
+    }
+
+def _apply_form(extraction, submitted, user):
+    new_status = StatusChoices.APPROVED
+
+    if isinstance(submitted, dict) and submitted:
+        answers = submitted
+
+        if isinstance(submitted.get("lesions"), dict) and submitted["lesions"]:
+            lesions = submitted["lesions"]
+            main_lesion = _main_lesion(extraction.generated_report) if isinstance(extraction.generated_report, dict) else None
+            lesion_id = (main_lesion or {}).get("id")
+
+            answers = None
+
+            if lesion_id is not None:
+                answers = lesions.get(str(lesion_id))
+                if answers is None:
+                    answers = lesions.get(lesion_id)
+
+            if answers is None:
+                answers = next(iter(lesions.values()))
+
+        elif isinstance(submitted.get("fields"), dict):
+            answers = submitted["fields"]
+
+        elif isinstance(submitted.get("report"), dict):
+            answers = submitted["report"]
+
+        extraction.accepted_report = _as_fields(answers)
+
+        if any(
+            isinstance(value, dict) and value.get("state") == "corrected"
+            for value in answers.values()
+        ):
+            new_status = StatusChoices.CORRECTED
+        else:
+            generated = _as_fields(extraction.generated_report)
+            accepted = _as_fields(answers)
+            if any(
+                key in generated and value != generated[key]
+                for key, value in accepted.items()
+            ):
+                new_status = StatusChoices.CORRECTED
+
+    extraction.status = new_status
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()
     extraction.save()
@@ -452,23 +376,19 @@ def review_queue(request):
     ext_done = ExtractionResult.objects.filter(
         status=StatusChoices.COMPLETED
     ).values("study_id")
-    all_ids = set([item["study_id"] for item in seg_done]).union(
-        [item["study_id"] for item in ext_done]
-    )
+    all_ids = set([item["study_id"] for item in seg_done]).union([item["study_id"] for item in ext_done])
     studies = list(Study.objects.filter(id__in=all_ids))
 
     if not studies:
         return Response([], status=status.HTTP_200_OK)
 
-    # newest segmentation and active report per study, two queries for all of them
+    # newest result per study, two queries for all of them
     study_ids = [s.id for s in studies]
     segmentations = {
-        s.study_id: s
-        for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
+        s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
     extractions = {
-        e.study_id: e
-        for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
+        e.study_id: e for e in ExtractionResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
 
     try:
@@ -482,21 +402,33 @@ def review_queue(request):
         segmentation = segmentations.get(study.id)
         extraction = extractions.get(study.id)
 
-        # the prefilter looked at any result; here we check the newest / active one
+        # the prefilter looked at any result; here we check the newest one
         seg_status = segmentation.status if segmentation else None
         ext_status = extraction.status if extraction else None
         if StatusChoices.COMPLETED not in (seg_status, ext_status):
             continue
 
+        uncertainty = 0.00
+        if segmentation and segmentation.uncertainty is not None:
+            uncertainty = float(segmentation.uncertainty)
+        elif extraction and extraction.uncertainty is not None:
+            uncertainty = float(extraction.uncertainty)
+
+        study_date = orthanc_map.get(study.orthanc_path, {}).get("study_date")
+        formatted_date = (
+            f"{study_date[:4]}-{study_date[4:6]}-{study_date[6:]}"
+            if study_date and len(study_date) == 8
+            else "----------"
+        )
+
         queue_data.append({
             "studyId": study.orthanc_path,
             "studyNumber": str(study.id).zfill(4),
-            "studyDate": _dicom_date(orthanc_map.get(study.orthanc_path, {}).get("study_date")),
-            "uncertainty": _uncertainty(segmentation, extraction),
+            "studyDate": formatted_date,
+            "uncertainty": float(uncertainty),
         })
 
-    # least certain first; unknown uncertainty counts as least certain, so it is not overlooked
-    queue_data.sort(key=lambda x: (x["uncertainty"] is not None, -(x["uncertainty"] or 0)))
+    queue_data.sort(key=lambda x: x["uncertainty"], reverse=True)
     return Response(queue_data, status=status.HTTP_200_OK)
 
 
@@ -511,16 +443,23 @@ def review_case_detail(request, study_id):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
     segmentation = SegmentationResult.objects.filter(study=study).order_by("-id").first()
-    extraction = ExtractionResult.objects.filter(study=study).active()
+    extraction = ExtractionResult.objects.filter(study=study).order_by("-id").first()
 
     try:
         orthanc_client = OrthancClient()
         o_studies = orthanc_client.list_studies()
-        o_study = next(
-            (s for s in o_studies if s.get("orthanc_id") == study.orthanc_path), {}
-        )
+        o_study = next((s for s in o_studies if s.get("orthanc_id") == study.orthanc_path), {})
     except (OrthancUnauthorized, OrthancUnavailable):
         o_study = {}
+
+    study_date = o_study.get("study_date")
+    formatted_date = f"{study_date[:4]}-{study_date[4:6]}-{study_date[6:]}" if study_date and len(study_date) == 8 else "2026-10-26"
+
+    uncertainty = 0.5
+    if segmentation and segmentation.uncertainty is not None:
+        uncertainty = float(segmentation.uncertainty)
+    elif extraction and extraction.uncertainty is not None:
+        uncertainty = float(extraction.uncertainty)
 
     mask_approved_val = None
     if segmentation:
@@ -529,31 +468,35 @@ def review_case_detail(request, study_id):
         elif segmentation.status == StatusChoices.CORRECTED:
             mask_approved_val = "corrected"
 
-    measured = _mask_measurements(segmentation)
     proposals = {}
     if extraction and extraction.status not in (StatusChoices.PENDING, StatusChoices.PROCESSING):
         proposals = _proposals(extraction.generated_report)
+
+    report = _load_case_report(extraction, study.orthanc_path)
+
+    if (
+        report is None
+        and extraction
+        and extraction.status in (StatusChoices.PENDING, StatusChoices.PROCESSING)
+    ):
+        report = {"pending": True}
 
     case_data = {
         "studyId": study.orthanc_path,
         "studyNumber": str(study.id).zfill(4),
         "patientId": o_study.get("patient_id") or "---",
         "age": None,
-        "studyDate": _dicom_date(o_study.get("study_date")),
-        "description": o_study.get("description") or None,
-        "uncertainty": _uncertainty(segmentation, extraction),
+        "studyDate": formatted_date,
+        "description": o_study.get("description") or "MR piersi z kontrastem",
+        "uncertainty": uncertainty,
         "segmentationVersion": str(segmentation.model_id) if segmentation and segmentation.model_id else "-",
         "extractionVersion": str(extraction.model_id) if extraction and extraction.model_id else None,
         "studyUid": o_study.get("study_instance_uid"),
-        # null while there is no SEG: still processing, rejected, or the model found nothing
         "mask": _model_seg(segmentation, o_study.get("study_instance_uid")),
-        "report": _report_payload(extraction, study.orthanc_path),
+        "report": report,
+        "segmentation": {"series": None} if segmentation else None,
         "proposals": proposals,
-        "measurements": {
-            "volume": (measured or {}).get("volume_ml"),
-            "size": _largest_mm(measured),
-            "sizeInReport": _report_size_mm(extraction.generated_report) if extraction else None,
-        },
+        "measurements": {"volume": None, "size": None, "sizeInReport": None},
         "maskApproved": mask_approved_val,
     }
 
@@ -572,13 +515,8 @@ def approve_case(request, study_id):
     approved_form = False
 
     with transaction.atomic():
-        segmentation = (
-            SegmentationResult.objects.select_for_update()
-            .filter(study=study)
-            .order_by("-id")
-            .first()
-        )
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
+        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
 
         if segmentation and segmentation.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]:
             segmentation.status = new_status
@@ -587,8 +525,11 @@ def approve_case(request, study_id):
             segmentation.save()
             approved_mask = True
 
-        # Current behavior: approving the case also accepts the report when it is ready.
-        if extraction and extraction.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]:
+        if (
+            extraction
+            and extraction.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]
+            and any(key in payload for key in ("report", "lesions", "fields"))
+        ):
             _apply_form(extraction, payload, request.user)
             approved_form = True
 
@@ -612,12 +553,7 @@ def approve_mask(request, study_id):
 
     approved_mask = False
     with transaction.atomic():
-        segmentation = (
-            SegmentationResult.objects.select_for_update()
-            .filter(study=study)
-            .order_by("-id")
-            .first()
-        )
+        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
         if segmentation and segmentation.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]:
             segmentation.status = new_status
             segmentation.accepted_by = request.user
@@ -643,12 +579,7 @@ def reopen_case(request, study_id):
     reopened_form = False
 
     with transaction.atomic():
-        segmentation = (
-            SegmentationResult.objects.select_for_update()
-            .filter(study=study)
-            .order_by("-id")
-            .first()
-        )
+        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
         if segmentation and segmentation.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
             segmentation.status = StatusChoices.COMPLETED
             segmentation.accepted_by = None
@@ -656,7 +587,7 @@ def reopen_case(request, study_id):
             segmentation.save()
             reopened_mask = True
 
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
         if extraction and extraction.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
             extraction.status = StatusChoices.COMPLETED
             extraction.accepted_by = None
@@ -680,12 +611,7 @@ def unapprove_mask(request, study_id):
 
     unapproved_mask = False
     with transaction.atomic():
-        segmentation = (
-            SegmentationResult.objects.select_for_update()
-            .filter(study=study)
-            .order_by("-id")
-            .first()
-        )
+        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
         if segmentation and segmentation.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
             segmentation.status = StatusChoices.COMPLETED
             segmentation.accepted_by = None
@@ -694,12 +620,7 @@ def unapprove_mask(request, study_id):
             unapproved_mask = True
 
     if unapproved_mask:
-        record_audit(
-            request,
-            kind="mask_unapproved",
-            object=f"#{str(study.id).zfill(4)}",
-            detail=None,
-        )
+        record_audit(request, kind="mask_unapproved", object=f"#{str(study.id).zfill(4)}", detail=None)
 
     return Response(status=status.HTTP_200_OK)
 
@@ -712,18 +633,13 @@ def approve_form(request, study_id):
 
     approved_form = False
     with transaction.atomic():
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
         if extraction and extraction.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]:
             _apply_form(extraction, submitted, request.user)
             approved_form = True
 
     if approved_form:
-        record_audit(
-            request,
-            kind="form_approved",
-            object=f"#{str(study.id).zfill(4)}",
-            detail="Form approved",
-        )
+        record_audit(request, kind="form_approved", object=f"#{str(study.id).zfill(4)}", detail="Form approved")
 
     return Response(status=status.HTTP_200_OK)
 
@@ -735,7 +651,7 @@ def unapprove_form(request, study_id):
 
     unapproved_form = False
     with transaction.atomic():
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
         if extraction and extraction.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
             extraction.status = StatusChoices.COMPLETED
             extraction.accepted_by = None
@@ -744,12 +660,7 @@ def unapprove_form(request, study_id):
             unapproved_form = True
 
     if unapproved_form:
-        record_audit(
-            request,
-            kind="form_unapproved",
-            object=f"#{str(study.id).zfill(4)}",
-            detail=None,
-        )
+        record_audit(request, kind="form_unapproved", object=f"#{str(study.id).zfill(4)}", detail=None)
 
     return Response(status=status.HTTP_200_OK)
 
@@ -761,31 +672,27 @@ def review_overview(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
 
     segmentation = study.segmentations.select_related("accepted_by").order_by("-id").first()
-    extraction = study.extractions.select_related("accepted_by").active()
+    extraction = study.extractions.select_related("accepted_by").order_by("-id").first()
 
     if segmentation is None or segmentation.status not in VERIFIED:
         return Response(
             {"code": "not_verified", "detail": "Badanie nie zostało jeszcze zweryfikowane."},
             status=status.HTTP_409_CONFLICT,
         )
-
     try:
         o_data = next(
-            (s for s in OrthancClient().list_studies() if s.get("orthanc_id") == study.orthanc_path),
-            {},
+            (s for s in OrthancClient().list_studies() if s.get("orthanc_id") == study.orthanc_path), {}
         )
     except OrthancUnavailable:  # includes OrthancUnauthorized
         o_data = {}
 
     corrected = segmentation.status == StatusChoices.CORRECTED
     saving = corrected and not segmentation.accepted_path
+
+    answers = _answers(extraction) if extraction and extraction.accepted_report else {}
+    report = _overview_report(extraction, answers, study.orthanc_path)
+    by_field = {k: v["value"] for k, v in answers.items()}
     measured = _mask_measurements(segmentation)
-
-    accepted_or_generated = None
-    if extraction:
-        accepted_or_generated = extraction.accepted_report or extraction.generated_report
-    by_field = _as_fields(accepted_or_generated)
-
     seg_version = str(segmentation.model_id) if segmentation.model_id else None
     ext_version = str(extraction.model_id) if extraction and extraction.model_id else None
     accepted_at = segmentation.accepted_at.isoformat() if segmentation.accepted_at else ""
@@ -814,7 +721,7 @@ def review_overview(request, study_id):
             "dimensions": (measured or {}).get("dimensions_mm"),
             "intensity": None,
         },
-        "report": _overview_report(extraction, study.orthanc_path),
+        "report": report,
         "comparison": [
             {
                 "feature": "largestSize",
