@@ -566,6 +566,19 @@ export default function CaseReview({ data, queue }: Props) {
                           .join(" · ")
                 }
               >
+                {extraction && currentReport && (
+                  <div className="review__case">
+                    <ReportDetails
+                      title={t("detail.wholeStudy")}
+                      groups={caseGroups(extraction)}
+                      current={currentReport}
+                      original={extraction}
+                      confirmed={details.agreed.includes("case")}
+                      onEdit={editDetail}
+                      onConfirm={(yes) => agree("case", yes)}
+                    />
+                  </div>
+                )}
                 {extraction && current !== null && lesions.length > 1 && (
                   <LesionSwitcher
                     index={index}
@@ -595,7 +608,7 @@ export default function CaseReview({ data, queue }: Props) {
                   )}
                   {extraction && currentReport && current !== null && (
                     <ReportDetails
-                      title={t("detail.fromReport")}
+                      title={t("detail.lesion", { n: index + 1 })}
                       groups={[{ key: "lesion", title: null, rows: lesionRows(extraction, index) }]}
                       current={currentReport}
                       original={extraction}
@@ -607,17 +620,6 @@ export default function CaseReview({ data, queue }: Props) {
                       }
                       onEdit={editDetail}
                       onConfirm={(yes) => agree(`lesion:${current}`, yes)}
-                    />
-                  )}
-                  {extraction && currentReport && (
-                    <ReportDetails
-                      title={t("detail.wholeStudy")}
-                      groups={caseGroups(extraction)}
-                      current={currentReport}
-                      original={extraction}
-                      confirmed={details.agreed.includes("case")}
-                      onEdit={editDetail}
-                      onConfirm={(yes) => agree("case", yes)}
                     />
                   )}
                 </div>

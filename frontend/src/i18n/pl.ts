@@ -560,7 +560,7 @@ export const pl = {
   "field.echo.isoechoic": "Izoechogeniczna",
   "field.echo.hyperechoic": "Hiperechogeniczna",
   "field.echo.complex": "Złożona",
-  "detail.fromReport": "Z opisu",
+  "detail.lesion": "Szczegóły zmiany {n}",
   "detail.wholeStudy": "Całe badanie",
   "detail.agrees": "Zgadza się z opisem",
   "detail.undo": "Cofnij",
