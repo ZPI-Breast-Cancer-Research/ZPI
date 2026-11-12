@@ -435,6 +435,99 @@ def test_approve_form_marks_extraction_as_corrected(
 
 
 @pytest.mark.django_db
+def test_approve_form_stores_field_checks(
+    authenticated_client,
+    study,
+):
+    extraction = ExtractionResult.objects.create(
+        study=study,
+        status=StatusChoices.COMPLETED,
+    )
+
+    response = authenticated_client.post(
+        reverse(
+            "approve-form",
+            kwargs={"study_id": study.orthanc_path},
+        ),
+        {
+            "report": {"zmiany": [{"birads": "4C"}]},
+            "lesions": {"0": {"birads": {"value": "4C", "state": "confirmed"}}},
+            "fields": {"zmiany.0.birads": "confirmed", "wniosek.zalecenie": "unverified"},
+        },
+        format="json",
+    )
+
+    extraction.refresh_from_db()
+    assert response.status_code == status.HTTP_200_OK
+    assert extraction.status == StatusChoices.APPROVED
+    assert extraction.field_checks == {
+        "zmiany.0.birads": "confirmed",
+        "wniosek.zalecenie": "unverified",
+    }
+
+
+@pytest.mark.django_db
+def test_approve_form_marks_corrected_from_field_checks(
+    authenticated_client,
+    study,
+):
+    extraction = ExtractionResult.objects.create(
+        study=study,
+        status=StatusChoices.COMPLETED,
+    )
+
+    response = authenticated_client.post(
+        reverse(
+            "approve-form",
+            kwargs={"study_id": study.orthanc_path},
+        ),
+        {
+            "report": {"zmiany": [{"birads": "4C"}]},
+            "lesions": {"0": {"birads": {"value": "4C", "state": "confirmed"}}},
+            "fields": {"zmiany.0.birads": "confirmed", "wezly.0.uwagi": "corrected"},
+        },
+        format="json",
+    )
+
+    extraction.refresh_from_db()
+    assert response.status_code == status.HTTP_200_OK
+    assert extraction.status == StatusChoices.CORRECTED
+
+
+@pytest.mark.django_db
+def test_approve_form_again_replaces_the_answers(
+    authenticated_client,
+    study,
+):
+    extraction = ExtractionResult.objects.create(
+        study=study,
+        status=StatusChoices.APPROVED,
+        accepted_report={"zmiany": [{"birads": "4C"}]},
+        lesion_answers={"0": {"birads": {"value": "4C", "state": "confirmed"}}},
+        field_checks={"zmiany.0.birads": "confirmed"},
+    )
+
+    response = authenticated_client.post(
+        reverse(
+            "approve-form",
+            kwargs={"study_id": study.orthanc_path},
+        ),
+        {
+            "report": {"zmiany": [{"birads": "5"}]},
+            "lesions": {"0": {"birads": {"value": "5", "state": "corrected"}}},
+            "fields": {"zmiany.0.birads": "corrected"},
+        },
+        format="json",
+    )
+
+    extraction.refresh_from_db()
+    assert response.status_code == status.HTTP_200_OK
+    assert extraction.status == StatusChoices.CORRECTED
+    assert extraction.accepted_report == {"zmiany": [{"birads": "5"}]}
+    assert extraction.field_checks == {"zmiany.0.birads": "corrected"}
+
+
+@pytest.mark.django_db
 def test_approve_form_does_not_change_pending_extraction(
     authenticated_client,
     study,

@@ -263,30 +263,38 @@ def _overview_report(extraction, study_id):
     }
 
 
-def _is_corrected(lesions) -> bool:
-    return any(
+def _is_corrected(lesions, field_checks=None) -> bool:
+    """A field changed in the form or in the details below it."""
+    in_form = any(
         isinstance(answer, dict) and answer.get("state") == "corrected"
         for fields in lesions.values()
         if isinstance(fields, dict)
         for answer in fields.values()
     )
+    return in_form or any(check == "corrected" for check in (field_checks or {}).values())
 
 
 def _apply_form(extraction, submitted, user):
-    """Store the review form: {"report": <worker schema>, "lesions": {index: {field: answer}}}.
+    """Store the review form: {"report": <worker schema>, "lesions": {index: {field: answer}},
+    "fields": {path in the report: "confirmed" | "corrected" | "unverified"}}.
 
     Without a report the doctor accepts the model's report as it is.
+    Sent again, it replaces the last answers.
     """
     submitted = submitted if isinstance(submitted, dict) else {}
     report = submitted.get("report")
     lesions = submitted.get("lesions")
     lesions = lesions if isinstance(lesions, dict) else {}
+    field_checks = submitted.get("fields")
+    field_checks = field_checks if isinstance(field_checks, dict) else None
     if isinstance(report, dict):
         extraction.accepted_report = report
         extraction.lesion_answers = lesions
+        extraction.field_checks = field_checks
     elif not extraction.accepted_report:
         extraction.accepted_report = extraction.generated_report
-    extraction.status = StatusChoices.CORRECTED if _is_corrected(lesions) else StatusChoices.APPROVED
+    corrected = _is_corrected(lesions, field_checks)
+    extraction.status = StatusChoices.CORRECTED if corrected else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()
     extraction.save()
@@ -535,12 +543,19 @@ def approve_form(request, study_id):
     
     with transaction.atomic():
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
-        approved = bool(extraction) and extraction.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]
+        # sent again after a later change
+        updated = bool(extraction) and extraction.status in VERIFIED
+        waiting = bool(extraction) and extraction.status in (
+            StatusChoices.COMPLETED,
+            StatusChoices.REJECTED,
+        )
+        approved = updated or waiting
         if approved:
             _apply_form(extraction, submitted, request.user)
 
     if approved:
-        record_audit(request, kind="form_approved", object=_audit_object(study), detail="Form approved")
+        detail = "Form updated" if updated else "Form approved"
+        record_audit(request, kind="form_approved", object=_audit_object(study), detail=detail)
     return Response(status=status.HTTP_200_OK)
 
 
