@@ -57,6 +57,8 @@ export interface GateCheck {
 export interface Proposal {
   version: string;
   replaces: string;
+  // going back to a version that was in use before
+  restore: boolean;
   author: Person & { role: "researcher" | "admin" };
   at: string;
   reason: string;
@@ -185,14 +187,14 @@ function cv(dice: number, iou: number, hd95: number, diceSmall: number, volumeEr
 }
 
 // whoever is signed in, so a mock proposal can be "mine"
-function me(): Person {
+function me(): Person & { role: Proposal["author"]["role"] } {
   try {
-    const user = JSON.parse(sessionStorage.getItem("maria.user") ?? "") as Person;
-    if (user.login) return { login: user.login, name: user.name };
+    const user = JSON.parse(sessionStorage.getItem("maria.user") ?? "") as Person & { role: string };
+    if (user.login) return { login: user.login, name: user.name, role: user.role === "admin" ? "admin" : "researcher" };
   } catch {
     // the dev user below
   }
-  return { login: "dev", name: "Dev" };
+  return { login: "dev", name: "Dev", role: import.meta.env.VITE_SKIP_LOGIN === "admin" ? "admin" : "researcher" };
 }
 
 function mockVersions(): ModelVersion[] {
@@ -296,7 +298,8 @@ function mockOverview(): SegmentationOverview {
       ? {
           version: "1.2.0",
           replaces: "1.1.0",
-          author: { ...(scenario === "mine" ? me() : KOWALSKA), role: "researcher" },
+          author: scenario === "mine" ? me() : { ...KOWALSKA, role: "researcher" },
+          restore: false,
           at: "2026-11-07",
           reason: "Lepiej obrysowuje małe zmiany, które w 1.1.0 lekarze najczęściej poprawiali.",
           training: { base: "1.1.0", corrections: 52 },
@@ -323,7 +326,7 @@ export async function fetchSegmentation(): Promise<SegmentationOverview> {
   return isSegmentationOverview(data) ? data : fromOld(data);
 }
 
-// the gate a version would face, shown before anyone proposes it
+// the gate a version would face, before anyone proposes it
 export async function fetchGate(version: string): Promise<GateCheck[] | null> {
   if (MOCK_API) return mockDelay(version === "1.2.0" ? GATE : null);
   const { data } = await api.get<GateCheck[] | null>(`/api/models/${version}/gate/`);
@@ -351,12 +354,12 @@ export async function fetchExtraction(): Promise<ExtractionOverview> {
   return data;
 }
 
-// with mocks the decisions change the screen too, so the whole flow can be clicked through
+// mock decisions update the mock state
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function putInUse(state: SegmentationOverview, version: string) {
+function putInUse(state: SegmentationOverview, version: string, reason: string | null) {
   const since = today();
   for (const v of state.versions) {
     if (v.status === "in_use") {
@@ -366,12 +369,17 @@ function putInUse(state: SegmentationOverview, version: string) {
     if (v.version === version) {
       v.status = "in_use";
       v.periods = [...v.periods, { from: since, to: null }];
-      v.decidedBy = me();
+      const { login, name } = me();
+      v.decidedBy = { login, name };
       v.agreement ??= { approved: 0, unchanged: null, dice: null, iou: null, volumeMl: null };
+      // an admin's own change: no proposal, their reason instead
+      v.reason = state.proposal?.reason ?? reason;
+      if (!state.proposal) v.proposedBy = { login, name };
     }
   }
   if (state.inUse) state.compareWith = state.inUse.version;
-  state.inUse = { version, since, approvedBy: me(), studies: 0, rejected: [], weakest: null };
+  const { login, name } = me();
+  state.inUse = { version, since, approvedBy: { login, name }, studies: 0, rejected: [], weakest: null };
   state.proposal = null;
 }
 
@@ -380,14 +388,15 @@ function updateMock(change: (state: SegmentationOverview) => void) {
   change(mockState);
 }
 
-export async function promote(version: string): Promise<string> {
+// reason only for an admin's own change
+export async function promote(version: string, reason: string | null = null): Promise<string> {
   if (MOCK_API) {
-    updateMock((state) => putInUse(state, version));
-    record("model_promoted", version);
+    updateMock((state) => putInUse(state, version, reason));
+    record("model_promoted", version, reason);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>(`/api/models/${version}/promote/`);
-  record("model_promoted", version);
+  const { data } = await api.post<string>(`/api/models/${version}/promote/`, { reason });
+  record("model_promoted", version, reason);
   return data;
 }
 
@@ -395,7 +404,9 @@ export async function reject(version: string, reason: string): Promise<string> {
   if (MOCK_API) {
     updateMock((state) => {
       const v = state.versions.find((item) => item.version === version);
-      if (v) Object.assign(v, { status: "rejected", decidedBy: me(), reason });
+      const { login, name } = me();
+      // a rejected restore goes back to being a retired version
+      if (v) Object.assign(v, { status: state.proposal?.restore ? "retired" : "rejected", decidedBy: { login, name }, reason });
       state.proposal = null;
     });
     record("model_rejected", version, reason);
@@ -406,14 +417,57 @@ export async function reject(version: string, reason: string): Promise<string> {
   return data;
 }
 
-export async function rollback(version: string): Promise<string> {
+export async function rollback(version: string, reason: string | null = null): Promise<string> {
   if (MOCK_API) {
-    updateMock((state) => putInUse(state, version));
-    record("model_rolled_back", version);
+    updateMock((state) => putInUse(state, version, reason));
+    record("model_rolled_back", version, reason);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>(`/api/models/${version}/rollback/`);
-  record("model_rolled_back", version);
+  const { data } = await api.post<string>(`/api/models/${version}/rollback/`, { reason });
+  record("model_rolled_back", version, reason);
+  return data;
+}
+
+export async function propose(version: string, reason: string, restore: boolean): Promise<string> {
+  if (MOCK_API) {
+    updateMock((state) => {
+      const v = state.versions.find((item) => item.version === version);
+      if (!v || !state.inUse) return;
+      const author = me();
+      // a restored version keeps who brought it in the first time
+      v.status = "proposed";
+      if (!restore) Object.assign(v, { proposedBy: { login: author.login, name: author.name }, reason });
+      state.proposal = {
+        version,
+        replaces: state.inUse.version,
+        restore,
+        author,
+        at: today(),
+        reason,
+        training: restore ? null : { base: state.inUse.version, corrections: 52 },
+        gate: version === "1.2.0" ? GATE : null,
+      };
+    });
+    record("model_proposed", version, reason);
+    return mockDelay(version, 400);
+  }
+  const { data } = await api.post<string>("/api/models/segmentation/proposals/", { version, reason, restore });
+  record("model_proposed", version, reason);
+  return data;
+}
+
+export async function withdraw(version: string): Promise<string> {
+  if (MOCK_API) {
+    updateMock((state) => {
+      const v = state.versions.find((item) => item.version === version);
+      if (v) Object.assign(v, state.proposal?.restore ? { status: "retired" } : { status: "new", proposedBy: null, reason: null });
+      state.proposal = null;
+    });
+    record("proposal_withdrawn", version);
+    return mockDelay(version, 400);
+  }
+  const { data } = await api.post<string>(`/api/models/${version}/withdraw/`);
+  record("proposal_withdrawn", version);
   return data;
 }
 
@@ -424,4 +478,16 @@ export async function startTraining(): Promise<void> {
   }
   await api.post("/api/models/training/start/");
   record("training_started", "");
+}
+export async function stopTraining(): Promise<void> {
+  if (MOCK_API) {
+    updateMock((state) => {
+      if (state.training) Object.assign(state.training, { run: null, canStart: true });
+      state.versions = state.versions.filter((v) => v.status !== "training");
+    });
+    record("training_stopped", "");
+    return mockDelay(undefined, 400);
+  }
+  await api.post("/api/models/training/stop/");
+  record("training_stopped", "");
 }

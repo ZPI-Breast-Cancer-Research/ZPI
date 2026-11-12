@@ -1,25 +1,16 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { useCan } from "../auth/AuthProvider";
+import { useAuth, useCan } from "../auth/AuthProvider";
 import Panel from "../components/layout/Panel";
 import Select from "../components/Select";
 import { EmptyState } from "../components/State";
-import { useToast } from "../components/Toast";
 import { formatDate, formatMetric, formatOneDecimal, formatPercent } from "../format";
 import { t, type MessageKey } from "../i18n";
-import {
-  promote,
-  reject,
-  rollback,
-  startTraining,
-  type GateCheck,
-  type ModelVersion,
-  type Proposal,
-  type SegmentationOverview,
-  type ValidationMetrics,
-} from "./api";
+import type { ModelVersion, Proposal, SegmentationOverview, ValidationMetrics } from "./api";
+import ChangeDialog from "./ChangeDialog";
+import GateList from "./GateList";
+import { useModelActions } from "./useModelActions";
 
 const STATUS_CLASS: Record<ModelVersion["status"], string> = {
   training: "status status--running",
@@ -28,12 +19,6 @@ const STATUS_CLASS: Record<ModelVersion["status"], string> = {
   in_use: "status status--confirmed",
   retired: "status",
   rejected: "status status--warning",
-};
-
-// rules the backend may send; an unknown one still shows, by its code
-const GATE_RULES: Record<string, { label: MessageKey; result: MessageKey }> = {
-  dice_not_lower: { label: "models.gate.dice_not_lower", result: "models.gate.dice_not_lower.result" },
-  no_large_drop: { label: "models.gate.no_large_drop", result: "models.gate.no_large_drop.result" },
 };
 
 const REJECTED_REASONS: Record<string, MessageKey> = {
@@ -65,51 +50,6 @@ function pair(a: number | null, b: number | null): string {
 function signedMl(value: number | null): string {
   if (value === null) return "—";
   return `${value > 0 ? "+" : ""}${formatOneDecimal(value)} ml`;
-}
-
-export function useModelActions() {
-  const toast = useToast();
-  const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["models"] });
-  return {
-    promote: useMutation({ mutationFn: promote, onSuccess: (v) => (toast(t("models.promote.done", { v })), refresh()) }),
-    reject: useMutation({
-      mutationFn: ({ version, reason }: { version: string; reason: string }) => reject(version, reason),
-      onSuccess: (v) => (toast(t("models.reject.done", { v })), refresh()),
-    }),
-    rollback: useMutation({ mutationFn: rollback, onSuccess: (v) => (toast(t("models.restore.done", { v })), refresh()) }),
-    train: useMutation({ mutationFn: startTraining, onSuccess: () => (toast(t("models.next.started")), refresh()) }),
-  };
-}
-
-function GateList({ gate }: { gate: GateCheck[] | null }) {
-  if (!gate) return <p className="models__empty">{t("models.gate.pending")}</p>;
-  const passed = gate.filter((check) => check.passed).length;
-  return (
-    <>
-      <p className="models__label">{t("models.gate.title", { passed, n: gate.length })}</p>
-      <ul className="gate">
-        {gate.map((check) => {
-          const rule = GATE_RULES[check.rule];
-          const values = {
-            threshold: formatMetric(check.threshold),
-            value: formatMetric(check.value),
-            baseline: formatMetric(check.baseline),
-            study: check.studyNumber ?? "—",
-          };
-          return (
-            <li key={check.rule}>
-              {rule ? t(rule.label, values) : check.rule}
-              <span className="gate__result">{rule && check.value !== null ? t(rule.result, values) : ""}</span>
-              <span className={check.passed === null ? "status" : check.passed ? "status status--confirmed" : "status status--warning"}>
-                {check.passed === null ? "—" : t(check.passed ? "models.gate.passed" : "models.gate.failed")}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </>
-  );
 }
 
 function MetricsTable({ current, next }: { current: ModelVersion | undefined; next: ModelVersion | undefined }) {
@@ -159,14 +99,15 @@ function trainingLine(training: Proposal["training"]): string | null {
 function ProposalPanel({ proposal, versions }: { proposal: Proposal; versions: ModelVersion[] }) {
   const actions = useModelActions();
   const manages = useCan()("manageModels");
+  const mine = useAuth().user?.login === proposal.author.login;
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const trained = trainingLine(proposal.training);
 
   return (
     <Panel
-      title={t("models.proposal.title", { v: proposal.version, old: proposal.replaces })}
-      aux={`${proposal.author.name} (${t(`role.${proposal.author.role}`)}) · ${formatDate(proposal.at)}`}
+      title={t(proposal.restore ? "models.proposal.restoreTitle" : "models.proposal.title", { v: proposal.version, old: proposal.replaces })}
+      aux={`${mine ? t("models.proposal.mine") : `${proposal.author.name} (${t(`role.${proposal.author.role}`)})`} · ${formatDate(proposal.at)}`}
     >
       <div className="models__two">
         <div className="models__pad">
@@ -184,9 +125,9 @@ function ProposalPanel({ proposal, versions }: { proposal: Proposal; versions: M
           <MetricsTable current={versions.find((v) => v.version === proposal.replaces)} next={versions.find((v) => v.version === proposal.version)} />
         </div>
       </div>
-      {manages && (
-        <div className="models__actions">
-          {rejecting ? (
+      <div className="models__actions">
+        {manages ? (
+          rejecting ? (
             <div className="reason">
               <label className="field__help" htmlFor="reject-reason">
                 {t("models.reject.reason")}
@@ -211,13 +152,27 @@ function ProposalPanel({ proposal, versions }: { proposal: Proposal; versions: M
               <button type="button" className="btn" onClick={() => setRejecting(true)}>
                 {t("models.reject")}
               </button>
-              <button type="button" className="btn btn--primary" disabled={actions.promote.isPending} onClick={() => actions.promote.mutate(proposal.version)}>
-                {t("models.promote", { v: proposal.version })}
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={actions.promote.isPending || actions.rollback.isPending}
+                onClick={() => (proposal.restore ? actions.rollback : actions.promote).mutate({ version: proposal.version })}
+              >
+                {t(proposal.restore ? "models.restoreTo" : "models.promote", { v: proposal.version })}
               </button>
             </>
-          )}
-        </div>
-      )}
+          )
+        ) : (
+          <>
+            <span className="models__waiting">{t("models.proposal.waiting")}</span>
+            {mine && (
+              <button type="button" className="btn" disabled={actions.withdraw.isPending} onClick={() => actions.withdraw.mutate(proposal.version)}>
+                {t("models.proposal.withdraw")}
+              </button>
+            )}
+          </>
+        )}
+      </div>
     </Panel>
   );
 }
@@ -230,6 +185,16 @@ function InUsePanel({ data }: { data: SegmentationOverview }) {
   const [compared, setCompared] = useState(data.compareWith && others.some((v) => v.version === data.compareWith) ? data.compareWith : null);
   const other = others.find((v) => v.version === compared);
   const rejected = inUse.rejected.reduce((sum, r) => sum + r.count, 0);
+  const summary = [
+    inUse.studies !== null && t("models.inUse.studies", { n: inUse.studies }),
+    rejected > 0 &&
+      t("models.inUse.rejected", {
+        n: rejected,
+        why: inUse.rejected.map((r) => (REJECTED_REASONS[r.reason] ? t(REJECTED_REASONS[r.reason]) : r.reason)).join(", "),
+      }),
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const rows: { label: MessageKey; value: (v: ModelVersion) => string }[] = [
     { label: "models.agreement.approved", value: (v) => (v.agreement?.approved == null ? "—" : String(v.agreement.approved)) },
@@ -309,14 +274,7 @@ function InUsePanel({ data }: { data: SegmentationOverview }) {
           ) : (
             <p className="models__empty">{t("models.weakest.none")}</p>
           )}
-          <p className="note">
-            {inUse.studies !== null && t("models.inUse.studies", { n: inUse.studies })}
-            {rejected > 0 &&
-              ` ${t("models.inUse.rejected", {
-                n: rejected,
-                why: inUse.rejected.map((r) => (REJECTED_REASONS[r.reason] ? t(REJECTED_REASONS[r.reason]) : r.reason)).join(", "),
-              })}`}
-          </p>
+          {summary && <p className="note">{summary}</p>}
         </div>
       </div>
     </Panel>
@@ -325,7 +283,7 @@ function InUsePanel({ data }: { data: SegmentationOverview }) {
 
 function TrainingPanel({ training }: { training: NonNullable<SegmentationOverview["training"]> }) {
   const actions = useModelActions();
-  const manages = useCan()("manageModels");
+  const starts = useCan()("proposeModels");
   const run = training.run;
 
   if (run) {
@@ -344,6 +302,11 @@ function TrainingPanel({ training }: { training: NonNullable<SegmentationOvervie
               <i style={{ width: `${pct}%` }} />
             </div>
             {run.etaHours !== null && <span>{t("models.training.eta", { h: run.etaHours })}</span>}
+            {starts && run.canStop && (
+              <button type="button" className="btn btn--small line__end" disabled={actions.stop.isPending} onClick={() => actions.stop.mutate()}>
+                {t("models.training.stop")}
+              </button>
+            )}
           </div>
         </div>
       </Panel>
@@ -370,7 +333,7 @@ function TrainingPanel({ training }: { training: NonNullable<SegmentationOvervie
               <i style={{ width: `${Math.min(1, training.corrections / training.threshold) * 100}%` }} />
             </div>
           ) : null}
-          {manages && training.canStart && (
+          {starts && training.canStart && (
             <button type="button" className="btn btn--small line__end" disabled={actions.train.isPending} onClick={() => actions.train.mutate()}>
               {t("models.next.start")}
             </button>
@@ -381,13 +344,24 @@ function TrainingPanel({ training }: { training: NonNullable<SegmentationOvervie
   );
 }
 
-function VersionsPanel({ versions }: { versions: ModelVersion[] }) {
-  const actions = useModelActions();
-  const manages = useCan()("manageModels");
+function VersionsPanel({ data }: { data: SegmentationOverview }) {
+  const can = useCan();
+  const manages = can("manageModels");
+  const proposes = can("proposeModels");
+  const versions = data.versions;
   const set = versions.find((v) => v.metrics)?.metrics?.set;
+  const [change, setChange] = useState<{ version: string; restore: boolean } | null>(null);
+  // one proposal at a time
+  const open = !data.proposal && !!data.inUse && proposes;
 
-  const restore = (version: string) => {
-    if (window.confirm(t("models.restore.confirm", { v: version }))) actions.rollback.mutate(version);
+  const action = (v: ModelVersion) => {
+    if (!open || (v.status !== "new" && v.status !== "retired")) return null;
+    const restore = v.status === "retired";
+    return (
+      <button type="button" className={restore ? "btn btn--small" : "btn btn--small btn--primary"} onClick={() => setChange({ version: v.version, restore })}>
+        {t(manages ? "models.use" : "models.propose")}
+      </button>
+    );
   };
 
   return (
@@ -428,19 +402,22 @@ function VersionsPanel({ versions }: { versions: ModelVersion[] }) {
                       </span>
                     )}
                   </td>
-                  <td className="cell-right">
-                    {v.status === "retired" && manages && (
-                      <button type="button" className="btn btn--small" onClick={() => restore(v.version)}>
-                        {t("models.restore")}
-                      </button>
-                    )}
-                  </td>
+                  <td className="cell-right">{action(v)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {set && <p className="note">{t("models.versions.set", { set: t(`models.set.${set}`) })}</p>}
         </>
+      )}
+      {change && data.inUse && (
+        <ChangeDialog
+          mode={manages ? "change" : "propose"}
+          version={change.version}
+          replaces={data.inUse.version}
+          restore={change.restore}
+          onClose={() => setChange(null)}
+        />
       )}
     </Panel>
   );
@@ -451,7 +428,7 @@ export default function SegmentationView({ data }: { data: SegmentationOverview 
     <div className="models">
       {data.proposal && <ProposalPanel proposal={data.proposal} versions={data.versions} />}
       {data.inUse ? (
-        // a new version in use starts from its own default comparison
+        // remounts when another version goes into use
         <InUsePanel key={data.inUse.version} data={data} />
       ) : (
         <Panel title={t("models.inUse")}>
@@ -459,7 +436,7 @@ export default function SegmentationView({ data }: { data: SegmentationOverview 
         </Panel>
       )}
       {data.training && <TrainingPanel training={data.training} />}
-      <VersionsPanel versions={data.versions} />
+      <VersionsPanel data={data} />
     </div>
   );
 }

@@ -5,10 +5,13 @@ export type AuditKind =
   | "mask_unapproved"
   | "form_approved"
   | "form_unapproved"
+  | "model_proposed"
+  | "proposal_withdrawn"
   | "model_promoted"
   | "model_rejected"
   | "model_rolled_back"
   | "training_started"
+  | "training_stopped"
   | "account_created"
   | "account_changed"
   | "account_blocked"
@@ -23,10 +26,13 @@ export const GROUP_OF: Record<AuditKind, AuditGroup> = {
   mask_unapproved: "review",
   form_approved: "review",
   form_unapproved: "review",
+  model_proposed: "models",
+  proposal_withdrawn: "models",
   model_promoted: "models",
   model_rejected: "models",
   model_rolled_back: "models",
   training_started: "models",
+  training_stopped: "models",
   account_created: "accounts",
   account_changed: "accounts",
   account_blocked: "accounts",

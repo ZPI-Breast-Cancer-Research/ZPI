@@ -24,6 +24,8 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
     <span className="tabs__state tabs__state--waiting">{t("models.tab.waiting")}</span>
   ) : seg?.training?.run ? (
     <span className="tabs__state tabs__state--running">{t("models.trainingNow")}</span>
+  ) : seg?.versions.some((v) => v.status === "new") ? (
+    <span className="tabs__state">{t("models.tab.new")}</span>
   ) : null;
 
   const tabs = (

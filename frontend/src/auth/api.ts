@@ -10,6 +10,8 @@ export const PERMISSIONS = {
   review: ["radiologist", "admin"],
   addStudies: ["radiologist", "admin"],
   viewModels: ["researcher", "admin"],
+  // researcher proposes, admin decides
+  proposeModels: ["researcher", "admin"],
   manageModels: ["admin"],
   administer: ["admin"],
 } satisfies Record<string, Role[]>;
