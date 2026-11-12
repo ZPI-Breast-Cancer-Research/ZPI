@@ -12,4 +12,5 @@ urlpatterns = [
     path("api/segmentation/", include("segmentation.urls")),
     path("api/review/", include("review.urls")),
     path("api/models/", include("mlops.urls")),
+    path("api/", include("audit.urls"))
 ]

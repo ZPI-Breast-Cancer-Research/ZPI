@@ -27,7 +27,8 @@ def test_case_detail_returns_the_worker_result_with_the_ocr_text(authenticated_c
     response = _get(authenticated_client, study, "review-case-detail")
 
     # Assert
-    assert response.data["report"] == {"originalUrl": None, "result": RESULT}
+    scan_url = reverse("review-report-scan", kwargs={"study_id": study.orthanc_path})
+    assert response.data["report"] == {"originalUrl": scan_url, "result": RESULT}
 
 
 @pytest.mark.django_db
@@ -86,7 +87,7 @@ def test_approved_form_reaches_the_overview(authenticated_client, study):
     # Assert
     assert approved.status_code == 200
     assert response.data["report"] == {
-        "source": {"originalUrl": None, "result": RESULT},
+        "source": {"originalUrl": None, "result": RESULT},  # no uploaded file
         "accepted": form["report"],
         "lesions": form["lesions"],
     }

@@ -14,7 +14,7 @@ export type ImageStatus =
   | "verified_unchanged"
   | "verified_corrected";
 
-export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified";
+export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified_unchanged" | "verified_corrected";
 
 export interface Study {
   orthanc_id: string;
@@ -77,7 +77,7 @@ const MOCK_ROWS: StudyRow[] = (
     ["to_review", "to_review", 0.58],
     ["to_review", "missing", 0.51],
     ["verified_unchanged", "to_review", 0.44],
-    ["verified_corrected", "verified", 0.4],
+    ["verified_corrected", "verified_corrected", 0.4],
     ["saving", "missing", 0.37],
   ] as [ImageStatus, ReportStatus, number | null][]
 ).map(([image, report, uncertainty], i) => ({
@@ -98,7 +98,7 @@ function withReview(row: StudyRow): StudyRow {
   return {
     ...row,
     image: mask === "corrected" ? "verified_corrected" : mask ? "verified_unchanged" : row.image,
-    report: form ? "verified" : row.report,
+    report: form ? "verified_unchanged" : row.report,
     verifiedAt: done ? toIsoDate(new Date()) + "T" + new Date().toTimeString().slice(0, 5) : row.verifiedAt,
   };
 }
@@ -118,8 +118,8 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   PENDING: "extracting",
   PROCESSING: "extracting",
   COMPLETED: "to_review",
-  APPROVED: "verified",
-  CORRECTED: "verified",
+  APPROVED: "verified_unchanged",
+  CORRECTED: "verified_corrected",
   REJECTED: "to_review",
   FAILED: "error",
   missing: "missing",

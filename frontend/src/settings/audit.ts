@@ -1,4 +1,5 @@
-import { mockDelay } from "../mock";
+import { mockDelay, MOCK_API } from "../mock";
+import { api, handleApiError } from "../api";
 
 export type AuditKind =
   | "mask_approved"
@@ -17,7 +18,9 @@ export type AuditKind =
   | "account_blocked"
   | "account_unblocked"
   | "password_reset"
-  | "login_failed";
+  | "login_failed"
+  | "study_imported"
+  | "attach_report";
 
 export type AuditGroup = "review" | "models" | "accounts" | "logins";
 
@@ -39,6 +42,8 @@ export const GROUP_OF: Record<AuditKind, AuditGroup> = {
   account_unblocked: "accounts",
   password_reset: "accounts",
   login_failed: "logins",
+  study_imported: "review",
+  attach_report: "review",
 };
 
 export const TARGET_OF: Record<AuditGroup, "study" | "model" | "account"> = {
@@ -106,7 +111,15 @@ export function record(kind: AuditKind, object: string, detail: string | null = 
   entries = [{ id: `e${now.getTime()}`, at, login: who.login, name: who.name, kind, object, detail }, ...entries];
 }
 
-// read only: nothing in the UI edits or deletes an entry (Q5)
 export async function fetchAudit(): Promise<AuditEntry[]> {
-  return mockDelay([...entries].sort((a, b) => b.at.localeCompare(a.at)));
+  if (MOCK_API) {
+    return mockDelay([...entries].sort((a, b) => b.at.localeCompare(a.at)));
+  }
+
+  try {
+    const { data } = await api.get<AuditEntry[]>("/api/logs/");
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }

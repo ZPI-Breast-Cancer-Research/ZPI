@@ -21,7 +21,7 @@ def test_option_returns_mapped_value():
 def test_option_uses_capitalize_when_value_is_not_mapped():
     result = views._option({}, "nieregularny")
 
-    assert result == "Nieregularny"
+    assert result == "nieregularny"
 
 
 def test_option_converts_value_to_string():
@@ -228,7 +228,14 @@ def test_as_fields_converts_flat_report():
 
     result = views._as_fields(report)
 
-    assert result == report
+    assert result == {
+        "birads": "4C",
+        "location": "KGZ",
+        "size": "12",
+        "shape": "oval",
+        "margin": "Gładki",
+        "curve": "Typ 1",
+    }
 
 
 def test_as_fields_extracts_value_from_dictionary():
@@ -310,10 +317,10 @@ def test_fields_from_schema_extracts_main_lesion():
 
     assert result == {
         "birads": "4C",
-        "location": "KGZ",
+        "location": "upper_outer",
         "size": "15",
-        "shape": "Owalny",
-        "margin": "Gładki",
+        "shape": "oval",
+        "margin": "gładki",
     }
 
 
@@ -369,7 +376,7 @@ def test_fields_from_schema_uses_first_observation_when_no_dimensions():
 
     result = views._fields_from_schema(report)
 
-    assert result["shape"] == "Owalny"
+    assert result["shape"] == "oval"
     assert "margin" not in result
 
 
@@ -397,79 +404,6 @@ def test_proposals_wraps_values_in_value_dictionary():
 
 def test_proposals_returns_empty_dict_for_empty_report():
     assert views._proposals({}) == {}
-
-
-# =========================================================
-# _report_rows
-# =========================================================
-
-def test_report_rows_returns_none_when_extraction_is_none():
-    assert views._report_rows(None) is None
-
-
-def test_report_rows_returns_none_when_accepted_report_is_empty():
-    extraction = mock.Mock(
-        accepted_report=None,
-        generated_report={"birads": "4C"}
-    )
-
-    assert views._report_rows(extraction) is None
-
-
-def test_report_rows_marks_unchanged_fields_as_not_corrected():
-    extraction = mock.Mock(
-        accepted_report={
-            "birads": "4C",
-            "size": "12"
-        },
-        generated_report={
-            "birads": "4C",
-            "size": "12"
-        }
-    )
-
-    result = views._report_rows(extraction)
-
-    assert result == [
-        {"field": "birads", "value": "4C", "corrected": False},
-        {"field": "size", "value": "12", "corrected": False},
-    ]
-
-
-def test_report_rows_marks_changed_fields_as_corrected():
-    extraction = mock.Mock(
-        accepted_report={
-            "birads": "5",
-            "size": "15"
-        },
-        generated_report={
-            "birads": "4C",
-            "size": "12"
-        }
-    )
-
-    result = views._report_rows(extraction)
-
-    assert result == [
-        {"field": "birads", "value": "5", "corrected": True},
-        {"field": "size", "value": "15", "corrected": True},
-    ]
-
-
-def test_report_rows_ignores_fields_not_in_accepted_report():
-    extraction = mock.Mock(
-        accepted_report={"birads": "4C"},
-        generated_report={
-            "birads": "4C",
-            "size": "12"
-        }
-    )
-
-    result = views._report_rows(extraction)
-
-    assert result == [
-        {"field": "birads", "value": "4C", "corrected": False}
-    ]
 
 
 # =========================================================
@@ -522,4 +456,6 @@ def test_apply_form_without_a_report_keeps_an_accepted_one():
 
     views._apply_form(extraction, {}, mock.Mock())
 
+    assert extraction.status == views.StatusChoices.APPROVED
     assert extraction.accepted_report == {"zmiany": [{"birads": "5"}]}
+    extraction.save.assert_called_once_with()

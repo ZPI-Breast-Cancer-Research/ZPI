@@ -22,7 +22,7 @@ from extraction.models import ExtractionResult
 from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
-
+from audit.utils import record_audit
 from .models import Study
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
 
@@ -252,7 +252,6 @@ def study_list(request):
                 "uncertainty": _pick_uncertainty(segmentation, extraction),
             }
         )
-
     return Response(response_data)
 
 
@@ -319,6 +318,15 @@ def study_import(request):
         return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     cache.delete(STUDIES_CACHE_KEY)  # the new study should show up in the list right away
+
+    study_num_str = f"#{study.id}" if study else "raport"
+    record_audit(
+        request,
+        kind="study_imported",
+        object=study_num_str,
+        detail=f"Zaimportowano badanie z Orthanc ID: {orthanc_study_id}" if orthanc_study_id else "Zaimportowano sam raport"
+    )
+
     return Response(
         {
             "detail": "Study and documents have been successfully imported.",
@@ -347,7 +355,13 @@ def attach_report_to_study(request, orthanc_id):
     except Exception:
         logger.exception("Attaching report failed")
         return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    
+    record_audit(
+        request,
+        kind="attach_report",
+        object=str(orthanc_id),
+        detail=f"Dołączono nowy plik raportu: {report_file.name}"
+    )
     return Response({"detail": "Report successfully attached to the study."}, status=status.HTTP_200_OK)
 
 
@@ -366,6 +380,13 @@ def attach_existing_report(request, orthanc_id):
     )
     if not updated:
         return Response({"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND)
+    
+    record_audit(
+            request,
+            kind="attach_report",
+            object=str(orthanc_id),
+            detail=f"Dołączono nowy plik raportu: {report_id}"
+    )
 
     return Response({"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK)
 

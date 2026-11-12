@@ -15,7 +15,7 @@ from extraction.models import ExtractionResult, StatusChoices as ExtStatus
 from review.views import REPORT_FIELDS, _as_fields
 from segmentation.models import SegmentationResult, StatusChoices as SegStatus
 from users.permissions import require_permission
-
+from audit.utils import record_audit
 from .models import ModelVersion
 
 VERIFIED = (SegStatus.APPROVED, SegStatus.CORRECTED)
@@ -37,6 +37,14 @@ FIELD_LABELS = {
 def _iso(value):
     return value.strftime("%Y-%m-%d") if value else None
 
+def _person(user):
+    if not user:
+        return None
+
+    return {
+        "login": user.get_username(),
+        "name": _full_name(user),
+    }
 
 def _full_name(user):
     if not user:
@@ -101,131 +109,289 @@ def _next_retraining(db_versions):
 def segmentation_overview(request):
     db_versions = (
         ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.SEG)
-        .select_related("decided_by")  # one query instead of one per version
+        .select_related("decided_by")
         .order_by("-created_at")
     )
 
-    prod_model = db_versions.filter(status=ModelVersion.StatusChoices.PRODUCTION).first()
-    candidate_model = db_versions.filter(status=ModelVersion.StatusChoices.CANDIDATE).first()
-    training_model = db_versions.filter(status=ModelVersion.StatusChoices.TRAINING).first()
-    # the one that was in production most recently, not the one created most recently
+    prod_model = db_versions.filter(
+        status=ModelVersion.StatusChoices.PRODUCTION
+    ).first()
+
+    candidate_model = db_versions.filter(
+        status=ModelVersion.StatusChoices.CANDIDATE
+    ).first()
+
+    training_model = db_versions.filter(
+        status=ModelVersion.StatusChoices.TRAINING
+    ).first()
+
     previous_model = (
-        db_versions.filter(status=ModelVersion.StatusChoices.ARCHIVED, deactivated_at__isnull=False)
+        db_versions.filter(
+            status=ModelVersion.StatusChoices.ARCHIVED,
+            deactivated_at__isnull=False,
+        )
         .order_by("-deactivated_at")
         .first()
     )
-    last_rejected = db_versions.filter(status=ModelVersion.StatusChoices.REJECTED).first()
 
-    versions_data = [
-        {
-            "version": m.version,
-            "status": m.status,
-            "from": _iso(m.activated_at),
-            "to": _iso(m.deactivated_at),
-            "dice": m.dice,
-            "iou": None,  # not stored on ModelVersion
-            "hd95": m.hd95,
-            "diceMamaMia": None,  # not stored on ModelVersion
-            "decision": m.decision,
-            "decidedBy": _full_name(m.decided_by),
-            "canRestore": m.status == ModelVersion.StatusChoices.ARCHIVED,
-        }
-        for m in db_versions
-    ]
+    # Dane aktualnej wersji produkcyjnej.
+    in_use = None
 
-    candidate = None
-    if candidate_model:
-        better = None
-        if prod_model and candidate_model.dice is not None and prod_model.dice is not None:
-            better = candidate_model.dice > prod_model.dice
-        candidate = {
-            "version": candidate_model.version,
-            "trainingData": None,  # TODO: needs a training-set size on ModelVersion (or from MLflow)
-            "gate": [
-                {"rule": "better_hospital", "passed": better},
-                {"rule": "not_worse_mamamia", "passed": None},  # TODO: no MAMA-MIA metric stored
-                {"rule": "no_large_drop", "passed": None},  # TODO: needs per-case metrics
-            ],
-            "cases": [],  # TODO: biggest gain/drop need per-case Dice for both models
+    if prod_model:
+        production_results = SegmentationResult.objects.filter(
+            model=prod_model
+        )
+
+        rejected_count = production_results.filter(
+            status=SegStatus.REJECTED
+        ).count()
+
+        in_use = {
+            "version": prod_model.version,
+            "since": _iso(prod_model.activated_at),
+            "approvedBy": _person(prod_model.decided_by),
+            "studies": (
+                production_results
+                .values("study_id")
+                .distinct()
+                .count()
+            ),
+            "rejected": (
+                [{"reason": "rejected", "count": rejected_count}]
+                if rejected_count
+                else []
+            ),
+            # Nie mamy metryk Dice dla poszczególnych badań.
+            "weakest": None,
         }
+
+    # Dane potrzebne do określenia, czy można rozpocząć trening.
+    retraining = _next_retraining(db_versions)
+
+    can_start_training = (
+        retraining["corrections"] >= retraining["threshold"]
+        and training_model is None
+        and candidate_model is None
+    )
+
+    training_data = {
+        "corrections": retraining["corrections"],
+        "threshold": retraining["threshold"],
+        "window": retraining["window"],
+        "canStart": can_start_training,
+        "run": None,
+    }
+
+    # Informacje o aktualnie trwającym treningu.
+    # Dokładne epoch/ETA wymagają pobrania danych z MLflow.
+    if training_model:
+        training_data["run"] = {
+            "version": training_model.version,
+            "epoch": None,
+            "epochs": None,
+            "etaHours": None,
+            # Brak implementacji zatrzymywania treningu w pokazanym backendzie.
+            "canStop": False,
+        }
+
+    # Mapowanie statusów bazy na statusy oczekiwane przez frontend.
+    def map_version_status(model):
+        if model.status == ModelVersion.StatusChoices.PRODUCTION:
+            return "in_use"
+
+        if model.status == ModelVersion.StatusChoices.ARCHIVED:
+            return "retired"
+
+        if model.status == ModelVersion.StatusChoices.REJECTED:
+            return "rejected"
+
+        if model.status == ModelVersion.StatusChoices.TRAINING:
+            return "training"
+
+        if model.status == ModelVersion.StatusChoices.CANDIDATE:
+            if model.decision == ModelVersion.DecisionChoices.PENDING:
+                return "proposed"
+            return "new"
+
+        return "new"
+
+    # Historia wersji modeli.
+    versions_data = []
+
+    for model_version in db_versions:
+        model_results = SegmentationResult.objects.filter(
+            model=model_version
+        )
+
+        metrics = None
+
+        if (
+            model_version.dice is not None
+            or model_version.hd95 is not None
+        ):
+            metrics = {
+                "set": None,
+                "cases": None,
+                "dice": model_version.dice,
+                "iou": None,
+                "hd95": model_version.hd95,
+                "diceSmall": None,
+                "volumeErrorPct": None,
+            }
+
+        # Liczymy zaakceptowane segmentacje dla danej wersji.
+        approved_count = model_results.filter(
+            status__in=VERIFIED
+        ).count()
+
+        corrected_share = _corrected_share(model_results)
+
+        unchanged_share = (
+            round(1 - corrected_share, 2)
+            if corrected_share is not None
+            else None
+        )
+
+        periods = []
+
+        if model_version.activated_at:
+            periods.append({
+                "from": _iso(model_version.activated_at),
+                "to": _iso(model_version.deactivated_at),
+            })
+
+        agreement = None
+
+        if model_version.activated_at:
+            agreement = {
+                "approved": approved_count,
+                "unchanged": unchanged_share,
+                "dice": None,
+                "iou": None,
+                "volumeMl": None,
+            }
+
+        versions_data.append({
+            "version": model_version.version,
+            "status": map_version_status(model_version),
+            "trainedAt": None,
+            "trainingCases": None,
+            "metrics": metrics,
+            "periods": periods,
+            "agreement": agreement,
+            "proposedBy": None,
+            "decidedBy": _person(model_version.decided_by),
+            "reason": None,
+        })
 
     overview = {
-        "production": {
-            "version": prod_model.version if prod_model else "-----",
-            "since": _iso(prod_model.activated_at) if prod_model and prod_model.activated_at else None,
-            "approvedBy": _full_name(prod_model.decided_by) if prod_model and prod_model.decided_by else "-----",
-        },
-        "previous": previous_model.version if previous_model else None,
-        "correctedShare": {
-            "current": _corrected_share(SegmentationResult.objects.filter(model=prod_model)) if prod_model else None,
-            "previous": _corrected_share(SegmentationResult.objects.filter(model=previous_model)) if previous_model else None,
-        },
-        # TODO: needs editing_seconds on SegmentationResult (saved by approve_case)
-        "editTime": {"current": 4, "previous": 7},
-        "weeklyCorrected": _weekly_corrected(db_versions),
-        "next": _next_retraining(db_versions) if not candidate_model and not training_model else None,
-        "lastRun": (
-            {
-                "date": _iso(last_rejected.created_at),
-                "version": last_rejected.version,
-                # no human decision = the automatic quality gate said no
-                "outcome": "rejected_manual" if last_rejected.decided_by else "rejected_gate",
-            }
-            if last_rejected
+        "inUse": in_use,
+
+        "compareWith": (
+            previous_model.version
+            if previous_model
             else None
         ),
-        "training": (
-            # TODO: epoch / epochs / ETA live in the MLflow run (mlops/mlflow_client.py)
-            {"version": training_model.version, "epoch": None, "epochs": None, "etaHours": None}
-            if training_model
-            else None
-        ),
-        "candidate": candidate,
+        "proposal": None,
+
+        "training": training_data,
+
         "versions": versions_data,
     }
 
     return Response(overview, status=status.HTTP_200_OK)
 
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def extraction_overview(request):
-    prod_ext = ModelVersion.objects.filter(
-        module=ModelVersion.ModuleChoices.EXT, status=ModelVersion.StatusChoices.PRODUCTION
-    ).first()
+    prod_ext = (
+        ModelVersion.objects.filter(
+            module=ModelVersion.ModuleChoices.EXT,
+            status=ModelVersion.StatusChoices.PRODUCTION,
+        )
+        .order_by("-activated_at", "-created_at")
+        .first()
+    )
+    extractions = ExtractionResult.objects.all()
 
-    verified = ExtractionResult.objects.filter(status=ExtStatus.APPROVED, accepted_report__isnull=False)
+    if prod_ext:
+        extractions = extractions.filter(model=prod_ext)
+    verified = extractions.filter(
+        status__in=(
+            ExtStatus.APPROVED,
+            ExtStatus.CORRECTED,
+        ),
+        accepted_report__isnull=False,
+    )
+    failed = extractions.filter(
+        status=ExtStatus.FAILED,
+    )
+    corrected = extractions.filter(
+        status=ExtStatus.CORRECTED,
+        accepted_report__isnull=False,
+    )
 
-    # how often the doctor changed what the model proposed, per form field
     totals = dict.fromkeys(REPORT_FIELDS, 0)
     changed = dict.fromkeys(REPORT_FIELDS, 0)
-    scoped = verified.filter(model=prod_ext) if prod_ext else verified
-    for extraction in scoped.only("accepted_report", "generated_report").iterator():
+    for extraction in verified.only(
+        "accepted_report",
+        "generated_report",
+    ).iterator():
+
         accepted = _as_fields(extraction.accepted_report)
         generated = _as_fields(extraction.generated_report)
+
         for key, value in accepted.items():
             if key not in generated:
-                continue  # the model proposed nothing for this field (e.g. "curve" is not in the schema)
+                continue
+
             totals[key] += 1
+
             if value != generated[key]:
                 changed[key] += 1
 
+    verified_count = verified.count()
+    ext_versions = ModelVersion.objects.filter(
+    module=ModelVersion.ModuleChoices.EXT,
+    ).order_by("-created_at")
+    models_data = [
+    {
+        "version": model.version,
+        "status": model.status,
+        "createdAt": _iso(model.created_at),
+        "activatedAt": _iso(model.activated_at),
+    }
+    for model in ext_versions
+    ]
     overview = {
         "version": prod_ext.version if prod_ext else None,
-        "since": _iso(prod_ext.activated_at) if prod_ext else None,
-        "examplePool": verified.count(),
+        "models": models_data,
+        "fewShots": [],
+        "since": (
+            _iso(prod_ext.activated_at)
+            if prod_ext and prod_ext.activated_at
+            else None
+        ),
+        "examplePool": verified_count,
+
+        "verifiedDescriptions": verified_count,
+        "failedDescriptions": failed.count(),
+        "correctedDescriptions": corrected.count(),
         "fields": [
             {
                 "field": FIELD_LABELS[key],
-                # TODO: per-field F1 is not stored; ModelVersion.f1 is one number for the whole model
                 "f1": None,
-                "correctedShare": round(changed[key] / totals[key], 2) if totals[key] else None,
+                "correctedShare": (
+                    round(changed[key] / totals[key], 2)
+                    if totals[key]
+                    else None
+                ),
             }
             for key in REPORT_FIELDS
         ],
     }
-    return Response(overview, status=status.HTTP_200_OK)
 
+    return Response(overview, status=status.HTTP_200_OK)
 
 @api_view(["POST"])
 @require_permission(["manageModels"])
@@ -243,6 +409,12 @@ def promote_model(request, version):
     model_ver.decided_by = request.user
     model_ver.save()
 
+    record_audit(
+        request,
+        kind="model_promoted",
+        object=str(model_ver.version),
+        detail=f"Dice: {model_ver.dice}" if model_ver.dice else None
+    )
     return Response(version, status=status.HTTP_200_OK)
 
 
@@ -256,6 +428,13 @@ def reject_model(request, version):
     model_ver.decision = ModelVersion.DecisionChoices.REJECTED
     model_ver.decided_by = request.user
     model_ver.save()
+
+    record_audit(
+        request,
+        kind="model_rejected",
+        object=str(model_ver.version),
+        detail=reason or "Odrzucono manualnie"
+    )
 
     return Response(version, status=status.HTTP_200_OK)
 
@@ -276,6 +455,13 @@ def rollback_model(request, version):
     target_model.decided_by = request.user
     target_model.save()
 
+    record_audit(
+        request,
+        kind="model_rolled_back",
+        object=str(target_model.version),
+        detail="Przywrócono starszą wersję produkcyjną"
+    )
+
     return Response(version, status=status.HTTP_200_OK)
 
 
@@ -283,4 +469,11 @@ def rollback_model(request, version):
 @require_permission(["manageModels"])
 def start_training(request):
     current_app.send_task("training.run", kwargs={"training_run_id": 1})
+
+    record_audit(
+        request,
+        kind="training_started",
+        object="v-new",
+        detail="Uruchomiono nocny trening na zgromadzonych poprawkach"
+    )
     return Response(status=200)

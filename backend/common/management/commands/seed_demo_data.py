@@ -17,6 +17,14 @@ from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices as SegmentationStatus
 from users.models import Role, User
 
+import json
+
+from common.storage import BUCKET_REPORTS, put_bytes
+
+import random
+import struct
+import zlib
+
 
 STUDY_PREFIX = "DEMO-ORTHANC-"
 MODEL_VERSION_PREFIX = "demo-"
@@ -80,35 +88,101 @@ DEMO_BIRADS_CORRECTIONS = {
     "5": "6",
 }
 def _apply_variant(report: dict, index: int) -> dict:
-    """Edge cases for the review views: no lesion, two lesions, incomplete observation."""
-    if index % 11 == 5:  # badanie bez zmian ogniskowych
+    """
+    Edge cases for review views:
+    - no lesion,
+    - one lesion,
+    - two lesions,
+    - three lesions,
+    - incomplete ultrasound observation.
+    """
+
+    # Co jedenaste badanie: bez zmian ogniskowych.
+    if index % 11 == 5:
         report["zmiany"] = []
+
         for side in ("lewa", "prawa"):
             report["piersi"][side]["zmiany_ogniskowe"] = False
             report["piersi"][side]["mikrozwapnienia"] = False
             report["piersi"][side]["obrzek"] = False
+
         report["wniosek"] = {
             "birads": "1",
             "tekst": "Obraz bez zmian ogniskowych, BI-RADS 1.",
             "zalecenie": "Kontrola za 12 miesięcy.",
         }
+
         return report
 
-    if index % 9 == 4:  # druga zmiana: sprawdza wybór „głównej” (najwyższy BI-RADS)
-        second = deepcopy(report["zmiany"][0])
-        second["id"] = 2
-        second["birads"] = DEMO_BIRADS[(index + 3) % len(DEMO_BIRADS)]
-        for obs in second["obserwacje"]:
-            obs["lokalizacje"] = [DEMO_LOCATIONS[(index + 2) % len(DEMO_LOCATIONS)]]
-            _refresh_observation_citation(obs)
-        report["zmiany"].append(second)
-        top = max(
-            (report["zmiany"][0]["birads"], second["birads"]), key=BIRADS_ORDER.index
-        )
-        report["wniosek"]["birads"] = top
-        report["wniosek"]["tekst"] = f"Obraz zmiany BI-RADS {top}."
+    if index % 8 == 3:
+        number_of_lesions = 3
+    elif index % 4 == 1:
+        number_of_lesions = 2
+    else:
+        number_of_lesions = 1
 
-    if index % 13 == 7:  # niekompletna obserwacja USG
+    if number_of_lesions > 1:
+        base_lesion = report["zmiany"][0]
+
+        for lesion_number in range(2, number_of_lesions + 1):
+            second = deepcopy(base_lesion)
+
+            second["id"] = lesion_number
+
+            second["strona"] = (
+                "prawa"
+                if base_lesion["strona"] == "lewa"
+                else "lewa"
+            ) if lesion_number == 2 else base_lesion["strona"]
+
+            second["birads"] = DEMO_BIRADS[
+                (index + lesion_number + 2) % len(DEMO_BIRADS)
+            ]
+
+            for obs_index, observation in enumerate(second["obserwacje"]):
+                location_index = (
+                    index + lesion_number + obs_index + 2
+                ) % len(DEMO_LOCATIONS)
+
+                observation["lokalizacje"] = [
+                    DEMO_LOCATIONS[location_index]
+                ]
+
+                observation["godzina"] = str(
+                    ((index + lesion_number * 3 + obs_index) % 12) + 1
+                )
+
+                observation["odleglosc_od_brodawki"] = {
+                    "wartosc": float(2 + (index + lesion_number) % 6),
+                    "jednostka": "cm",
+                }
+
+                # Każda zmiana ma własny opis cytowany.
+                _refresh_observation_citation(observation)
+
+            second["polaczenie_obserwacji"] = {
+                "pewne": True,
+                "powod": (
+                    "Obserwacje dotyczą tej samej zmiany "
+                    "w dwóch modalnościach obrazowania."
+                ),
+            }
+
+            report["zmiany"].append(second)
+
+    highest_birads = max(
+        (lesion["birads"] for lesion in report["zmiany"]),
+        key=BIRADS_ORDER.index,
+    )
+
+    report["wniosek"]["birads"] = highest_birads
+    report["wniosek"]["tekst"] = (
+        f"Stwierdzono {len(report['zmiany'])} zmian ogniskowych. "
+        f"Najwyższa kategoria BI-RADS {highest_birads}."
+    )
+
+    # Niekompletna obserwacja USG – test formularza.
+    if index % 13 == 7 and report["zmiany"]:
         usg = report["zmiany"][0]["obserwacje"][1]
         usg["wymiary"] = None
         usg["brzeg"] = None
@@ -264,7 +338,94 @@ def _build_demo_nodes(index: int, side: str) -> list[dict]:
             "cytat": quote,
         }
     ]
+def render_scan(text: str) -> bytes:
+    """Fake scan of a report: a grey page with bars standing in for text (PNG, stdlib only)."""
+    width, height = 600, 800
+    rng = random.Random(text)
+    page = [[245] * width for _ in range(height)]
+    y = 60
+    for line in text.split("\n"):
+        end = width - 50
+        for _ in range(max(1, len(line) // 60 + 1)):
+            x = 50
+            while x < end and y + 8 < height - 50:
+                w = rng.randint(18, 70)
+                for yy in range(y, y + 8):
+                    row = page[yy]
+                    for xx in range(x, min(x + w, end)):
+                        row[xx] = 70
+                x += w + 10
+            y += 16
+        y += 14
 
+    raw = b"".join(b"\x00" + bytes(row) for row in page)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
+
+def _build_demo_case_result(
+    generated_report: dict,
+    number: int,
+    with_scan: bool,
+) -> dict:
+    """
+    Zwraca bezpośrednio ExtractionResult zapisywany w extraction.result.
+
+    Nie tworzy wrappera {originalUrl, scanKey, result}.
+    Oryginalny plik jest wskazywany przez extraction.report_path.
+    """
+
+    quotes = [
+        obs["cytat"]
+        for lesion in generated_report.get("zmiany", [])
+        for obs in lesion.get("obserwacje", [])
+        if obs.get("cytat")
+    ]
+
+    quotes += [
+        node["cytat"]
+        for node in generated_report.get("wezly", [])
+        if node.get("cytat")
+    ]
+
+    conclusion = generated_report.get("wniosek", {}).get("tekst") or ""
+    text = "\n".join(quotes + [conclusion])
+
+    return {
+        "source": (
+            f"skan_{number:05d}.png"
+            if with_scan
+            else f"opis_{number:05d}.txt"
+        ),
+        "status": "ok",
+        "data": generated_report,
+        "error": None,
+        "warnings": [],
+        "text": text,
+        "provenance": {
+            "ocr_engine": "demo" if with_scan else None,
+            "ocr_engine_version": None,
+            "ocr_mean_confidence": 0.93 if with_scan else None,
+            "orientation_detector": None,
+            "page_rotations": [0] if with_scan else [],
+            "llm_provider": "demo",
+            "llm_model": "demo",
+            "prompt_version": "demo",
+            "schema_version": "3",
+        },
+        "attempts": 1,
+        "ocr_seconds": 1.2 if with_scan else None,
+        "llm_seconds": None,
+        "created_at": timezone.now().isoformat(),
+    }
 
 def _build_demo_report(index: int) -> dict:
     """Generates a complete EkstrakcjaBadania JSON object."""
@@ -910,40 +1071,146 @@ class Command(BaseCommand):
             segmentation.accepted_at = seg_accepted_at
             segmentation.save()
 
-            # ---------------- EXTRACTION ----------------
-            ext_status = extraction_statuses[index % len(extraction_statuses)]
+                        # ---------------- EXTRACTION ----------------
+
+            ext_status = extraction_statuses[
+                index % len(extraction_statuses)
+            ]
+
             ext_verified = ext_status in (
                 ExtractionStatus.APPROVED,
                 ExtractionStatus.CORRECTED,
             )
-            ext_reviewer = (
-                reviewers[(index + 1) % len(reviewers)] if ext_verified else None
-            )
-            ext_accepted_at = (
-                today - timedelta(days=(index * 3) % 56) if ext_verified else None
-            )
 
-            generated_report = _apply_variant(_build_demo_report(index), index)
-            accepted_report = (
-                _build_accepted_demo_report(generated_report, index, ext_status)
+            ext_reviewer = (
+                reviewers[(index + 1) % len(reviewers)]
                 if ext_verified
                 else None
             )
 
-            report_path = f"demo/reports/{number:05d}/report.json"
-            extraction, _ = ExtractionResult.objects.get_or_create(
-                study=study, defaults={"report_path": report_path}
+            ext_accepted_at = (
+                today - timedelta(days=(index * 3) % 56)
+                if ext_verified
+                else None
             )
+
+            # Raport wygenerowany przez AI
+            generated_report = _apply_variant(
+                _build_demo_report(index),
+                index,
+            )
+
+            # Raport zaakceptowany przez lekarza
+            accepted_report = (
+                _build_accepted_demo_report(
+                    generated_report,
+                    index,
+                    ext_status,
+                )
+                if ext_verified
+                else None
+            )
+
+            # Co trzeci raport jest obrazem PNG.
+            # Pozostałe raporty są plikami tekstowymi TXT.
+            with_scan = number % 2 == 0
+
+            if with_scan:
+                report_path = (
+                    f"demo/reports/{number:05d}/scan.png"
+                )
+                content_type = "image/png"
+            else:
+                report_path = (
+                    f"demo/reports/{number:05d}/report.txt"
+                )
+                content_type = "text/plain; charset=utf-8"
+
+            # Pobierz albo utwórz ExtractionResult.
+            extraction, _ = ExtractionResult.objects.get_or_create(
+                study=study,
+                defaults={
+                    "report_path": report_path,
+                },
+            )
+
+            # Dane ekstrakcji
             extraction.model = versions["ext_production"]
             extraction.status = ext_status
-            extraction.uncertainty = round(max(0.02, min(0.98, uncertainty + 0.07)), 3)
+
+            extraction.uncertainty = round(
+                max(0.02, min(0.98, uncertainty + 0.07)),
+                3,
+            )
+
+            # report_path wskazuje bezpośrednio na oryginalny plik w MinIO.
             extraction.report_path = report_path
+
+            # Raport AI
             extraction.generated_report = generated_report
+
+            # Raport zaakceptowany przez lekarza
             extraction.accepted_report = accepted_report
+
+            # Pełny wynik ekstrakcji odczytywany przez aktualny view.
+            if ext_status not in (
+                ExtractionStatus.PENDING,
+                ExtractionStatus.PROCESSING,
+            ):
+                result = _build_demo_case_result(
+                    generated_report,
+                    number,
+                    with_scan,
+                )
+            else:
+                result = None
+
+            extraction.result = result
+
             extraction.accepted_by = ext_reviewer
             extraction.accepted_at = ext_accepted_at
-            extraction.assigned_at = extraction.assigned_at or timezone.now()
+
+            extraction.assigned_at = (
+                extraction.assigned_at or timezone.now()
+            )
+
             extraction.save()
+
+            # ---------------- MINIO ----------------
+            #
+            # Zapisujemy bezpośrednio oryginalny plik.
+            # Nie zapisujemy report.json ani scanKey.
+            #
+            # report_path w bazie wskazuje dokładnie na ten obiekt.
+
+            if with_scan:
+                # Syntetyczny obraz PNG
+                scan_text = (
+                    result["text"]
+                    if result
+                    else "Syntetyczny raport demonstracyjny."
+                )
+
+                file_bytes = render_scan(scan_text)
+
+            else:
+                # Syntetyczny raport tekstowy TXT
+                if result:
+                    report_text = result["text"]
+                else:
+                    report_text = (
+                        "Syntetyczny raport demonstracyjny.\n"
+                        "Raport oczekuje na przetworzenie."
+                    )
+
+                file_bytes = report_text.encode("utf-8")
+
+            put_bytes(
+                data=file_bytes,
+                bucket=BUCKET_REPORTS,
+                key=report_path,
+                content_type=content_type,
+            )
     def _seed_unassigned_reports(self):
         samples = [
             ("opis_piersi_001.txt", ExtractionStatus.PENDING),

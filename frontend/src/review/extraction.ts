@@ -117,5 +117,5 @@ export interface CaseReport {
 // older backend shapes (a path, a field list) count as not processed yet
 export function isCaseReport(value: unknown): value is CaseReport {
   const report = value as CaseReport | null;
-  return !!report && typeof report === "object" && !!report.result && typeof report.result.text === "string";
+  return (!!report && typeof report === "object" && !!report.result && typeof report.result.text === "string" && Array.isArray(report.result.provenance?.page_rotations));
 }
