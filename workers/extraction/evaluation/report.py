@@ -54,6 +54,7 @@ class Report:
         birads = self.fields.get("wniosek.birads")
         summary["wniosek_birads_accuracy"] = birads.accuracy if birads else None
         summary["ocr_cer"] = self.ocr.mean
+        summary["ocr_bow_wer"] = self.ocr.words_mean
         return summary
 
     def to_dict(self) -> dict[str, Any]:
@@ -72,4 +73,5 @@ class Report:
             "entities": scores(self.entities, ("precision", "recall", "f1")),
             "fields": scores(self.fields, ("n", "accuracy", "precision", "recall", "f1")),
             "ocr_cer": {"mean": self.ocr.mean, "documents": self.ocr.documents},
+            "ocr_bow_wer": {"mean": self.ocr.words_mean, "documents": self.ocr.words},
         }

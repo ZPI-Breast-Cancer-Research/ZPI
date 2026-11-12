@@ -116,4 +116,48 @@ def test_ocr_score_mean_and_worst_document():
 def test_empty_ocr_score_has_no_mean_or_worst():
     # Act / Assert
     assert OCRScore().mean is None
+    assert OCRScore().words_mean is None
     assert OCRScore().worst is None
+
+
+@pytest.mark.parametrize(
+    ("reference", "hypothesis", "expected"),
+    [
+        ("zmiana 12 mm", "zmiana 12 mm", 0.0),
+        ("zmiana 12 mm\nBI-RADS 3", "BI-RADS 3\nzmiana 12 mm", 0.0),
+        ("zmiana 12 mm", "zmiana 13 mm", 1 / 3),
+        ("zmiana 12 mm", "zmiana mm", 1 / 3),
+        ("zmiana 12 mm", "zmiana 12 mm ok", 1 / 3),
+        ("", "", 0.0),
+        ("", "cokolwiek", 1.0),
+    ],
+    ids=[
+        "identical",
+        "lines-swapped",
+        "one-wrong-word",
+        "missing-word",
+        "extra-word",
+        "both-empty",
+        "empty-reference",
+    ],
+)
+def test_bag_of_words_error_rate(reference, hypothesis, expected):
+    # Act
+    rate = OCRScore.bag_of_words_error_rate(reference, hypothesis)
+
+    # Assert
+    assert rate == pytest.approx(expected)
+
+
+def test_swapped_lines_cost_cer_but_not_the_bag_of_words_rate():
+    # Arrange: the same text, OCR read the second line first
+    reference = "zmiana hipoechogeniczna 12 mm\nwniosek BI-RADS 3"
+    hypothesis = "wniosek BI-RADS 3\nzmiana hipoechogeniczna 12 mm"
+    score = OCRScore()
+
+    # Act
+    score.add("doc", reference, hypothesis)
+
+    # Assert
+    assert score.documents["doc"] > 0.3
+    assert score.words["doc"] == 0.0
