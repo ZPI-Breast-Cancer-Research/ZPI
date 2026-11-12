@@ -527,6 +527,8 @@ export const pl = {
   "field.side": "Strona",
   "field.birads": "BI\u2011RADS",
   "field.type": "Rodzaj",
+  "field.location": "Lokalizacja",
+  "field.curve": "Krzywa",
   "field.clock": "Położenie",
   "field.distance": "Od brodawki",
   "field.size": "Wymiar",
