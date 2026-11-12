@@ -513,7 +513,7 @@ export const pl = {
   "review.field.fromMask": "z maski: {n} mm",
   "review.field.fromMaskTitle": "Najdłuższy bok maski w płaszczyźnie głównego widoku",
   "review.field.choose": "Wartość",
-  "review.confirmAll": "Potwierdź wszystkie",
+  "review.confirmLesion": "Potwierdź zmianę {n}",
   "review.hint.biradsFromConclusion": "Przepisany z wniosku opisu.",
   "review.hint.biradsNotInLesion": "Opis nie podaje BI-RADS tej zmiany.",
   "review.hint.missing": "brak w opisie",

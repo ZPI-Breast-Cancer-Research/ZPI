@@ -627,7 +627,7 @@ export default function CaseReview({ data, queue }: Props) {
               <div className="review__foot">
                 {currentOpen.length ? (
                   <button type="button" className="btn btn--confirm" onClick={confirmAll}>
-                    {t("review.confirmAll")}
+                    {t("review.confirmLesion", { n: index + 1 })}
                   </button>
                 ) : (
                   <button type="button" className="btn" title={t("review.unconfirmFormTitle")} onClick={unconfirmForm}>
