@@ -99,6 +99,7 @@ def test_dashboard_lists_failed_extraction_as_processing_error(
 
     # Assert
     assert response.status_code == 200
-    assert {"kind": "processing_error", "subject": "0001", "href": "/badania"} in response.data[
+    number = str(study.id).zfill(4)  # the study number of the review screens
+    assert {"kind": "processing_error", "subject": number, "href": "/badania"} in response.data[
         "attention"
     ]

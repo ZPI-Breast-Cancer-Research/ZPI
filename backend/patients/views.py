@@ -88,6 +88,11 @@ def _load_state(orthanc_studies: list[dict]):
     return db_studies, extractions, segmentations
 
 
+def _iso_date(value):
+    """DICOM YYYYMMDD -> ISO date, or None when the date is unknown."""
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
+
+
 def _pick_uncertainty(segmentation, extraction):
     if segmentation is not None and segmentation.uncertainty is not None:
         return segmentation.uncertainty
@@ -406,7 +411,7 @@ def dashboard_view(request):
     to_review_count = 0
     missing_reports_count = 0
     failed_studies = []
-    for idx, o_study in enumerate(orthanc_studies):
+    for o_study in orthanc_studies:
         db_study = db_studies.get(o_study.get("orthanc_id"))
         if not db_study: continue
         extraction = extractions.get(db_study.id) if db_study else None
@@ -414,14 +419,13 @@ def dashboard_view(request):
 
         missing_reports_count += 1 if not extraction else 0
         
-        seg_status = segmentation.status if segmentation else "COMPLETED"
-        ext_status = extraction.status if extraction else "COMPLETED"
+        seg_status = segmentation.status if segmentation else None
+        ext_status = extraction.status if extraction else None
 
         uncertainty = _pick_uncertainty(segmentation, extraction)
-        if uncertainty is None:
-            uncertainty = 0.5
 
-        study_number = str(idx + 1).zfill(4)
+        # the same number as in the review screens, not the position in the Orthanc list
+        study_number = str(db_study.id).zfill(4)
         if ext_status == ExtractionStatus.FAILED:
             failed_studies.append(study_number)
 
@@ -439,11 +443,11 @@ def dashboard_view(request):
             to_review_count += 1
             queue_items.append(
                 {
-                    "studyId": str(db_study.id) if db_study else f"s{idx + 1}",
+                    "studyId": str(db_study.id),
                     "studyNumber": study_number,
                     "patientId": o_study.get("patient_id") or "---",
-                    "studyDate": o_study.get("study_date") or "----------",
-                    "uncertainty": float(uncertainty),
+                    "studyDate": _iso_date(o_study.get("study_date")),
+                    "uncertainty": float(uncertainty) if uncertainty is not None else None,
                 }
             )
 

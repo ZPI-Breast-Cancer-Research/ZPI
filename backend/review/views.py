@@ -38,7 +38,15 @@ def _size_value(wymiary) -> str | None:
     return f"{max(wymiary['wartosci']):g}"
 
 def _dicom_date(value):
-    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else ""
+    """DICOM YYYYMMDD -> ISO date, or None when the date is unknown."""
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
+
+
+def _uncertainty(segmentation, extraction) -> float | None:
+    for result in (segmentation, extraction):
+        if result is not None and result.uncertainty is not None:
+            return float(result.uncertainty)
+    return None
  
  
 def _user_name(user):
@@ -296,27 +304,15 @@ def review_queue(request):
         if StatusChoices.COMPLETED not in (seg_status, ext_status):
             continue
 
-        uncertainty = 0.00
-        if segmentation and segmentation.uncertainty is not None:
-            uncertainty = float(segmentation.uncertainty)
-        elif extraction and extraction.uncertainty is not None:
-            uncertainty = float(extraction.uncertainty)
-
-        study_date = orthanc_map.get(study.orthanc_path, {}).get("study_date")
-        formatted_date = (
-            f"{study_date[:4]}-{study_date[4:6]}-{study_date[6:]}"
-            if study_date and len(study_date) == 8
-            else "----------"
-        )
-
         queue_data.append({
             "studyId": study.orthanc_path,
             "studyNumber": str(study.id).zfill(4),
-            "studyDate": formatted_date,
-            "uncertainty": float(uncertainty),
+            "studyDate": _dicom_date(orthanc_map.get(study.orthanc_path, {}).get("study_date")),
+            "uncertainty": _uncertainty(segmentation, extraction),
         })
 
-    queue_data.sort(key=lambda x: x["uncertainty"], reverse=True)
+    # least certain first; unknown uncertainty counts as least certain, so it is not overlooked
+    queue_data.sort(key=lambda x: (x["uncertainty"] is not None, -(x["uncertainty"] or 0)))
     return Response(queue_data, status=status.HTTP_200_OK)
 
 @api_view(["GET"])
@@ -339,14 +335,7 @@ def review_case_detail(request, study_id):
     except (OrthancUnauthorized, OrthancUnavailable):
         o_study = {}
 
-    study_date = o_study.get("study_date")
-    formatted_date = f"{study_date[:4]}-{study_date[4:6]}-{study_date[6:]}" if study_date and len(study_date) == 8 else "2026-10-26"
 
-    uncertainty = 0.5
-    if segmentation and segmentation.uncertainty is not None:
-        uncertainty = float(segmentation.uncertainty)
-    elif extraction and extraction.uncertainty is not None:
-        uncertainty = float(extraction.uncertainty)
 
     mask_approved_val = None
     if segmentation:
@@ -365,9 +354,9 @@ def review_case_detail(request, study_id):
         "studyNumber": str(study.id).zfill(4),
         "patientId": o_study.get("patient_id") or "---",
         "age": None,
-        "studyDate": formatted_date,
-        "description": o_study.get("description") or "MR piersi z kontrastem",
-        "uncertainty": uncertainty,
+        "studyDate": _dicom_date(o_study.get("study_date")),
+        "description": o_study.get("description") or None,
+        "uncertainty": _uncertainty(segmentation, extraction),
         "segmentationVersion": str(segmentation.model_id) if segmentation and segmentation.model_id else "-",
         "extractionVersion": str(extraction.model_id) if extraction and extraction.model_id else None,
         "studyUid": o_study.get("study_instance_uid"),

@@ -8,8 +8,8 @@ import type { FieldKey } from "./fields";
 export interface QueueEntry {
   studyId: string;
   studyNumber: string;
-  studyDate: string;
-  uncertainty: number;
+  studyDate: string | null;
+  uncertainty: number | null;
 }
 
 export interface SegmentationInfo {
@@ -22,9 +22,9 @@ export interface ReviewCase {
   studyNumber: string;
   patientId: string;
   age: number | null;
-  studyDate: string;
-  description: string;
-  uncertainty: number;
+  studyDate: string | null;
+  description: string | null;
+  uncertainty: number | null;
   segmentationVersion: string;
   extractionVersion: string | null;
   studyUid: string | null;
@@ -76,7 +76,7 @@ export function reviewProgress(studyId: string) {
 // least certain first, the order verification follows
 export async function fetchQueue(): Promise<QueueEntry[]> {
   if (MOCK_API) {
-    return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => b.uncertainty - a.uncertainty));
+    return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => (b.uncertainty ?? 0) - (a.uncertainty ?? 0)));
   }
   const { data } = await api.get<QueueEntry[]>("/api/review/queue/");
   return data;

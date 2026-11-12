@@ -120,16 +120,9 @@ def test_dicom_date_converts_valid_date():
     assert views._dicom_date("20261026") == "2026-10-26"
 
 
-def test_dicom_date_returns_empty_string_for_none():
-    assert views._dicom_date(None) == ""
-
-
-def test_dicom_date_returns_empty_string_for_empty_string():
-    assert views._dicom_date("") == ""
-
-
-def test_dicom_date_returns_empty_string_for_invalid_length():
-    assert views._dicom_date("202610") == ""
+@pytest.mark.parametrize("value", [None, "", "202610"], ids=["none", "empty", "invalid-length"])
+def test_dicom_date_returns_none_when_the_date_is_unknown(value):
+    assert views._dicom_date(value) is None
 
 
 # =========================================================

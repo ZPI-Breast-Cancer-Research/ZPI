@@ -77,7 +77,7 @@ def test_review_case_detail_returns_404_for_unknown_orthanc_id(
 
 
 @pytest.mark.django_db
-def test_review_case_detail_uses_default_values_without_results(
+def test_review_case_detail_shows_unknown_values_as_none_without_results(
     authenticated_client,
     study,
 ):
@@ -92,9 +92,10 @@ def test_review_case_detail_uses_default_values_without_results(
         )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.data["uncertainty"] == 0.5
+    assert response.data["uncertainty"] is None
+    assert response.data["studyDate"] is None
     assert response.data["patientId"] == "---"
-    assert response.data["description"] == "MR piersi z kontrastem"
+    assert response.data["description"] is None
     assert response.data["segmentationVersion"] == "-"
     assert response.data["extractionVersion"] is None
     assert response.data["proposals"] == {}
