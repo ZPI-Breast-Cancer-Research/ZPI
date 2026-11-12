@@ -165,6 +165,25 @@ def test_report_formats_and_exports(gold_dir, tmp_path):
     assert exported["summary"]["zmiany_f1"] == pytest.approx(2 / 3)
 
 
+def test_uncertainty_is_compared_with_the_errors_of_each_document(gold_dir, tmp_path):
+    # Arrange: doc1 correct and certain, doc2 failed (uncertainty 1.0, everything missed)
+    path = write_predictions(tmp_path / "run.jsonl", [result("doc1.jpg"), error_result("doc2.jpg")])
+
+    # Act
+    report = run_eval(gold_dir, path)
+    exported = json.loads(json.dumps(report.to_dict()))
+
+    # Assert
+    assert report.uncertainty.uncertainty == {"doc1": 0.0, "doc2": 1.0}
+    assert report.uncertainty.errors["doc1"] == 0.0
+    assert report.uncertainty.errors["doc2"] == 1.0
+    assert report.uncertainty.top_k_hits() == (2, 2)
+    # two documents are too few for a rank correlation
+    assert report.summary()["uncertainty_rho"] is None
+    assert exported["uncertainty"]["documents"]["doc2"]["components"]["error"] == 1.0
+    assert "uncertainty vs errors per document" in format_report(report)
+
+
 def test_invalid_gold_file_names_the_file(gold_dir):
     # Arrange
     (gold_dir / "broken.json").write_text('{"source": "x"}', encoding="utf-8")

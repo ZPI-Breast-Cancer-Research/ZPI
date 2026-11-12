@@ -17,7 +17,13 @@ from mlops.models import ModelVersion  # noqa: E402
 from workers.extraction import tasks  # noqa: E402
 from workers.extraction.errors import LLMError  # noqa: E402
 from workers.extraction.pipeline import Extractor  # noqa: E402
-from workers.extraction.tests.factories import REPORT, FakeLLM, answer_json, extraction  # noqa: E402
+from workers.extraction.tests.factories import (  # noqa: E402
+    REPORT,
+    FakeLLM,
+    answer_json,
+    extraction,
+    node,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -264,3 +270,84 @@ def test_status_moves_to_processing_before_extraction(monkeypatch, storage):
 
     # Assert
     assert seen["status"] == StatusChoices.PROCESSING
+
+
+def test_uncertainty_is_saved_in_the_column_the_review_queue_sorts_by(monkeypatch, storage):
+    # Arrange: an answer whose node quote is not in the report -> a heavy warning
+    bad = extraction(wezly=[node(cytat="Węzeł nadobojczykowy lewy 25mm.")])
+    use_llm(monkeypatch, answer_json(bad))
+    row = ExtractionRow.objects.create(report_path=KEY)
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert 0 < row.uncertainty < 1
+    assert row.uncertainty == row.result["uncertainty"]
+    assert row.result["uncertainty_components"]["warnings"] > 0
+
+
+def test_correct_extraction_of_a_text_report_has_zero_uncertainty(monkeypatch, storage):
+    # Arrange
+    use_llm(monkeypatch, answer_json())
+    row = ExtractionRow.objects.create(report_path=KEY)
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.uncertainty == 0.0
+
+
+def test_failed_extraction_has_maximum_uncertainty(monkeypatch, storage):
+    # Arrange
+    use_llm(monkeypatch, LLMError("down"))
+    row = ExtractionRow.objects.create(report_path=KEY)
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.uncertainty == 1.0
+
+
+def test_failure_outside_the_pipeline_has_maximum_uncertainty(monkeypatch):
+    # Arrange
+    def download_file(bucket, key, path):
+        raise OSError("MinIO unreachable")
+
+    monkeypatch.setattr(tasks, "download_file", download_file)
+    row = ExtractionRow.objects.create(report_path=KEY)
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.uncertainty == 1.0
+
+
+def test_retry_clears_the_previous_uncertainty_while_it_runs(monkeypatch, storage):
+    # Arrange: a failed row (uncertainty 1.0) retried; look at it while the LLM is "working"
+    seen = {}
+    row = ExtractionRow.objects.create(
+        report_path=KEY, status=StatusChoices.FAILED, uncertainty=1.0
+    )
+
+    class Watching(FakeLLM):
+        def complete(self, messages, **kwargs):
+            seen["uncertainty"] = ExtractionRow.objects.get(id=row.id).uncertainty
+            return super().complete(messages, **kwargs)
+
+    monkeypatch.setattr(tasks, "_extractor", lambda: Extractor(Watching([answer_json()])))
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert seen["uncertainty"] is None
+    assert row.uncertainty == 0.0

@@ -70,6 +70,22 @@ Input: a single file, or a directory where every `.jpg`/`.png`/`.txt` file is on
 every subdirectory is one multi-page document (pages = images sorted by name). A failed document
 is recorded with `"status": "error"` and the batch continues.
 
+Every result also has `uncertainty` in [0, 1] (higher = less certain, 1.0 for an error), which
+orders the review queue, and `uncertainty_components` that say where it comes from:
+
+| Component | Value |
+|---|---|
+| `error` | 1.0 when the extraction failed (the uncertainty is then 1.0) |
+| `warnings` | `1 − exp(−2 · Σ weights / items)`: weight 1 for a quote or number not in the text, 0.5 for shape / margin / echogenicity not in the quote, a USG-only field in MMG, a lesion in a breast without focal lesions, 0.25 for verbatim words not in the text and structural warnings; items = 1 + observations + nodes, so a long report is not doubted for its length |
+| `ocr` | `(0.95 − mean OCR confidence) / 0.15`, clipped to [0, 1]; 0 for text input |
+| `retry` | 0.2 when the first LLM answer was not valid JSON |
+
+They are joined with a noisy-OR, `1 − Π(1 − c)`: one strong signal is enough to put a document
+high in the queue. The weights are fixed in `structuring/uncertainty.py`, not tuned on the 12
+gold documents. `uncertainty` is computed from the saved fields, so reading an older result back
+gives the current formula. The LLM's token probabilities are not used: LM Studio returns
+`logprobs: null`, also with structured output.
+
 Useful flags: `--few-shot 0` (no example, shorter prompt), `--orientation none` (upright scans,
 faster), `--model <id>` (instead of `LLM_MODEL`), `--no-structured` (do not enforce the JSON
 Schema on the server).
@@ -138,9 +154,16 @@ to it is an order-insensitive word error rate (`ocr_bow_wer`: the words of both 
 bags). High CER with low `ocr_bow_wer` means the text is right but out of order; both high means
 misread characters. The output contains file names and numbers only.
 
+`uncertainty` is checked against the error rate of each document (share of its compared fields
+and paired items that are not correct, unpaired items included): the Spearman correlation
+(`uncertainty_rho`; 1.0 = the queue order matches the errors exactly) for the whole value and
+for each component, and how many of the 3 most uncertain documents are among the 3 worst. The
+queue needs the order, not calibrated values, so both are rank-based. With 12 documents only a
+clear correlation (above ~0.58) is more than noise.
+
 The top of the output is a `summary`: pooled accuracy over all scored fields, accuracy per field
-group (`piersi`, MMG / USG observations, `zmiana`, `wezel`, `wniosek`), entity F1 and conclusion
-BI-RADS accuracy. Use it to compare runs.
+group (`piersi`, MMG / USG observations, `zmiana`, `wezel`, `wniosek`), entity F1, conclusion
+BI-RADS accuracy and `uncertainty_rho`. Use it to compare runs.
 
 ### Experiments
 
@@ -217,11 +240,11 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `llm/` | LLM interface + local-host guard, HTTP client for `/v1/chat/completions`, registry |
 | `normalize.py` | layout-only clean-up of OCR text (never changes words or numbers); drops the form header before „Opis badania” and the footer („Wykonał/a:”, „Opis:”) |
 | `matching.py` | fuzzy text matching tolerant to OCR noise, case and diacritics: `fold`, `quote_similarity`, `text_similarity`; shared by checks and evaluation |
-| `structuring/` | report text → structured data: `prompting.py` + `prompts/` prompt, field list generated from the schema, few-shot examples; `parsing.py` JSON extraction from the answer + schema validation (one retry with feedback); `checks.py` warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions |
+| `structuring/` | report text → structured data: `prompting.py` + `prompts/` prompt, field list generated from the schema, few-shot examples; `parsing.py` JSON extraction from the answer + schema validation (one retry with feedback); `checks.py` warnings: quote not found in the report, verbatim fields not in the report, numbers not in the observation's quote, shape / margin / echogenicity not supported by the quote, USG-only fields in a mammography observation, inconsistent observation links, lesion in a breast marked without focal lesions; `uncertainty.py` uncertainty of a result from its error, warnings, OCR confidence and retries |
 | `evaluation/` | scoring predictions against gold files (`eval`): `scoring.py` `evaluate` – which documents are scored (skipped, few-shot leak) and run-level data; `comparison.py` `Comparison` of one document – entity matching, per-field comparison; `scores.py` counters and metrics of one field (`FieldScore`), entity type (`EntityScore`) or OCR text (`OCRScore`: character error rate against the transcripts); `report.py` `Report` – all scores of a run, summary, JSON export; `loading.py` gold, transcript and prediction files; `formatting.py` text tables of a report and of the experiment history; `tracking.py` experiment history – records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
 | `experiments/` | experiment records (`runs/`) and journal `EXPERIMENTS.md` |
 | `__main__.py` | CLI |
-| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path): sets the backend `ExtractionResult` row to PROCESSING with the production model version, runs the pipeline and saves the whole result in `result` (with the OCR text, for the frontend), `generated_report` (the `EkstrakcjaBadania` JSON, for the review form), `warnings` and `provenance` with status COMPLETED, or the reason with FAILED. Rows a doctor already reviewed are never overwritten |
+| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path): sets the backend `ExtractionResult` row to PROCESSING with the production model version, runs the pipeline and saves the whole result in `result` (with the OCR text, for the frontend), `generated_report` (the `EkstrakcjaBadania` JSON, for the review form), `warnings`, `provenance` and `uncertainty` (the column the review queue sorts by; 1.0 when the task itself fails) with status COMPLETED, or the reason with FAILED. Rows a doctor already reviewed are never overwritten |
 
 Changing `structuring/prompts/` or `structuring/prompting.py`: bump `PROMPT_VERSION`. Changing `schema.py`: bump
 `SCHEMA_VERSION` and update `structuring/prompts/few_shot/` (examples are validated against the schema at

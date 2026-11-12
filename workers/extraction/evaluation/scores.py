@@ -1,11 +1,13 @@
 """Scores of one kind of result and the metrics computed from them: a field, an entity type,
-OCR text."""
+OCR text, uncertainty."""
 
+import math
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 from ..normalize import normalize_text
+from ..structuring.uncertainty import COMPONENTS
 
 
 @dataclass
@@ -151,3 +153,77 @@ class OCRScore:
             return 0.0 if not n_hyp else 1.0
         common = (ref & hyp).total()
         return (max(n_ref, n_hyp) - common) / n_ref
+
+
+@dataclass
+class UncertaintyScore:
+    """Does ``uncertainty`` rank documents by how wrong their extraction is?
+
+    Per document: the uncertainty, its components and the error rate (share of the compared
+    fields and paired items that are not correct). The review queue needs the right order,
+    not calibrated values, so the measures are rank-based:
+
+    - ``rho``: Spearman correlation of uncertainty with the error rate (1.0 = same order)
+    - ``top_k_hits``: of the k most uncertain documents, how many are among the k worst
+    """
+
+    uncertainty: dict[str, float] = field(default_factory=dict)
+    components: dict[str, dict[str, float]] = field(default_factory=dict)
+    errors: dict[str, float] = field(default_factory=dict)
+
+    def add(self, key: str, uncertainty: float, components: dict[str, float], doc: FieldScore):
+        self.uncertainty[key] = uncertainty
+        self.components[key] = components
+        self.errors[key] = 1.0 - doc.accuracy if doc.accuracy is not None else 0.0
+
+    def rho(self, component: str | None = None) -> float | None:
+        """Spearman correlation with the error rate, of the whole uncertainty or one component.
+
+        None with fewer than 3 documents or when either side is constant (e.g. no OCR).
+        """
+        keys = sorted(self.errors)
+        if component is None:
+            values = [self.uncertainty[k] for k in keys]
+        else:
+            values = [self.components[k].get(component, 0.0) for k in keys]
+        return spearman(values, [self.errors[k] for k in keys])
+
+    def component_rho(self) -> dict[str, float | None]:
+        return {name: self.rho(name) for name in COMPONENTS}
+
+    def top_k_hits(self, k: int = 3) -> tuple[int, int] | None:
+        """(hits, k): the k most uncertain documents that are among the k with most errors."""
+        k = min(k, len(self.errors))
+        if not k:
+            return None
+        worst = set(sorted(self.errors, key=lambda key: -self.errors[key])[:k])
+        doubted = sorted(self.uncertainty, key=lambda key: -self.uncertainty[key])[:k]
+        return len(worst.intersection(doubted)), k
+
+
+def spearman(x: Sequence[float], y: Sequence[float]) -> float | None:
+    """Spearman rank correlation, ties get their average rank."""
+    if len(x) != len(y) or len(x) < 3:
+        return None
+    rx, ry = _ranks(x), _ranks(y)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    cov = sum((a - mx) * (b - my) for a, b in zip(rx, ry, strict=True))
+    sx = math.sqrt(sum((a - mx) ** 2 for a in rx))
+    sy = math.sqrt(sum((b - my) ** 2 for b in ry))
+    if not sx or not sy:
+        return None
+    return cov / (sx * sy)
+
+
+def _ranks(values: Sequence[float]) -> list[float]:
+    order = sorted(range(len(values)), key=values.__getitem__)
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        for position in range(i, j + 1):
+            ranks[order[position]] = (i + j) / 2 + 1
+        i = j + 1
+    return ranks

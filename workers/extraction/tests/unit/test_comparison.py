@@ -163,3 +163,18 @@ def test_modalities_compared_regardless_of_order():
 
     # Assert
     assert report.fields["modalnosci"] == FieldScore(correct=1)
+
+
+def test_document_returns_its_own_counts_with_unpaired_items():
+    # Arrange: the first document is perfect; the second misses its lesion
+    comparison = Comparison()
+    comparison.document(extraction(), extraction())
+
+    # Act
+    doc = comparison.document(extraction(), extraction(zmiany=[]))
+
+    # Assert: only the second document, and the lesion not found counts as one miss
+    assert doc.wrong == doc.spurious == 0
+    assert doc.missed == 1
+    assert doc.correct > 0
+    assert comparison.report.group_score().correct > doc.correct

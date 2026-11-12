@@ -1,6 +1,12 @@
 import pytest
 
-from workers.extraction.evaluation.scores import EntityScore, FieldScore, OCRScore
+from workers.extraction.evaluation.scores import (
+    EntityScore,
+    FieldScore,
+    OCRScore,
+    UncertaintyScore,
+    spearman,
+)
 
 
 def test_field_score_metrics():
@@ -161,3 +167,69 @@ def test_swapped_lines_cost_cer_but_not_the_bag_of_words_rate():
     # Assert
     assert score.documents["doc"] > 0.3
     assert score.words["doc"] == 0.0
+
+
+@pytest.mark.parametrize(
+    ("x", "y", "expected"),
+    [
+        ([1, 2, 3, 4], [10, 20, 30, 40], 1.0),
+        ([1, 2, 3, 4], [40, 30, 20, 10], -1.0),
+        ([1, 2, 3], [1, 100, 1000], 1.0),  # ranks only, not values
+        ([1, 1, 2], [1, 2, 3], 0.866),  # tie: average rank
+    ],
+)
+def test_spearman(x, y, expected):
+    # Act / Assert
+    assert spearman(x, y) == pytest.approx(expected, abs=1e-3)
+
+
+@pytest.mark.parametrize(
+    ("x", "y"), [([1, 2], [1, 2]), ([0, 0, 0], [1, 2, 3]), ([1, 2, 3], [5, 5, 5])]
+)
+def test_spearman_is_none_for_too_few_or_constant_values(x, y):
+    # Act / Assert
+    assert spearman(x, y) is None
+
+
+def uncertainty_score(rows):
+    """rows: (key, uncertainty, error rate); the error rate becomes a FieldScore of 100 fields."""
+    score = UncertaintyScore()
+    for key, value, error_rate in rows:
+        wrong = round(error_rate * 100)
+        score.add(
+            key,
+            value,
+            {"warnings": value, "ocr": 0.0},
+            FieldScore(correct=100 - wrong, wrong=wrong),
+        )
+    return score
+
+
+def test_uncertainty_that_orders_documents_like_their_errors_has_rho_one():
+    # Arrange
+    score = uncertainty_score([("a", 0.1, 0.0), ("b", 0.5, 0.2), ("c", 0.9, 0.6)])
+
+    # Act / Assert
+    assert score.rho() == pytest.approx(1.0)
+    assert score.top_k_hits(k=1) == (1, 1)
+
+
+def test_rho_per_component_is_none_for_a_constant_component():
+    # Arrange
+    score = uncertainty_score([("a", 0.1, 0.0), ("b", 0.5, 0.2), ("c", 0.9, 0.6)])
+
+    # Act
+    rho = score.component_rho()
+
+    # Assert
+    assert rho["warnings"] == pytest.approx(1.0)
+    assert rho["ocr"] is None
+    assert rho["retry"] is None  # missing from the components -> 0 everywhere
+
+
+def test_top_k_counts_the_most_uncertain_among_the_worst():
+    # Arrange: the most uncertain document (a) is the best one
+    score = uncertainty_score([("a", 0.9, 0.0), ("b", 0.8, 0.5), ("c", 0.1, 0.6), ("d", 0.0, 0.1)])
+
+    # Act / Assert: top 2 doubted {a, b}, top 2 worst {c, b}
+    assert score.top_k_hits(k=2) == (1, 2)
