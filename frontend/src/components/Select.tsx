@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { t } from "../i18n";
+import "./select.css";
 
 interface Props {
   id: string;
   value: string;
-  options: string[];
-  // the model's answer, marked in the list only, so the closed field shows the value alone
-  proposal: string;
+  options: readonly string[];
+  label?: (value: string) => string;
+  // shown while nothing is picked
+  placeholder?: string;
+  // one option marked in the list only (e.g. the model's answer), so the closed field shows the value alone
+  mark?: { value: string; text: string };
+  ariaLabel?: string;
+  className?: string;
   onChange: (value: string) => void;
 }
 
 // a list in the app's own look instead of the system one; arrows, Enter and Esc work as in a select
-export default function FieldSelect({ id, value, options, proposal, onChange }: Props) {
+export default function Select({ id, value, options, mark, placeholder = "—", ariaLabel, className, onChange, label = (v) => v }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -48,13 +53,14 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
   };
 
   return (
-    <div className="field-select" ref={box}>
+    <div className={className ? `field-select ${className}` : "field-select"} ref={box}>
       <button
         id={id}
         type="button"
         className="field-select__button"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={ariaLabel}
         onClick={() => (open ? setOpen(false) : show())}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -71,7 +77,7 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
           }
         }}
       >
-        {value}
+        {(value && label(value)) || placeholder}
       </button>
       {open && (
         <ul className="field-select__list" role="listbox" aria-labelledby={id} style={place}>
@@ -85,8 +91,8 @@ export default function FieldSelect({ id, value, options, proposal, onChange }: 
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pick(option)}
             >
-              {option}
-              {option === proposal && <small>{t("review.field.model")}</small>}
+              {label(option)}
+              {option === mark?.value && <small>{mark.text}</small>}
             </li>
           ))}
         </ul>
