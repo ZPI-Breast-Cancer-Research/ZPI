@@ -132,8 +132,11 @@ items are not scored, because recall already counts them. A failed document is s
 empty extraction. Verbatim text fields count as correct at ≥ 90 % similarity after folding case
 and diacritics, and `wymiary.max_mm` compares sizes after unit conversion. A document whose text
 is a few-shot example is skipped, since it would inflate the scores (`--include-leaked` to keep it).
-For runs with OCR, the character error rate is the edit distance to `text/<scan>.txt` after
-normalisation, with whitespace collapsed. The output contains file names and numbers only.
+For runs with OCR, the character error rate (CER) is the edit distance to `text/<scan>.txt` after
+normalisation, with whitespace collapsed. CER counts a line read in the wrong place twice, so next
+to it is an order-insensitive word error rate (`ocr_bow_wer`: the words of both texts compared as
+bags). High CER with low `ocr_bow_wer` means the text is right but out of order; both high means
+misread characters. The output contains file names and numbers only.
 
 The top of the output is a `summary`: pooled accuracy over all scored fields, accuracy per field
 group (`piersi`, MMG / USG observations, `zmiana`, `wezel`, `wniosek`), entity F1 and conclusion

@@ -1,6 +1,7 @@
 """Scores of one kind of result and the metrics computed from them: a field, an entity type,
 OCR text."""
 
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
@@ -78,19 +79,32 @@ class EntityScore:
 
 @dataclass
 class OCRScore:
-    """Character error rate (CER) of each OCR-read document against its hand-typed transcript.
+    """OCR quality of each OCR-read document against its hand-typed transcript.
 
-    CER is an error rate: 0.0 is a perfect read, 0.05 means 5 % of the characters are wrong.
+    Two error rates (0.0 is a perfect read, 0.05 means 5 % wrong):
+
+    - ``documents``: character error rate (CER). It counts a line OCR read in the wrong place
+      twice (deleted where it should be, inserted where it was read).
+    - ``words``: order-insensitive word error rate (bag of words). It ignores where a word was
+      read, so a high CER with a low ``words`` rate means the text is right but out of order.
     """
 
     documents: dict[str, float] = field(default_factory=dict)
+    words: dict[str, float] = field(default_factory=dict)
 
     def add(self, key: str, reference: str, hypothesis: str) -> None:
         self.documents[key] = self.char_error_rate(reference, hypothesis)
+        self.words[key] = self.bag_of_words_error_rate(reference, hypothesis)
 
     @property
     def mean(self) -> float | None:
+        """Mean CER."""
         return sum(self.documents.values()) / len(self.documents) if self.documents else None
+
+    @property
+    def words_mean(self) -> float | None:
+        """Mean order-insensitive word error rate."""
+        return sum(self.words.values()) / len(self.words) if self.words else None
 
     @property
     def worst(self) -> tuple[str, float] | None:
@@ -119,3 +133,21 @@ class OCRScore:
                 current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (r != h)))
             previous = current
         return previous[-1] / len(ref)
+
+    @staticmethod
+    def bag_of_words_error_rate(
+        reference: str, hypothesis: str, *, normalize: bool = True
+    ) -> float:
+        """Word error rate that ignores word order: the words of both texts as multisets.
+
+        ``(max(len(ref), len(hyp)) - common) / len(ref)``, so a wrong word read in place of a right
+        one is one error (like a substitution in WER), and a missing or extra word is one error.
+        Same normalisation as ``char_error_rate``; punctuation stays part of the word.
+        """
+        prepare = normalize_text if normalize else str
+        ref, hyp = (Counter(prepare(t).split()) for t in (reference, hypothesis))
+        n_ref, n_hyp = ref.total(), hyp.total()
+        if not n_ref:
+            return 0.0 if not n_hyp else 1.0
+        common = (ref & hyp).total()
+        return (max(n_ref, n_hyp) - common) / n_ref

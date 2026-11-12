@@ -132,6 +132,8 @@ def test_cer_only_for_ocr_results_with_a_transcript(gold_dir, tmp_path):
     # Assert
     assert list(report.ocr.documents) == ["doc1"]
     assert 0 < report.ocr.documents["doc1"] < 0.01
+    assert list(report.ocr.words) == ["doc1"]
+    assert 0 < report.ocr.words["doc1"] < 0.1
 
 
 def test_transcript_run_has_no_cer(gold_dir, tmp_path):
@@ -144,6 +146,7 @@ def test_transcript_run_has_no_cer(gold_dir, tmp_path):
     # Assert
     assert report.ocr.documents == {}
     assert report.summary()["ocr_cer"] is None
+    assert report.summary()["ocr_bow_wer"] is None
 
 
 def test_report_formats_and_exports(gold_dir, tmp_path):

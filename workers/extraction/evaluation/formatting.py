@@ -14,7 +14,11 @@ TABLE_METRICS = (
     ("wezly_f1", "nodeF1"),
     ("wniosek_birads_accuracy", "birads"),
     ("ocr_cer", "CER"),
+    ("ocr_bow_wer", "bowWER"),
 )
+
+# error rates, shown with one decimal place
+RATE_METRICS = {"ocr_cer", "ocr_bow_wer"}
 
 
 def format_report(report: Report) -> str:
@@ -36,7 +40,8 @@ def format_report(report: Report) -> str:
         worst_key, worst_cer = worst
         lines.append(
             f"OCR character error rate: mean {report.ocr.mean:.1%}, "
-            f"worst {worst_cer:.1%} ({worst_key})"
+            f"worst {worst_cer:.1%} ({worst_key}); "
+            f"order-insensitive word error rate: mean {report.ocr.words_mean:.1%}"
         )
 
     lines += ["", f"{'field group':<26}{'n':>5}{'acc':>7}{'P':>7}{'R':>7}{'F1':>7}"]
@@ -120,4 +125,4 @@ def format_experiment_diff(previous: dict[str, Any], current: dict[str, Any]) ->
 def _cell(value: float | None, key: str) -> str:
     if value is None:
         return f"{'–':>8}"
-    return f"{value:>8.1%}" if key == "ocr_cer" else f"{value:>8.0%}"
+    return f"{value:>8.1%}" if key in RATE_METRICS else f"{value:>8.0%}"
