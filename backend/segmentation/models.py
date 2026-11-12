@@ -44,6 +44,8 @@ class SegmentationResult(models.Model):
     model_seg_sop_uid = models.CharField(max_length=64, blank=True, default="")
     approved_seg_series_uid = models.CharField(max_length=64, blank=True, default="")
     approved_seg_sop_uid = models.CharField(max_length=64, blank=True, default="")
+    # {"volume_ml": float, "dimensions_mm": [float, float, float] | None} of the model mask
+    measurements = models.JSONField(blank=True, null=True)
 
     class Meta:
         db_table = 'segmentation_results'

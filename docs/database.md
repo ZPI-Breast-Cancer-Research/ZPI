@@ -48,6 +48,7 @@
 | **uncertainty** | float | Confidence or epistemic uncertainty score returned by the AI model regarding its output. |
 | **generated_path** | varchar | Storage path pointing to the raw AI-generated prediction mask stored in MinIO. |
 | **accepted_path** | varchar | Storage path pointing to the final verified or manually corrected segmentation mask in MinIO. |
+| **measurements** | json | Measurements of the model mask computed by the worker: `volume_ml` (all voxels) and `dimensions_mm` (extent of the largest region, longest first); null before inference. |
 | **accepted_by** | integer (FK) | Foreign key tracking the specific radiologist (User) who audited and verified the mask. |
 | **accepted_at** | date | Timestamp recording when the radiologist approved the segmentation results. |
 
