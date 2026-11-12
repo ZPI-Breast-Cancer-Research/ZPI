@@ -35,7 +35,8 @@ def test_approve_case_approves_segmentation_and_extraction(
         ),
         {
             "mask": "confirmed",
-            "fields": {"birads": "4C"},
+            "report": {"zmiany": [{"birads": "4C"}]},
+            "lesions": {"0": {"birads": {"value": "4C", "state": "confirmed"}}},
         },
         format="json",
     )
@@ -50,7 +51,8 @@ def test_approve_case_approves_segmentation_and_extraction(
     assert extraction.status == StatusChoices.APPROVED
     assert extraction.accepted_by == reviewer
     assert extraction.accepted_at == timezone.now().date()
-    assert extraction.accepted_report == {"birads": "4C"}
+    assert extraction.accepted_report == {"zmiany": [{"birads": "4C"}]}
+    assert extraction.lesion_answers == {"0": {"birads": {"value": "4C", "state": "confirmed"}}}
 
 
 @pytest.mark.django_db
@@ -93,12 +95,8 @@ def test_approve_case_marks_extraction_as_corrected_when_field_changed(
             kwargs={"study_id": study.orthanc_path},
         ),
         {
-            "fields": {
-                "birads": {
-                    "value": "5",
-                    "state": "corrected",
-                }
-            }
+            "report": {"zmiany": [{"birads": "5"}]},
+            "lesions": {"0": {"birads": {"value": "5", "state": "corrected"}}},
         },
         format="json",
     )
@@ -106,7 +104,7 @@ def test_approve_case_marks_extraction_as_corrected_when_field_changed(
     extraction.refresh_from_db()
     assert response.status_code == status.HTTP_200_OK
     assert extraction.status == StatusChoices.CORRECTED
-    assert extraction.accepted_report == {"birads": "5"}
+    assert extraction.accepted_report == {"zmiany": [{"birads": "5"}]}
 
 
 @pytest.mark.django_db
@@ -390,10 +388,13 @@ def test_approve_form_approves_extraction(
             kwargs={"study_id": study.orthanc_path},
         ),
         {
-            "fields": {
-                "birads": "4C",
-                "size": "12",
-            }
+            "report": {"zmiany": [{"birads": "4C"}]},
+            "lesions": {
+                "0": {
+                    "birads": {"value": "4C", "state": "confirmed"},
+                    "size": {"value": "12", "state": "confirmed"},
+                }
+            },
         },
         format="json",
     )
@@ -402,10 +403,8 @@ def test_approve_form_approves_extraction(
     assert response.status_code == status.HTTP_200_OK
     assert extraction.status == StatusChoices.APPROVED
     assert extraction.accepted_by == reviewer
-    assert extraction.accepted_report == {
-        "birads": "4C",
-        "size": "12",
-    }
+    assert extraction.accepted_report == {"zmiany": [{"birads": "4C"}]}
+    assert extraction.lesion_answers["0"]["size"] == {"value": "12", "state": "confirmed"}
 
 
 @pytest.mark.django_db
@@ -424,12 +423,8 @@ def test_approve_form_marks_extraction_as_corrected(
             kwargs={"study_id": study.orthanc_path},
         ),
         {
-            "fields": {
-                "birads": {
-                    "value": "5",
-                    "state": "corrected",
-                }
-            }
+            "report": {"zmiany": [{"birads": "5"}]},
+            "lesions": {"0": {"birads": {"value": "5", "state": "corrected"}}},
         },
         format="json",
     )
@@ -454,7 +449,7 @@ def test_approve_form_does_not_change_pending_extraction(
             "approve-form",
             kwargs={"study_id": study.orthanc_path},
         ),
-        {"fields": {"birads": "4C"}},
+        {"report": {"zmiany": [{"birads": "4C"}]}, "lesions": {}},
         format="json",
     )
 

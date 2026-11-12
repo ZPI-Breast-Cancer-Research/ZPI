@@ -168,13 +168,85 @@ def _report_rows(extraction):
         if key in accepted
     ]
 
+def _report_payload(extraction):
+    """What the review screens show as the report (frontend/src/review/extraction.ts CaseReport).
+
+    {"originalUrl", "result"} once the worker has a result; "pending" while it has none yet, which
+    the frontend shows as waiting; None without a report.
+    """
+    if extraction is None:
+        return None
+    result = extraction.result
+    if result is None and extraction.status == StatusChoices.FAILED:
+        result = _failed_result(extraction)  # failed before the pipeline ran, e.g. download
+    if result is None:
+        return "pending"
+    # TODO: no endpoint serves the uploaded file yet, so there is no preview of the original
+    return {"originalUrl": None, "result": result}
+
+
+def _failed_result(extraction) -> dict:
+    """A worker result for a report that failed before extraction, so the screen shows the error."""
+    return {
+        "source": "",
+        "status": "error",
+        "data": None,
+        "error": extraction.error or "unknown error",
+        "warnings": [],
+        "text": "",
+        "provenance": {
+            "ocr_engine": None,
+            "ocr_engine_version": None,
+            "ocr_mean_confidence": None,
+            "orientation_detector": None,
+            "page_rotations": [],
+            "llm_provider": "",
+            "llm_model": "",
+            "prompt_version": "",
+            "schema_version": "",
+        },
+        "attempts": 0,
+        "ocr_seconds": None,
+        "llm_seconds": None,
+        "created_at": extraction.updated_at.isoformat() if extraction.updated_at else "",
+    }
+
+
+def _overview_report(extraction):
+    """{source, accepted, lesions} of an approved form, as frontend/src/lesion-overview/api.ts reads it."""
+    if extraction is None or not extraction.accepted_report:
+        return None
+    return {
+        "source": _report_payload(extraction),
+        "accepted": extraction.accepted_report,
+        "lesions": extraction.lesion_answers or {},
+    }
+
+
+def _is_corrected(lesions) -> bool:
+    return any(
+        isinstance(answer, dict) and answer.get("state") == "corrected"
+        for fields in lesions.values()
+        if isinstance(fields, dict)
+        for answer in fields.values()
+    )
+
+
 def _apply_form(extraction, submitted, user):
-    new_status = StatusChoices.APPROVED
-    if isinstance(submitted, dict) and submitted:
-        extraction.accepted_report = _as_fields(submitted)  # obsługuje {"value": ...}
-        if any(isinstance(v, dict) and v.get("state") == "corrected" for v in submitted.values()):
-            new_status = StatusChoices.CORRECTED
-    extraction.status = new_status
+    """Store the review form: {"report": <worker schema>, "lesions": {index: {field: answer}}}.
+
+    Without a report the doctor accepts the model's report as it is.
+    """
+    submitted = submitted if isinstance(submitted, dict) else {}
+    report = submitted.get("report")
+    lesions = submitted.get("lesions")
+    lesions = lesions if isinstance(lesions, dict) else {}
+    if isinstance(report, dict):
+        extraction.accepted_report = report
+        extraction.lesion_answers = lesions
+    elif not extraction.accepted_report:
+        extraction.accepted_report = extraction.generated_report
+    extraction.status = StatusChoices.CORRECTED if _is_corrected(lesions) else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()
     extraction.save()
@@ -301,7 +373,7 @@ def review_case_detail(request, study_id):
         "studyUid": o_study.get("study_instance_uid"),
         # null while there is no SEG: still processing, rejected, or the model found nothing
         "mask": _model_seg(segmentation, o_study.get("study_instance_uid")),
-        "report": extraction.report_path if extraction else None,
+        "report": _report_payload(extraction),
         "proposals": proposals,
         "measurements": {
             "volume": (measured or {}).get("volume_ml"),
@@ -333,7 +405,7 @@ def approve_case(request, study_id):
             segmentation.save()
 
         if extraction and extraction.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
-            _apply_form(extraction, payload.get("fields"), request.user)
+            _apply_form(extraction, payload, request.user)
 
     return Response(status=status.HTTP_200_OK)
 
@@ -399,7 +471,7 @@ def unapprove_mask(request, study_id):
 @require_permission(["review"])
 def approve_form(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
-    submitted = request.data.get("fields")
+    submitted = request.data
     
     with transaction.atomic():
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
@@ -448,9 +520,8 @@ def review_overview(request, study_id):
     corrected = segmentation.status == StatusChoices.CORRECTED
     saving = corrected and not segmentation.accepted_path
  
-    report = _report_rows(extraction)
     measured = _mask_measurements(segmentation)
-    by_field = {row["field"]: row["value"] for row in report or []}
+    by_field = {row["field"]: row["value"] for row in _report_rows(extraction) or []}
  
     seg_version = str(segmentation.model_id) if segmentation.model_id else None
     ext_version = str(extraction.model_id) if extraction and extraction.model_id else None
@@ -480,8 +551,7 @@ def review_overview(request, study_id):
             "dimensions": (measured or {}).get("dimensions_mm"),
             "intensity": None,
         },
-        "report": report,
-        "comparison": [
+        "report": _overview_report(extraction),        "comparison": [
             {"feature": "largestSize", "fromMask": _largest_mm(measured), "fromReport": by_field.get("size"), "match": None},
             {"feature": "quadrant", "fromMask": None, "fromReport": by_field.get("location"), "match": None},
         ],
