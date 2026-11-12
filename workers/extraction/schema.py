@@ -3,7 +3,9 @@ from enum import StrEnum
 from functools import cache
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
+
+from .structuring import uncertainty as _uncertainty
 
 SCHEMA_VERSION = "3"
 
@@ -267,3 +269,17 @@ class ExtractionResult(BaseModel):
     ocr_seconds: float | None = None
     llm_seconds: float | None = None
     created_at: datetime
+
+    # Computed from the fields above (structuring/uncertainty.py), so a saved result read back
+    # gets the current formula and eval can score a new formula without running the LLM again.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def uncertainty(self) -> float:
+        """How much to doubt this result, in [0, 1]; higher = less certain, 1.0 for an error."""
+        return _uncertainty.uncertainty(self)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def uncertainty_components(self) -> dict[str, float]:
+        """The signals ``uncertainty`` is made of: error, warnings, ocr, retry."""
+        return _uncertainty.components(self)

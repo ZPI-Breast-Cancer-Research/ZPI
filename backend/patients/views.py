@@ -19,9 +19,10 @@ from rest_framework.response import Response
 
 from common.storage import put_bytes
 from extraction.models import ExtractionResult
+from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
-
+from audit.utils import record_audit
 from .models import Study
 from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
 
@@ -35,6 +36,10 @@ SERVER_ERROR = {
     "code": "server_error",
     "detail": "Wystąpił nieoczekiwany błąd serwera.",
 }
+
+# What the extraction worker can read (workers/extraction/documents.py); the same list as the
+# file picker in the frontend (AttachReport.tsx).
+REPORT_SUFFIXES = (".txt", ".jpg", ".jpeg", ".png")
 
 
 # ---------------------------------------------------------------- helpers
@@ -68,18 +73,24 @@ def _orthanc_error_response(exc: OrthancUnavailable) -> Response:
 def _load_state(orthanc_studies: list[dict]):
     """Three queries in total, no matter how many studies there are.
 
-    The newest extraction/segmentation (highest id) wins when a study has several.
+    When a study has several: the newest segmentation (highest id) and the report assigned last.
     """
     ids = [s.get("orthanc_id") for s in orthanc_studies]
     db_studies = {s.orthanc_path: s for s in Study.objects.filter(orthanc_path__in=ids)}
     study_ids = [s.id for s in db_studies.values()]
     extractions = {
-        e.study_id: e for e in ExtractionResult.objects.filter(study_id__in=study_ids).order_by("id")
+        e.study_id: e
+        for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
     segmentations = {
         s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
     return db_studies, extractions, segmentations
+
+
+def _iso_date(value):
+    """DICOM YYYYMMDD -> ISO date, or None when the date is unknown."""
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
 
 
 def _pick_uncertainty(segmentation, extraction):
@@ -178,12 +189,27 @@ def _orthanc_study_id(orthanc_response) -> str | None:
     return str(item) if item else None
 
 
+def _check_report_file(report_file) -> Response | None:
+    """An error response for a report file the extractor cannot read, otherwise None."""
+    if report_file.name.lower().endswith(REPORT_SUFFIXES):
+        return None
+    return Response(
+        {
+            "code": "unsupported_report_type",
+            "detail": f"Nieobsługiwany typ pliku opisu; dozwolone: {', '.join(REPORT_SUFFIXES)}.",
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 def _store_report(report_file, study) -> ExtractionResult:
     """Saves the file, creates the row and schedules extraction once the transaction commits."""
     # uuid folder: two reports with the same file name must not overwrite each other
     key = f"reports/{uuid4().hex}/{report_file.name}"
     put_bytes(report_file.read(), "reports", key, report_file.content_type)
-    extraction = ExtractionResult.objects.create(study=study, report_path=key)
+    extraction = ExtractionResult.objects.create(
+        study=study, report_path=key, assigned_at=timezone.now() if study else None
+    )
     extraction_id = extraction.id
     transaction.on_commit(
         lambda: current_app.send_task("extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]})
@@ -226,7 +252,6 @@ def study_list(request):
                 "uncertainty": _pick_uncertainty(segmentation, extraction),
             }
         )
-
     return Response(response_data)
 
 
@@ -240,6 +265,9 @@ def study_import(request):
 
     if not archive_file and not report_file:
         return Response({"detail": "No files were provided for import."}, status=status.HTTP_400_BAD_REQUEST)
+    # before the archive goes to Orthanc, so a bad report leaves nothing behind
+    if report_file and (error := _check_report_file(report_file)):
+        return error
 
     archive_bytes = None
     orthanc_study_id = None
@@ -290,6 +318,15 @@ def study_import(request):
         return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     cache.delete(STUDIES_CACHE_KEY)  # the new study should show up in the list right away
+
+    study_num_str = f"#{study.id}" if study else "raport"
+    record_audit(
+        request,
+        kind="study_imported",
+        object=study_num_str,
+        detail=f"Zaimportowano badanie z Orthanc ID: {orthanc_study_id}" if orthanc_study_id else "Zaimportowano sam raport"
+    )
+
     return Response(
         {
             "detail": "Study and documents have been successfully imported.",
@@ -309,6 +346,8 @@ def attach_report_to_study(request, orthanc_id):
     report_file = request.FILES.get("report")
     if not report_file:
         return Response({"detail": "No report file provided."}, status=status.HTTP_400_BAD_REQUEST)
+    if error := _check_report_file(report_file):
+        return error
 
     try:
         with transaction.atomic():
@@ -316,7 +355,13 @@ def attach_report_to_study(request, orthanc_id):
     except Exception:
         logger.exception("Attaching report failed")
         return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    
+    record_audit(
+        request,
+        kind="attach_report",
+        object=str(orthanc_id),
+        detail=f"Dołączono nowy plik raportu: {report_file.name}"
+    )
     return Response({"detail": "Report successfully attached to the study."}, status=status.HTTP_200_OK)
 
 
@@ -330,9 +375,18 @@ def attach_existing_report(request, orthanc_id):
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(study=study)
+    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(
+        study=study, assigned_at=timezone.now()
+    )
     if not updated:
         return Response({"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND)
+    
+    record_audit(
+            request,
+            kind="attach_report",
+            object=str(orthanc_id),
+            detail=f"Dołączono nowy plik raportu: {report_id}"
+    )
 
     return Response({"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK)
 
@@ -345,7 +399,7 @@ def unassigned_reports_list(request):
         file_name = item.report_path.split("/")[-1] if item.report_path else "unknown"
         ext = file_name.rsplit(".", 1)[-1].lower()
         kind = "scan" if ext in ("jpg", "jpeg", "png") else "text"
-        created_at = getattr(item, "created_at", None)
+        created_at = item.created_at
 
         response_data.append(
             {
@@ -353,6 +407,9 @@ def unassigned_reports_list(request):
                 "fileName": file_name,
                 "kind": kind,
                 "addedAt": created_at.strftime("%Y-%m-%d") if created_at else None,
+                # these reports are not on the dashboard, so a failed extraction shows only here
+                "status": item.status,
+                "error": item.error if item.status == ExtractionStatus.FAILED else "",
             }
         )
 
@@ -374,7 +431,8 @@ def dashboard_view(request):
     processing_count = 0
     to_review_count = 0
     missing_reports_count = 0
-    for idx, o_study in enumerate(orthanc_studies):
+    failed_studies = []
+    for o_study in orthanc_studies:
         db_study = db_studies.get(o_study.get("orthanc_id"))
         if not db_study: continue
         extraction = extractions.get(db_study.id) if db_study else None
@@ -382,14 +440,15 @@ def dashboard_view(request):
 
         missing_reports_count += 1 if not extraction else 0
         
-        seg_status = segmentation.status if segmentation else "COMPLETED"
-        ext_status = extraction.status if extraction else "COMPLETED"
+        seg_status = segmentation.status if segmentation else None
+        ext_status = extraction.status if extraction else None
 
         uncertainty = _pick_uncertainty(segmentation, extraction)
-        if uncertainty is None:
-            uncertainty = 0.5
 
-        study_number = str(idx + 1).zfill(4)
+        # the same number as in the review screens, not the position in the Orthanc list
+        study_number = str(db_study.id).zfill(4)
+        if ext_status == ExtractionStatus.FAILED:
+            failed_studies.append(study_number)
 
         if seg_status in ("PROCESSING", "PENDING") or ext_status in ("PROCESSING", "PENDING"):
             processing_count += 1
@@ -405,16 +464,19 @@ def dashboard_view(request):
             to_review_count += 1
             queue_items.append(
                 {
-                    "studyId": str(db_study.id) if db_study else f"s{idx + 1}",
+                    "studyId": str(db_study.id),
                     "studyNumber": study_number,
                     "patientId": o_study.get("patient_id") or "---",
-                    "studyDate": o_study.get("study_date") or "----------",
-                    "uncertainty": float(uncertainty),
+                    "studyDate": _iso_date(o_study.get("study_date")),
+                    "uncertainty": float(uncertainty) if uncertainty is not None else None,
                 }
             )
 
 
-    attention_items = []
+    attention_items = [
+        {"kind": "processing_error", "subject": number, "href": "/badania"}
+        for number in failed_studies
+    ]
     if missing_reports_count > 0:
         attention_items.append(
             {"kind": "missing_report", "subject": "", "count": missing_reports_count, "href": "/badania"}

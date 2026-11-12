@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "segmentation",
     "mlops",
     "common",
+    "audit",
 ]
 
 MIDDLEWARE = [

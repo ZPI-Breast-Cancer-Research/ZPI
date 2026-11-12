@@ -489,6 +489,7 @@ export default function CaseReview({ data, queue }: Props) {
             <MaskStrip
               corrected={corrected}
               approved={locked}
+              empty={!data.mask}
               pending={approveMaskNow.isPending || unapproveMaskNow.isPending}
               onApprove={() => approveMaskNow.mutate()}
               onUnapprove={() => unapproveMaskNow.mutate()}

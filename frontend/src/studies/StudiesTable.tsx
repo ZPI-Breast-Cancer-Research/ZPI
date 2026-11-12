@@ -39,9 +39,11 @@ const IMAGE_CLASS: Record<ImageStatus, string> = {
 const REPORT_CLASS: Record<ReportStatus, string> = {
   missing: "status",
   extracting: "status status--running",
+  error: "status status--warning",
   ready: "status",
   to_review: "status",
-  verified: "status status--confirmed",
+  verified_unchanged: "status status--confirmed",
+  verified_corrected: "status status--corrected",
 };
 
 export function parseFilter(value: string | null): Filter {
@@ -68,7 +70,7 @@ export function matches(row: StudyRow, filter: Filter, query = "", part: Part = 
       return row.image === "to_review" || row.report === "to_review";
     case "verified":
       // like on the review screen: the mask and the form both done, or the mask alone when there's no report
-      return imageVerified(row) && (row.report === "verified" || row.report === "missing");
+      return imageVerified(row) && (row.report?.startsWith("verified") || row.report === "missing");
     case "no_report":
       return row.report === "missing";
   }

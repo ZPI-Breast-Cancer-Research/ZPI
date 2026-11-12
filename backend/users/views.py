@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from .models import User
 import random
 from .permissions import require_permission
+from audit.utils import record_audit
 
 def generate_temporary_password(length=14):
     alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -30,6 +31,14 @@ def log_in(request):
     user = authenticate(request, username=login_str, password=password)
 
     if user is None:
+        record_audit(
+            request,
+            kind="login_failed",
+            object=login_str or "unknow",
+            detail="loging in - incorrect data",
+            fallback_login=login_str,
+            fallback_name="—"
+        )
         return Response(
             {"detail": "bad credentials"}, 
             status=status.HTTP_401_UNAUTHORIZED
@@ -73,6 +82,13 @@ def set_first_password(request):
             user.is_first_login = False
             
         user.save()
+
+        record_audit(
+            request,
+            kind="password_reset",
+            object=user.username,
+            detail="ustawiono pierwsze hasło"
+        )
 
         return Response({
             "login": user.username,
@@ -145,15 +161,23 @@ def manage_users(request):
         first_name = parts[0]
         last_name = parts[1] if len(parts) > 1 else ""
 
+        role = draft.get("role", "radiologist")
         user = User.objects.create_user(
             username=login_str,
             password=temp_password,
             email=draft.get("email", f"{login_str}@szpital.pl"),
             first_name=first_name,
             last_name=last_name,
-            role=draft.get("role", "radiologist"),
+            role=role,
             pwz=draft.get("pwz", None),
             is_first_login=True
+        )
+
+        record_audit(
+            request,
+            kind="account_created",
+            object=user.username,
+            detail=f"rola: {role}"
         )
 
         return Response({"password": temp_password}, status=status.HTTP_201_CREATED)
@@ -168,18 +192,36 @@ def update_user(request, user_id):
         return Response({"detail": "Użytkownik nie znaleziony."}, status=status.HTTP_404_NOT_FOUND)
 
     data = request.data
+    old_role = getattr(user, "role", "radiologist")
+    changes = []
+
     if "name" in data:
         parts = data["name"].split(" ", 1)
         user.first_name = parts[0]
         user.last_name = parts[1] if len(parts) > 1 else ""
+        changes.append("dane osobowe")
     if "email" in data:
         user.email = data["email"]
+        changes.append("email")
     if "role" in data:
-        user.role = data["role"]
+        new_role = data["role"]
+        if new_role != old_role:
+            changes.append(f"rola: {old_role} → {new_role}")
+        user.role = new_role
     if "pwz" in data:
         user.pwz = data["pwz"]
+        changes.append("pwz")
         
     user.save()
+
+    if changes:
+        record_audit(
+            request,
+            kind="account_changed",
+            object=user.username,
+            detail=", ".join(changes)
+        )
+
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -190,9 +232,21 @@ def set_blocked(request, user_id):
         user = User.objects.get(id=user_id)
     except User.DoesNotExist:
         return Response({"detail": "Użytkownik nie znaleziony."}, status=status.HTTP_404_NOT_FOUND)
+    
     blocked = request.data.get("blocked", False)
-    user.is_active = not blocked
-    user.save()
+    new_active_state = not blocked
+
+    if user.is_active != new_active_state:
+        user.is_active = new_active_state
+        user.save()
+
+        kind_str = "account_blocked" if blocked else "account_unblocked"
+        record_audit(
+            request,
+            kind=kind_str,
+            object=user.username,
+            detail=None
+        )
 
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -211,6 +265,13 @@ def reset_password(request, user_id):
     user.is_active = True
     user.save()
 
+    record_audit(
+        request,
+        kind="password_reset",
+        object=user.username,
+        detail="reset hasła przez administratora"
+    )
+
     return Response({"password": temp_password})
 
 
@@ -228,4 +289,11 @@ def change_password(request):
     user.is_first_login = False
     user.save()
     
+    record_audit(
+        request,
+        kind="password_reset",
+        object=user.username,
+        detail="zmiana hasła"
+    )
+
     return Response(status=status.HTTP_204_NO_CONTENT)

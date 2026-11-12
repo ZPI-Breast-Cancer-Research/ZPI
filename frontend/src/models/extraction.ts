@@ -69,27 +69,84 @@ export interface FewShotExample {
   isNew: boolean;
 }
 
-function isExtractionOverview(data: unknown): data is ExtractionOverview {
-  return !!data && typeof data === "object" && "fewShots" in data && Array.isArray((data as ExtractionOverview).models);
-}
-
-// the shape the backend sends today, read into the new one
-interface OldExtraction {
+interface BackendExtractionOverview {
   version: string | null;
   since: string | null;
   examplePool: number;
-  fields: { field: string; f1: number | null; correctedShare: number | null }[];
+  verifiedDescriptions: number;
+  failedDescriptions: number;
+  correctedDescriptions: number;
+
+  models: {
+    version: string;
+    status: string;
+    createdAt: string | null;
+    activatedAt: string | null;
+  }[];
+
+  fewShots: [];
+
+  fields: {
+    field: string;
+    f1: number | null;
+    correctedShare: number | null;
+  }[];
 }
 
-function fromOld(old: OldExtraction): ExtractionOverview {
+function fromBackend(data: BackendExtractionOverview): ExtractionOverview {
+  const mapStatus = (status: string): VersionStatus => {
+    switch (status) {
+      case "production":
+        return "in_use";
+      case "archived":
+        return "retired";
+      case "rejected":
+        return "rejected";
+      case "candidate":
+        return "new";
+      case "training":
+        return "training";
+      default:
+        return "new";
+    }
+  };
+
   return {
-    inUse: old.version
-      ? { model: old.version, fewShot: null, since: old.since, approvedBy: null, verified: old.examplePool, failed: null, corrected: null }
+    inUse: data.version
+      ? {
+          model: data.version,
+          fewShot: null,
+          since: data.since,
+          approvedBy: null,
+          verified: data.verifiedDescriptions,
+          failed: data.failedDescriptions,
+          corrected: data.correctedDescriptions,
+        }
       : null,
+
     testReports: null,
-    fields: old.fields.map((f) => ({ field: f.field, accuracy: f.f1, corrected: f.correctedShare })),
+
+    fields: data.fields.map((f) => ({
+      field: f.field,
+      accuracy: f.f1,
+      corrected: f.correctedShare,
+    })),
+
     proposal: null,
-    models: [],
+
+    models: data.models.map((model) => ({
+      name: model.version,
+      status: mapStatus(model.status),
+      periods: model.activatedAt
+        ? [{ from: model.activatedAt, to: null }]
+        : [],
+      f1: null,
+      examples: null,
+      proposedBy: null,
+      decidedBy: null,
+      reason: null,
+    })),
+
     fewShots: [],
   };
 }
@@ -185,8 +242,12 @@ export async function fetchExtraction(): Promise<ExtractionOverview> {
     mockState ??= mockOverview();
     return mockDelay(structuredClone(mockState));
   }
-  const { data } = await api.get<ExtractionOverview | OldExtraction>("/api/models/extraction/");
-  return isExtractionOverview(data) ? data : fromOld(data);
+
+  const { data } = await api.get<BackendExtractionOverview>(
+    "/api/models/extraction/"
+  );
+
+  return fromBackend(data);
 }
 
 // made-up reports, short and without patient data

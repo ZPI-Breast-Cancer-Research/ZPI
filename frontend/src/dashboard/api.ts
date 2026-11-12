@@ -5,8 +5,8 @@ export interface QueueItem {
   studyId: string;
   studyNumber: string;
   patientId: string;
-  studyDate: string;
-  uncertainty: number;
+  studyDate: string | null;
+  uncertainty: number | null;
 }
 
 export type AttentionKind = "processing_error" | "model_candidate" | "missing_report";

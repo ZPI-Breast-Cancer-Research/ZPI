@@ -238,6 +238,9 @@ def test_run_stores_the_model_mask_as_dicom_seg(pipeline, study):
         seg.SeriesInstanceUID,
         seg.SOPInstanceUID,
     )
+    # the fake model marks a single voxel: tiny volume, but it has dimensions
+    assert result.measurements["volume_ml"] >= 0
+    assert len(result.measurements["dimensions_mm"]) == 3
 
 
 def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
@@ -254,6 +257,7 @@ def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
     assert orthanc.uploaded == []
     assert result.model_seg_series_uid == result.model_seg_sop_uid == ""
     assert result.generated_path in stored
+    assert result.measurements == {"volume_ml": 0.0, "dimensions_mm": None}
 
 
 def test_run_rejects_the_result_when_orthanc_refuses_the_seg(pipeline, study):
@@ -301,3 +305,48 @@ def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatc
     )
     assert result.approved_seg_series_uid != model_seg.SeriesInstanceUID
     assert result.model_seg_series_uid == model_seg.SeriesInstanceUID
+
+
+# --- measurements ---
+
+
+def _box(shape=(20, 20, 20)):
+    import numpy as np
+
+    mask = np.zeros(shape, dtype=np.uint8)
+    mask[2:12, 2:7, 2:4] = 1  # 10 x 5 x 2 voxels
+    return mask
+
+
+def test_measure_gives_volume_in_ml_and_dimensions_in_mm_longest_first():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    affine = np.diag([0.5, 1.0, 2.0, 1.0])  # voxel of 1 mm³
+
+    result = measure(_box(), affine)
+
+    assert result == {"volume_ml": 0.1, "dimensions_mm": [5.0, 5.0, 4.0]}
+
+
+def test_measure_takes_dimensions_from_the_largest_region_and_volume_from_all():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    mask = _box()
+    mask[18, 18, 18] = 1  # a small false region far away
+
+    result = measure(mask, np.eye(4))
+
+    assert result["dimensions_mm"] == [10.0, 5.0, 2.0]
+    assert result["volume_ml"] == 0.1  # 101 voxels of 1 mm³, rounded
+
+
+def test_measure_of_an_empty_mask():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    assert measure(np.zeros((5, 5, 5)), np.eye(4)) == {"volume_ml": 0.0, "dimensions_mm": None}

@@ -14,7 +14,14 @@ TABLE_METRICS = (
     ("wezly_f1", "nodeF1"),
     ("wniosek_birads_accuracy", "birads"),
     ("ocr_cer", "CER"),
+    ("ocr_bow_wer", "bowWER"),
+    ("uncertainty_rho", "uncRho"),
 )
+
+# error rates, shown with one decimal place
+RATE_METRICS = {"ocr_cer", "ocr_bow_wer"}
+# correlations in [-1, 1], shown as numbers, not percentages
+CORRELATION_METRICS = {"uncertainty_rho"}
 
 
 def format_report(report: Report) -> str:
@@ -36,8 +43,19 @@ def format_report(report: Report) -> str:
         worst_key, worst_cer = worst
         lines.append(
             f"OCR character error rate: mean {report.ocr.mean:.1%}, "
-            f"worst {worst_cer:.1%} ({worst_key})"
+            f"worst {worst_cer:.1%} ({worst_key}); "
+            f"order-insensitive word error rate: mean {report.ocr.words_mean:.1%}"
         )
+    if report.uncertainty.errors:
+        parts = ", ".join(
+            f"{name} {_rho(value)}" for name, value in report.uncertainty.component_rho().items()
+        )
+        line = f"uncertainty vs errors per document: Spearman {_rho(report.uncertainty.rho())}"
+        line += f" ({parts})"
+        top = report.uncertainty.top_k_hits()
+        if top is not None:
+            line += f"; {top[0]}/{top[1]} most uncertain are among the {top[1]} worst"
+        lines.append(line)
 
     lines += ["", f"{'field group':<26}{'n':>5}{'acc':>7}{'P':>7}{'R':>7}{'F1':>7}"]
     for group in (None, *SUMMARY_GROUPS):
@@ -70,6 +88,10 @@ def _score_cells(s: FieldScore) -> str:
 
 def _pct(value: float | None) -> str:
     return f"{value:>7.0%}" if value is not None else f"{'–':>7}"
+
+
+def _rho(value: float | None) -> str:
+    return f"{value:.2f}" if value is not None else "–"
 
 
 def format_experiments(records: list[dict[str, Any]]) -> str:
@@ -111,6 +133,10 @@ def format_experiment_diff(previous: dict[str, Any], current: dict[str, Any]) ->
         before = previous["summary"].get(key)
         if value is None or before is None:
             continue
+        if key in CORRELATION_METRICS:
+            if abs(value - before) >= 0.005:
+                lines.append(f"  {key}: {before:.2f} -> {value:.2f} ({value - before:+.2f})")
+            continue
         delta = (value - before) * 100
         if abs(delta) >= 0.05:
             lines.append(f"  {key}: {before:.1%} -> {value:.1%} ({delta:+.1f} pp)")
@@ -120,4 +146,6 @@ def format_experiment_diff(previous: dict[str, Any], current: dict[str, Any]) ->
 def _cell(value: float | None, key: str) -> str:
     if value is None:
         return f"{'–':>8}"
-    return f"{value:>8.1%}" if key == "ocr_cer" else f"{value:>8.0%}"
+    if key in CORRELATION_METRICS:
+        return f"{value:>8.2f}"
+    return f"{value:>8.1%}" if key in RATE_METRICS else f"{value:>8.0%}"

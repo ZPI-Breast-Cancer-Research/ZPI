@@ -7,6 +7,7 @@ from typing import Any, TypeVar
 from ..matching import fold, quote_similarity, text_similarity
 from ..schema import EkstrakcjaBadania, Obserwacja, Piersi, Wezel, Wniosek, Wymiary, Zmiana
 from .report import Report
+from .scores import FieldScore
 
 TEXT_MIN_SIMILARITY = 0.9
 MATCH_MIN_SIMILARITY = 0.6
@@ -25,9 +26,15 @@ class Comparison:
 
     def __init__(self) -> None:
         self.report = Report()
+        self._doc = FieldScore()
 
-    def document(self, gold: EkstrakcjaBadania, pred: EkstrakcjaBadania) -> None:
-        """Score one document: single-valued parts directly, lesions and nodes after pairing."""
+    def document(self, gold: EkstrakcjaBadania, pred: EkstrakcjaBadania) -> FieldScore:
+        """Score one document: single-valued parts directly, lesions and nodes after pairing.
+
+        Returns the counts of this document alone; an unpaired gold item counts as missed and
+        an unpaired predicted one as spurious, since their fields are not compared.
+        """
+        self._doc = FieldScore()
         # Order does not matter, and an empty list counts as no answer.
         self._compare_field(
             "modalnosci", set(gold.modalnosci) or None, set(pred.modalnosci) or None
@@ -39,6 +46,7 @@ class Comparison:
             self._lesion(g_lesion, p_lesion)
         for g_node, p_node in self._match("wezly", gold.wezly, pred.wezly, _node_sim):
             self._node(g_node, p_node)
+        return self._doc
 
     def _breasts(self, gold: Piersi, pred: Piersi) -> None:
         # Both sides are scored under the same field names, so each row covers left and right.
@@ -126,15 +134,16 @@ class Comparison:
         """
         if gold is None and pred is None:
             return
-        score = self.report.field_score(name)
         if gold is None:
-            score.spurious += 1
+            outcome = "spurious"
         elif pred is None:
-            score.missed += 1
+            outcome = "missed"
         elif same(gold, pred):
-            score.correct += 1
+            outcome = "correct"
         else:
-            score.wrong += 1
+            outcome = "wrong"
+        for score in (self.report.field_score(name), self._doc):
+            setattr(score, outcome, getattr(score, outcome) + 1)
 
     def _match(
         self,
@@ -163,6 +172,8 @@ class Comparison:
         counts.gold += len(gold)
         counts.predicted += len(pred)
         counts.matched += len(pairs)
+        self._doc.missed += len(gold) - len(pairs)
+        self._doc.spurious += len(pred) - len(pairs)
         return pairs
 
 
