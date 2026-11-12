@@ -12,9 +12,6 @@ export const pl = {
   "nav.account": "Konto",
   "nav.accountSettings": "Ustawienia konta",
 
-  "search.placeholder": "Szukaj badania",
-  "search.label": "Szukaj badania",
-
   "login.title": "Logowanie",
   "login.username": "Login",
   "login.usernamePlaceholder": "nazwa użytkownika",
