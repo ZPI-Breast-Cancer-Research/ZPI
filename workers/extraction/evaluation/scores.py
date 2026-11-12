@@ -68,8 +68,12 @@ class EntityScore:
 
     @property
     def f1(self) -> float | None:
+        """None only when there is nothing to score; 0.0 when nothing was matched."""
         p, r = self.precision, self.recall
-        return 2 * p * r / (p + r) if p and r else None
+        if p is None and r is None:
+            return None
+        p, r = p or 0.0, r or 0.0
+        return 2 * p * r / (p + r) if p + r else 0.0
 
 
 @dataclass
