@@ -1,5 +1,6 @@
-from ..config import Settings
-from ..plugins import load_class
+from typing import Any
+
+from ..utils.plugins import load_class
 from .base import LLMClient
 
 PROVIDERS = {
@@ -7,11 +8,7 @@ PROVIDERS = {
 }
 
 
-def get_llm_client(settings: Settings) -> LLMClient:
-    cls = load_class(PROVIDERS, settings.llm_provider, "LLM provider", __package__)
-    return cls(
-        settings.llm_base_url,
-        settings.llm_model,
-        allowed_hosts=settings.llm_allowed_hosts,
-        timeout=settings.llm_timeout,
+def get_llm_client(name: str, **options: Any) -> LLMClient:
+    return load_class(PROVIDERS, name, "LLM provider", __package__, setting="LLM_PROVIDER")(
+        **options
     )

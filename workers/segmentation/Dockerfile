@@ -15,4 +15,4 @@ COPY backend backend
 COPY workers/__init__.py workers/
 COPY workers/segmentation workers/segmentation
 
-CMD ["celery", "-A", "config", "worker", "-Q", "segmentation", "-I", "workers.segmentation.tasks", "--loglevel=info"]
+CMD ["celery", "-A", "config", "worker", "-Q", "segmentation", "-I", "workers.segmentation.tasks", "--concurrency=1", "--loglevel=info"]

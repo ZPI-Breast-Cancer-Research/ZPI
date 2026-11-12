@@ -3,11 +3,8 @@ from pathlib import Path
 from statistics import median
 from typing import Protocol
 
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
-
-
-class OcrError(Exception):
-    pass
+# A recognised text box: text, confidence, x_min, y_min, x_max, y_max.
+Box = tuple[str, float | None, float, float, float, float]
 
 
 @dataclass
@@ -71,7 +68,7 @@ class _Box:
 
 
 def boxes_to_lines(
-    boxes: list[tuple[str, float | None, float, float, float, float]],
+    boxes: list[Box],
 ) -> list[OcrLine]:
     items = [_Box(t, c, x0, y0, y1) for t, c, x0, y0, _x1, y1 in boxes if t.strip()]
     if not items:

@@ -2,10 +2,6 @@ from pathlib import Path
 from typing import Protocol
 
 
-class OrientationError(Exception):
-    pass
-
-
 class OrientationDetector(Protocol):
     name: str
 

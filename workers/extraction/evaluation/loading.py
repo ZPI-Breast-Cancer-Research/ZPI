@@ -1,17 +1,19 @@
 import json
 from pathlib import Path
 
+from ..errors import EvaluationDataError
 from ..schema import EkstrakcjaBadania, ExtractionResult
 
 
 def load_gold(directory: Path) -> dict[str, EkstrakcjaBadania]:
+    """Hand-typed jsons as a reference for perfect extraction"""
     gold = {}
     for path in sorted(directory.glob("*.json")):
-        raw = json.loads(path.read_text(encoding="utf-8"))
         try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
             gold[path.stem] = EkstrakcjaBadania.model_validate(raw["data"])
-        except (KeyError, ValueError) as exc:
-            raise ValueError(f"{path.name}: not a valid gold file: {exc}") from exc
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EvaluationDataError(f"{path.name}: not a valid gold file: {exc}") from exc
     return gold
 
 
@@ -25,8 +27,14 @@ def load_transcripts(directory: Path) -> dict[str, str]:
 
 def load_predictions(path: Path) -> dict[str, ExtractionResult]:
     results = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
             result = ExtractionResult.model_validate_json(line)
-            results[Path(result.source).stem] = result
+        except ValueError as exc:
+            raise EvaluationDataError(
+                f"{path.name}, line {number}: not a valid prediction: {exc}"
+            ) from exc
+        results[Path(result.source).stem] = result
     return results

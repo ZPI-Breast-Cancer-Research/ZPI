@@ -162,8 +162,7 @@ class Obserwacja(BaseModel):
 class PolaczenieObserwacji(BaseModel):
     pewne: bool = Field(
         description=(
-            "true tylko, gdy opis wprost łączy obserwacje "
-            "(np. 'odpowiada zmianie w mammografii')."
+            "true tylko, gdy opis wprost łączy obserwacje (np. 'odpowiada zmianie w mammografii')."
         )
     )
     powod: str | None = Field(
@@ -242,7 +241,6 @@ def _strict(node: Any) -> Any:
 
 
 class Provenance(BaseModel):
-
     ocr_engine: str | None = None
     ocr_engine_version: str | None = None
     ocr_mean_confidence: float | None = None
@@ -252,6 +250,9 @@ class Provenance(BaseModel):
     llm_model: str
     prompt_version: str
     schema_version: str = SCHEMA_VERSION
+    # None in results saved before these fields existed.
+    few_shot: int | None = None
+    structured_output: bool | None = None
 
 
 class ExtractionResult(BaseModel):

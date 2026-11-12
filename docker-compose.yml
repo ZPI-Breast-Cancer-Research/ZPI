@@ -112,7 +112,10 @@ services:
     env_file: .env
     depends_on: [redis, postgres, minio, orthanc, mlflow]
     volumes: [./backend:/app/backend, ./workers:/app/workers, ./data:/data]
-    # TODO: GPU reservation
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
 
   worker-segmentation-convert:
     build: {context: ., dockerfile: workers/segmentation/Dockerfile}
@@ -128,7 +131,12 @@ services:
     profiles: ["ml"]
     env_file: .env
     depends_on: [redis, postgres, minio]
-    volumes: [./backend:/app/backend, ./workers:/app/workers]
+    # Code is mounted over the copy in the image (dev: changes without a rebuild);
+    # paddlex-models keeps the downloaded OCR models between containers.
+    volumes: [./backend:/app/backend, ./workers:/app/workers, paddlex-models:/models/paddlex]
+    # LLM: LM Studio on the host (host.docker.internal; Linux needs host-gateway) or the
+    # llm-server container on the internal llm network.
+    extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [default, llm]
 
   worker-training:
@@ -172,3 +180,4 @@ volumes:
   orthanc-db:
   minio-data:
   llm-models:
+  paddlex-models:

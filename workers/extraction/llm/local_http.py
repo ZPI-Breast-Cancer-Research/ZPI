@@ -3,10 +3,11 @@ from typing import Any
 
 import requests
 
-from .base import LLMConnectionError, LLMError, LLMResponse, Message, ensure_local_url
+from ..errors import LLMConnectionError, LLMError
+from .base import LLMClient, LLMResponse, Message, ensure_local_url
 
 
-class LocalHttpChatClient:
+class LocalHttpChatClient(LLMClient):
     provider = "local_http"
 
     def __init__(

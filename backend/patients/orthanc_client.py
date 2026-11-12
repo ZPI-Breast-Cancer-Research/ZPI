@@ -4,6 +4,9 @@ Orthanc may be down or not deployed at all – every call uses short timeouts an
 any network/HTTP/JSON failure is raised as ``OrthancUnavailable`` (or its subclass
 ``OrthancUnauthorized`` when Orthanc rejects the credentials).
 """
+import io
+import zipfile
+from pathlib import Path
 from urllib.parse import quote
 
 import requests
@@ -11,6 +14,11 @@ from django.conf import settings
 
 # (connect, read) timeouts in seconds
 TIMEOUT = (2, 5)
+DOWNLOAD_TIMEOUT = (2, 60)
+# Orthanc answers a study upload only after storing every instance (~250 MB: tens of seconds).
+UPLOAD_TIMEOUT = (2, 300)
+
+SERIES_INSTANCE_UID = "0020000E"
 
 
 class OrthancUnavailable(Exception):
@@ -19,6 +27,18 @@ class OrthancUnavailable(Exception):
 
 class OrthancUnauthorized(OrthancUnavailable):
     """Orthanc is reachable but rejected the request (HTTP 401)."""
+
+
+class StudyNotFound(Exception):
+    """Orthanc has no study with the given StudyInstanceUID."""
+
+
+def _tag(item: dict, tag: str) -> str:
+    """First value of a tag in a DICOM JSON item, e.g. ``_tag(series, "0020000E")``."""
+    try:
+        return item[tag]["Value"][0]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise OrthancUnavailable(f"Orthanc response has no value for tag {tag}") from exc
 
 
 class OrthancClient:
@@ -36,10 +56,13 @@ class OrthancClient:
         # Basic auth only when both credentials are set.
         self.auth = (user, password) if user and password else None
 
-    def _get(self, path: str, params: dict | None = None):
+    def _request(
+        self, path: str, params: dict | None = None, timeout=TIMEOUT
+    ) -> requests.Response:
+        """GET from Orthanc; failures raise OrthancUnavailable or OrthancUnauthorized."""
         try:
             response = requests.get(
-                f"{self.base_url}{path}", params=params, auth=self.auth, timeout=TIMEOUT
+                f"{self.base_url}{path}", params=params, auth=self.auth, timeout=timeout
             )
         except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc request {path} failed: {exc}") from exc
@@ -47,9 +70,50 @@ class OrthancClient:
             raise OrthancUnauthorized(f"Orthanc rejected credentials for {path} (HTTP 401)")
         try:
             response.raise_for_status()
-            return response.json()
-        except (requests.RequestException, ValueError) as exc:
+        except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc request {path} failed: {exc}") from exc
+        return response
+
+    def _get(self, path: str, params: dict | None = None):
+        """GET and parse the JSON body."""
+        response = self._request(path, params)
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise OrthancUnavailable(f"Orthanc {path} returned invalid JSON: {exc}") from exc
+
+    def list_series(self, study_uid: str) -> list[str]:
+        """SeriesInstanceUIDs of a study (QIDO-RS)."""
+        series = self._get(f"/dicom-web/studies/{study_uid}/series")
+        # Orthanc answers an unknown study with 200 and an empty list, not 404.
+        if not series:
+            raise StudyNotFound(f"Orthanc has no study {study_uid}")
+        return [_tag(item, SERIES_INSTANCE_UID) for item in series]
+
+    def download_study(self, orthanc_id: str, dest: Path) -> Path:
+        """Download one study and unpack its DICOM files into ``dest``.
+
+        ``orthanc_id`` is Orthanc's own study id (``Study.orthanc_path``), not a
+        StudyInstanceUID. Orthanc returns the study as a zip archive.
+        """
+        response = self._request(
+            f"/studies/{quote(orthanc_id, safe='')}/archive",
+            timeout=DOWNLOAD_TIMEOUT,
+        )
+        payload = io.BytesIO(response.content)
+        if not zipfile.is_zipfile(payload):
+            raise OrthancUnavailable(
+                f"Orthanc /studies/{orthanc_id}/archive did not return a zip archive"
+            )
+        payload.seek(0)
+        dest.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(payload) as archive:
+            for member in archive.namelist():
+                target = (dest / member).resolve()
+                if not target.is_relative_to(dest.resolve()):
+                    raise OrthancUnavailable(f"Orthanc archive has an unsafe path: {member}")
+            archive.extractall(dest)
+        return dest
 
     def status(self) -> str:
         """``ok``, ``unauthorized`` or ``unreachable`` based on ``GET /system``."""
@@ -88,26 +152,33 @@ class OrthancClient:
             "series_count": len(study.get("Series", [])),
             "viewer_url": self.viewer_url(uid),
         }
+
     def upload_dicom_zip(self, zip_bytes: bytes) -> dict:
+        return self._post_instances(zip_bytes, "application/zip")
+
+    def upload_dicom_file(self, path: Path) -> dict:
+        """Store one DICOM file (e.g. a DICOM SEG) in Orthanc."""
+        return self._post_instances(Path(path).read_bytes(), "application/dicom")
+
+    def _post_instances(self, data: bytes, content_type: str):
         url = f"{self.base_url}/instances"
-        headers = {"Content-Type": "application/zip"}
-        
         try:
             response = requests.post(
-                url, 
-                data=zip_bytes, 
-                auth=self.auth, 
-                headers=headers, 
-                timeout=TIMEOUT
+                url,
+                data=data,
+                auth=self.auth,
+                headers={"Content-Type": content_type},
+                timeout=UPLOAD_TIMEOUT,
             )
         except requests.RequestException as exc:
             raise OrthancUnavailable(f"Orthanc upload to {url} failed: {exc}") from exc
 
         if response.status_code == 401:
-            raise OrthancUnauthorized(f"Orthanc rejected credentials during upload (HTTP 401)")
-            
+            raise OrthancUnauthorized("Orthanc rejected credentials during upload (HTTP 401)")
+
         try:
             response.raise_for_status()
             return response.json()
         except (requests.RequestException, ValueError) as exc:
             raise OrthancUnavailable(f"Orthanc upload response invalid: {exc}") from exc
+
