@@ -368,7 +368,7 @@ def unassigned_reports_list(request):
         file_name = item.report_path.split("/")[-1] if item.report_path else "unknown"
         ext = file_name.rsplit(".", 1)[-1].lower()
         kind = "scan" if ext in ("jpg", "jpeg", "png") else "text"
-        created_at = getattr(item, "created_at", None)
+        created_at = item.created_at
 
         response_data.append(
             {
@@ -376,6 +376,9 @@ def unassigned_reports_list(request):
                 "fileName": file_name,
                 "kind": kind,
                 "addedAt": created_at.strftime("%Y-%m-%d") if created_at else None,
+                # these reports are not on the dashboard, so a failed extraction shows only here
+                "status": item.status,
+                "error": item.error if item.status == ExtractionStatus.FAILED else "",
             }
         )
 
