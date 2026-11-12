@@ -1,15 +1,15 @@
 import { api } from "../api";
 import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
-import type { MaskSource } from "../viewer/types";
+import type { SegRef } from "../viewer/types";
 import { isCaseReport, type CaseReport, type Extraction } from "./extraction";
 import type { FieldKey } from "./fields";
 
 export interface QueueEntry {
   studyId: string;
   studyNumber: string;
-  studyDate: string;
-  uncertainty: number;
+  studyDate: string | null;
+  uncertainty: number | null;
 }
 
 export interface SegmentationInfo {
@@ -22,13 +22,13 @@ export interface ReviewCase {
   studyNumber: string;
   patientId: string;
   age: number | null;
-  studyDate: string;
-  description: string;
-  uncertainty: number;
+  studyDate: string | null;
+  description: string | null;
+  uncertainty: number | null;
   segmentationVersion: string;
   extractionVersion: string | null;
   studyUid: string | null;
-  mask: MaskSource;
+  mask: SegRef | null;
   report: CaseReport | null;
   reportPending: boolean;
   segmentation: SegmentationInfo | null;
@@ -57,7 +57,6 @@ const QUEUE: QueueEntry[] = [0.71, 0.66, 0.62, 0.58, 0.55].map((uncertainty, i) 
   uncertainty,
 }));
 
-const MOCK_MASK: MaskSource = { center: [0.69, 0.585, 0.53], radius: [11, 9, 10] };
 
 const approved = new Set<string>();
 const masksApproved = new Map<string, "confirmed" | "corrected">();
@@ -77,7 +76,7 @@ export function reviewProgress(studyId: string) {
 // least certain first, the order verification follows
 export async function fetchQueue(): Promise<QueueEntry[]> {
   if (MOCK_API) {
-    return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => b.uncertainty - a.uncertainty));
+    return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => (b.uncertainty ?? 0) - (a.uncertainty ?? 0)));
   }
   const { data } = await api.get<QueueEntry[]>("/api/review/queue/");
   return data;
@@ -100,11 +99,10 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
       segmentationVersion: "7",
       extractionVersion: noReport ? null : "3",
       studyUid,
-      mask: MOCK_MASK,
+      mask: null,
       report: null,
       reportPending: false,
-      segmentation: { series: null },
-      measurements: { volume: null, size: null, sizeInReport: null },
+      segmentation: { series: null },      measurements: { volume: null, size: null, sizeInReport: null },
       maskApproved: masksApproved.get(studyId) ?? null,
     });
   }

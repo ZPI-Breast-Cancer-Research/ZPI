@@ -120,16 +120,9 @@ def test_dicom_date_converts_valid_date():
     assert views._dicom_date("20261026") == "2026-10-26"
 
 
-def test_dicom_date_returns_empty_string_for_none():
-    assert views._dicom_date(None) == ""
-
-
-def test_dicom_date_returns_empty_string_for_empty_string():
-    assert views._dicom_date("") == ""
-
-
-def test_dicom_date_returns_empty_string_for_invalid_length():
-    assert views._dicom_date("202610") == ""
+@pytest.mark.parametrize("value", [None, "", "202610"], ids=["none", "empty", "invalid-length"])
+def test_dicom_date_returns_none_when_the_date_is_unknown(value):
+    assert views._dicom_date(value) is None
 
 
 # =========================================================
@@ -417,62 +410,51 @@ def test_proposals_returns_empty_dict_for_empty_report():
 # _apply_form
 # =========================================================
 
-def test_apply_form_sets_approved_status_for_normal_submission():
+def test_apply_form_stores_the_report_and_the_answers():
     extraction = mock.Mock()
     user = mock.Mock()
+    lesions = {"0": {"birads": {"value": "4C", "state": "confirmed"}}}
 
-    views._apply_form(
-        extraction,
-        {"birads": "4C"},
-        user
-    )
+    views._apply_form(extraction, {"report": {"zmiany": [{"birads": "4C"}]}, "lesions": lesions}, user)
 
-    assert extraction.accepted_report == {"birads": "4C"}
+    assert extraction.accepted_report == {"zmiany": [{"birads": "4C"}]}
+    assert extraction.lesion_answers == lesions
     assert extraction.status == views.StatusChoices.APPROVED
     assert extraction.accepted_by == user
     assert extraction.accepted_at == timezone.now().date()
     extraction.save.assert_called_once_with()
 
 
-def test_apply_form_sets_corrected_status_when_field_was_corrected():
+def test_apply_form_sets_corrected_status_when_a_field_was_corrected():
     extraction = mock.Mock()
-    user = mock.Mock()
+    lesions = {
+        "0": {"birads": {"value": "4C", "state": "confirmed"}},
+        "1": {"size": {"value": "9", "state": "corrected"}},
+    }
 
-    views._apply_form(
-        extraction,
-        {
-            "birads": {
-                "value": "5",
-                "state": "corrected"
-            }
-        },
-        user
-    )
+    views._apply_form(extraction, {"report": {"zmiany": []}, "lesions": lesions}, mock.Mock())
 
-    assert extraction.accepted_report == {"birads": "5"}
     assert extraction.status == views.StatusChoices.CORRECTED
-    assert extraction.accepted_by == user
-    extraction.save.assert_called_once_with()
 
 
-def test_apply_form_sets_approved_status_for_empty_submission():
+@pytest.mark.parametrize("submitted", [{}, None, "form"], ids=["empty", "none", "not-a-dict"])
+def test_apply_form_without_a_report_accepts_the_model_report(submitted):
     extraction = mock.Mock()
-    extraction.accepted_report = {"birads": "4C"}
-    user = mock.Mock()
+    extraction.accepted_report = None
+    extraction.generated_report = {"zmiany": [{"birads": "4C"}]}
 
-    views._apply_form(extraction, {}, user)
+    views._apply_form(extraction, submitted, mock.Mock())
 
+    assert extraction.accepted_report == {"zmiany": [{"birads": "4C"}]}
     assert extraction.status == views.StatusChoices.APPROVED
-    assert extraction.accepted_report == {"birads": "4C"}
     extraction.save.assert_called_once_with()
 
 
-def test_apply_form_sets_approved_status_when_submission_is_not_dictionary():
+def test_apply_form_without_a_report_keeps_an_accepted_one():
     extraction = mock.Mock()
-    extraction.accepted_report = {"birads": "4C"}
-    user = mock.Mock()
+    extraction.accepted_report = {"zmiany": [{"birads": "5"}]}
 
-    views._apply_form(extraction, None, user)
+    views._apply_form(extraction, {}, mock.Mock())
 
     assert extraction.status == views.StatusChoices.APPROVED
     assert extraction.accepted_report == {"birads": "4C"}

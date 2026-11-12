@@ -74,18 +74,24 @@ def _orthanc_error_response(exc: OrthancUnavailable) -> Response:
 def _load_state(orthanc_studies: list[dict]):
     """Three queries in total, no matter how many studies there are.
 
-    The newest extraction/segmentation (highest id) wins when a study has several.
+    When a study has several: the newest segmentation (highest id) and the report assigned last.
     """
     ids = [s.get("orthanc_id") for s in orthanc_studies]
     db_studies = {s.orthanc_path: s for s in Study.objects.filter(orthanc_path__in=ids)}
     study_ids = [s.id for s in db_studies.values()]
     extractions = {
-        e.study_id: e for e in ExtractionResult.objects.filter(study_id__in=study_ids).order_by("id")
+        e.study_id: e
+        for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
     segmentations = {
         s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
     return db_studies, extractions, segmentations
+
+
+def _iso_date(value):
+    """DICOM YYYYMMDD -> ISO date, or None when the date is unknown."""
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
 
 
 def _pick_uncertainty(segmentation, extraction):
@@ -202,7 +208,9 @@ def _store_report(report_file, study) -> ExtractionResult:
     # uuid folder: two reports with the same file name must not overwrite each other
     key = f"reports/{uuid4().hex}/{report_file.name}"
     put_bytes(report_file.read(), "reports", key, report_file.content_type)
-    extraction = ExtractionResult.objects.create(study=study, report_path=key)
+    extraction = ExtractionResult.objects.create(
+        study=study, report_path=key, assigned_at=timezone.now() if study else None
+    )
     extraction_id = extraction.id
     transaction.on_commit(
         lambda: current_app.send_task("extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]})
@@ -373,7 +381,9 @@ def attach_existing_report(request, orthanc_id):
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(study=study)
+    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(
+        study=study, assigned_at=timezone.now()
+    )
     if not updated:
         return Response({"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND)
     
@@ -428,7 +438,7 @@ def dashboard_view(request):
     to_review_count = 0
     missing_reports_count = 0
     failed_studies = []
-    for idx, o_study in enumerate(orthanc_studies):
+    for o_study in orthanc_studies:
         db_study = db_studies.get(o_study.get("orthanc_id"))
         if not db_study: continue
         extraction = extractions.get(db_study.id) if db_study else None
@@ -436,14 +446,13 @@ def dashboard_view(request):
 
         missing_reports_count += 1 if not extraction else 0
         
-        seg_status = segmentation.status if segmentation else "COMPLETED"
-        ext_status = extraction.status if extraction else "COMPLETED"
+        seg_status = segmentation.status if segmentation else None
+        ext_status = extraction.status if extraction else None
 
         uncertainty = _pick_uncertainty(segmentation, extraction)
-        if uncertainty is None:
-            uncertainty = 0.5
 
-        study_number = str(idx + 1).zfill(4)
+        # the same number as in the review screens, not the position in the Orthanc list
+        study_number = str(db_study.id).zfill(4)
         if ext_status == ExtractionStatus.FAILED:
             failed_studies.append(study_number)
 
@@ -461,11 +470,11 @@ def dashboard_view(request):
             to_review_count += 1
             queue_items.append(
                 {
-                    "studyId": str(db_study.id) if db_study else f"s{idx + 1}",
+                    "studyId": str(db_study.id),
                     "studyNumber": study_number,
                     "patientId": o_study.get("patient_id") or "---",
-                    "studyDate": o_study.get("study_date") or "----------",
-                    "uncertainty": float(uncertainty),
+                    "studyDate": _iso_date(o_study.get("study_date")),
+                    "uncertainty": float(uncertainty) if uncertainty is not None else None,
                 }
             )
 

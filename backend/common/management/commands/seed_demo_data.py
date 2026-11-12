@@ -1021,6 +1021,7 @@ class Command(BaseCommand):
             extraction.accepted_report = accepted_report
             extraction.accepted_by = ext_reviewer
             extraction.accepted_at = ext_accepted_at
+            extraction.assigned_at = extraction.assigned_at or timezone.now()
             extraction.save()
             if ext_status not in (ExtractionStatus.PENDING, ExtractionStatus.PROCESSING):
                 with_scan = number % 3 == 0          # co trzeci opis jest skanem, reszta tekstem

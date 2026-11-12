@@ -104,7 +104,7 @@ def test_review_queue_sorts_by_uncertainty_descending(
 
 
 @pytest.mark.django_db
-def test_review_queue_uses_default_uncertainty_when_none(
+def test_review_queue_shows_unknown_uncertainty_as_none(
     authenticated_client,
     study,
 ):
@@ -122,11 +122,11 @@ def test_review_queue_uses_default_uncertainty_when_none(
         )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.data[0]["uncertainty"] == 0.0
+    assert response.data[0]["uncertainty"] is None
 
 
 @pytest.mark.django_db
-def test_review_queue_uses_placeholder_when_study_date_is_missing(
+def test_review_queue_shows_missing_study_date_as_none(
     authenticated_client,
     study,
     segmentation,
@@ -141,7 +141,25 @@ def test_review_queue_uses_placeholder_when_study_date_is_missing(
         )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.data[0]["studyDate"] == "----------"
+    assert response.data[0]["studyDate"] is None
+
+
+@pytest.mark.django_db
+def test_review_queue_puts_unknown_uncertainty_first_then_least_certain(authenticated_client):
+    from patients.models import Study
+
+    for path, uncertainty in [("a", 0.2), ("b", None), ("c", 0.7)]:
+        SegmentationResult.objects.create(
+            study=Study.objects.create(orthanc_path=path),
+            status=StatusChoices.COMPLETED,
+            uncertainty=uncertainty,
+        )
+
+    with mock.patch("review.views.OrthancClient") as orthanc:
+        orthanc.return_value.list_studies.return_value = []
+        response = authenticated_client.get(reverse("review-queue"))
+
+    assert [item["studyId"] for item in response.data] == ["b", "c", "a"]
 
 
 @pytest.mark.django_db

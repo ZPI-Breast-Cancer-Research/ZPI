@@ -24,6 +24,7 @@ from workers.segmentation.conversion import (
     convert_nifti_to_dicom_seg,
     convert_study,
 )
+from workers.segmentation.measurements import measure_file
 from workers.segmentation.models.base import SegmentationError, SegmentationModel
 from workers.segmentation.models.registry import get_segmentation_model
 
@@ -145,6 +146,7 @@ def run(self, study_id: str) -> None:
                 result.model_seg_sop_uid = seg.sop_instance_uid
 
             result.generated_path = label_key
+            result.measurements = measure_file(prediction.label_path)
             result.uncertainty = _calculate_uncertainty(prediction.probabilities_path)
             result.model = _model_version(model)
             result.status = StatusChoices.COMPLETED
@@ -157,6 +159,7 @@ def run(self, study_id: str) -> None:
                     "model",
                     "model_seg_series_uid",
                     "model_seg_sop_uid",
+                    "measurements",
                 ]
             )
 
