@@ -226,13 +226,6 @@ const send = useMutation({
                               <td>
                                 <FileTag file={{ name: report.fileName }} />
                               </td>
-                              <td>
-                                {report.status === "error" && (
-                                  <span className="status status--warning" title={report.error}>
-                                    {t("studies.report.error")}
-                                  </span>
-                                )}
-                              </td>
                               <td className="cell-right">
                                 {selected?.report === "missing" ? (
                                   <button type="button" className="link" onClick={() => attach(selected)}>

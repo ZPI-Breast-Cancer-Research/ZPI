@@ -44,9 +44,6 @@ export interface UnassignedReport {
   fileName: string;
   kind: "text" | "scan";
   addedAt: string;
-  status: ReportStatus;
-  // why the extraction failed (status "error"), otherwise empty
-  error: string;
 }
 
 export type StepState = "done" | "running" | "waiting" | "waiting_report" | "error";
@@ -146,18 +143,16 @@ export async function listStudies(): Promise<StudyRow[]> {
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
   if (MOCK_API) {
     return mockDelay([
-      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", status: "to_review", error: "" },
-      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", status: "error", error: "OCR: unreadable page" },
+      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24" },
+      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22" },
     ]);
   }
-  const reports = await api.get<{ id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string; status?: string; error?: string }[]>("/api/reports/unassigned/");
+  const reports = await api.get<{ id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string }[]>("/api/reports/unassigned/");
   return reports.data.map((report) => ({
     id: report.id,
     fileName: report.file_name ?? report.fileName ?? "",
     kind: report.kind,
     addedAt: report.added_at ?? report.addedAt ?? "",
-    status: REPORT_FROM_BACKEND[report.status ?? ""] ?? "extracting",
-    error: report.error ?? "",
   }));
 }
 
