@@ -1,5 +1,7 @@
 from unittest import mock
 import pytest
+from django.urls import reverse
+from django.utils import timezone
 
 from patients.models import Study
 from extraction.models import ExtractionResult
@@ -60,3 +62,41 @@ def test_attach_existing_report_does_not_change_other_report(
 
     extraction_result.refresh_from_db()
     assert extraction_result.study == study
+
+@pytest.mark.django_db
+@mock.patch("patients.views._orthanc_studies")
+def test_attached_older_report_becomes_the_active_one(
+    orthanc_studies, authenticated_client, study, unassigned_extraction_result
+):
+    # Arrange: the study already has a report newer (by id) than the one being assigned
+    ExtractionResult.objects.create(study=study, status="COMPLETED")
+    unassigned_extraction_result.status = "FAILED"
+    unassigned_extraction_result.save()
+    orthanc_studies.return_value = [{"orthanc_id": study.orthanc_path}]
+
+    # Act
+    authenticated_client.post(
+        f"/api/studies/{study.orthanc_path}/attach-existing-report/",
+        {"report_id": unassigned_extraction_result.id},
+        format="json",
+    )
+    response = authenticated_client.get(reverse("study-list"))
+
+    # Assert
+    assert response.status_code == 200
+    assert response.data[0]["extraction_status"] == "FAILED"
+
+
+@pytest.mark.django_db
+def test_active_report_prefers_an_assigned_one_over_a_row_from_before_assigned_at(study):
+    # Arrange: a newer row (higher id) without assigned_at, as left by the migration backfill gap
+    assigned = ExtractionResult.objects.create(study=study, assigned_at=timezone.now())
+    ExtractionResult.objects.create(study=study, assigned_at=None)
+
+    # Act
+    active = ExtractionResult.objects.filter(study=study).active()
+    ordered = list(ExtractionResult.objects.filter(study=study).oldest_assigned_first())
+
+    # Assert
+    assert active == assigned
+    assert ordered[-1] == assigned

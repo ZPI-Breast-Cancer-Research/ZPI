@@ -73,13 +73,14 @@ def _orthanc_error_response(exc: OrthancUnavailable) -> Response:
 def _load_state(orthanc_studies: list[dict]):
     """Three queries in total, no matter how many studies there are.
 
-    The newest extraction/segmentation (highest id) wins when a study has several.
+    When a study has several: the newest segmentation (highest id) and the report assigned last.
     """
     ids = [s.get("orthanc_id") for s in orthanc_studies]
     db_studies = {s.orthanc_path: s for s in Study.objects.filter(orthanc_path__in=ids)}
     study_ids = [s.id for s in db_studies.values()]
     extractions = {
-        e.study_id: e for e in ExtractionResult.objects.filter(study_id__in=study_ids).order_by("id")
+        e.study_id: e
+        for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
     segmentations = {
         s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
@@ -201,7 +202,9 @@ def _store_report(report_file, study) -> ExtractionResult:
     # uuid folder: two reports with the same file name must not overwrite each other
     key = f"reports/{uuid4().hex}/{report_file.name}"
     put_bytes(report_file.read(), "reports", key, report_file.content_type)
-    extraction = ExtractionResult.objects.create(study=study, report_path=key)
+    extraction = ExtractionResult.objects.create(
+        study=study, report_path=key, assigned_at=timezone.now() if study else None
+    )
     extraction_id = extraction.id
     transaction.on_commit(
         lambda: current_app.send_task("extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]})
@@ -353,7 +356,9 @@ def attach_existing_report(request, orthanc_id):
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
 
-    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(study=study)
+    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(
+        study=study, assigned_at=timezone.now()
+    )
     if not updated:
         return Response({"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND)
 

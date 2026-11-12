@@ -68,9 +68,11 @@
 | **report_path** | varchar | Key of the report file (text or scan) in the MinIO `reports` bucket. |
 | **error** | text | Why the extraction failed (status FAILED); never contains report text. |
 | **warnings** | json | Fields of `generated_report` that do not follow from the report text, from the extractor's checks. |
+| **result** | json | The worker's full `ExtractionResult` (`workers/extraction/schema.py`): status, data, OCR text, warnings, provenance, timings; what the frontend shows as the report. Empty while a (re)try runs. |
 | **provenance** | json | What produced the result: LLM model, prompt and schema version, OCR engine, page rotation. |
 | **created_at** | datetime | When the report was uploaded. |
 | **updated_at** | datetime | Last status change; lets a stage stuck in PROCESSING be detected. |
+| **assigned_at** | datetime | When the report was assigned to its study (at upload or later). A study can have several reports; the active one is the one assigned last. |
 
 ## 2. Orthanc PACS
 * **Linked from:** `Study.orthanc_path`

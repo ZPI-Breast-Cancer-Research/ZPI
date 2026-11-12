@@ -942,6 +942,7 @@ class Command(BaseCommand):
             extraction.accepted_report = accepted_report
             extraction.accepted_by = ext_reviewer
             extraction.accepted_at = ext_accepted_at
+            extraction.assigned_at = extraction.assigned_at or timezone.now()
             extraction.save()
     def _seed_unassigned_reports(self):
         samples = [

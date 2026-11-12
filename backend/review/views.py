@@ -152,13 +152,14 @@ def review_queue(request):
     if not studies:
         return Response([], status=status.HTTP_200_OK)
 
-    # newest result per study, two queries for all of them
+    # newest segmentation and active report per study, two queries for all of them
     study_ids = [s.id for s in studies]
     segmentations = {
         s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
     extractions = {
-        e.study_id: e for e in ExtractionResult.objects.filter(study_id__in=study_ids).order_by("id")
+        e.study_id: e
+        for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
 
     try:
@@ -172,7 +173,7 @@ def review_queue(request):
         segmentation = segmentations.get(study.id)
         extraction = extractions.get(study.id)
 
-        # the prefilter looked at any result; here we check the newest one
+        # the prefilter looked at any result; here we check the newest / active one
         seg_status = segmentation.status if segmentation else None
         ext_status = extraction.status if extraction else None
         if StatusChoices.COMPLETED not in (seg_status, ext_status):
@@ -212,7 +213,7 @@ def review_case_detail(request, study_id):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
     segmentation = SegmentationResult.objects.filter(study=study).order_by("-id").first()
-    extraction = ExtractionResult.objects.filter(study=study).order_by("-id").first()
+    extraction = ExtractionResult.objects.filter(study=study).active()
 
     try:
         orthanc_client = OrthancClient()
@@ -272,7 +273,7 @@ def approve_case(request, study_id):
 
     with transaction.atomic():
         segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
 
         if segmentation and segmentation.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
             segmentation.status = new_status
@@ -317,7 +318,7 @@ def reopen_case(request, study_id):
             segmentation.accepted_by = None
             segmentation.accepted_at = None
             segmentation.save()
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         if extraction and extraction.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
             extraction.status = StatusChoices.COMPLETED
             extraction.accepted_by = None
@@ -350,7 +351,7 @@ def approve_form(request, study_id):
     submitted = request.data.get("fields")
     
     with transaction.atomic():
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         if extraction and extraction.status in [StatusChoices.COMPLETED,StatusChoices.REJECTED]:
             _apply_form(extraction, submitted, request.user)
 
@@ -363,7 +364,7 @@ def unapprove_form(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
     
     with transaction.atomic():
-        extraction = ExtractionResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         if extraction and extraction.status in (StatusChoices.APPROVED, StatusChoices.CORRECTED):
             extraction.status = StatusChoices.COMPLETED
             extraction.accepted_by = None
@@ -379,7 +380,7 @@ def review_overview(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
  
     segmentation = study.segmentations.select_related("accepted_by").order_by("-id").first()
-    extraction = study.extractions.select_related("accepted_by").order_by("-id").first()
+    extraction = study.extractions.select_related("accepted_by").active()
  
     if segmentation is None or segmentation.status not in VERIFIED:
         return Response(

@@ -51,9 +51,10 @@ def run(keys: list[str], extraction_id: int | None = None, source: str | None = 
             _save_failure(extraction_id, reason)
         return {"status": "error", "error": reason, "extraction_id": extraction_id}
 
+    dumped = result.model_dump(mode="json")
     if extraction_id is not None:
-        _save(extraction_id, result)
-    return result.model_dump(mode="json")
+        _save(extraction_id, result, dumped)
+    return dumped
 
 
 def _extract(keys: list[str], source: str | None) -> ExtractionResult:
@@ -79,7 +80,9 @@ def _start(extraction_id: int) -> bool:
         row.status = StatusChoices.PROCESSING
         row.model = _production_model()
         row.error = ""
-        row.save(update_fields=["status", "model", "error", "updated_at"])
+        # a retry must not show the previous attempt's result while it runs
+        row.result = None
+        row.save(update_fields=["status", "model", "error", "result", "updated_at"])
     return True
 
 
@@ -102,9 +105,12 @@ def _production_model() -> ModelVersion | None:
     return model
 
 
-def _save(extraction_id: int, result: ExtractionResult) -> None:
+def _save(extraction_id: int, result: ExtractionResult, dumped: dict) -> None:
+    # result: the whole ExtractionResult, also on error (the frontend shows its status and text);
+    # generated_report: only the data, the shape the review form and mlops read.
     fields = {
-        "provenance": result.provenance.model_dump(mode="json"),
+        "result": dumped,
+        "provenance": dumped["provenance"],
         "warnings": result.warnings,
     }
     if result.status == "ok" and result.data is not None:
