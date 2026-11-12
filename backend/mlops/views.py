@@ -15,7 +15,7 @@ from extraction.models import ExtractionResult, StatusChoices as ExtStatus
 from review.views import REPORT_FIELDS, _as_fields
 from segmentation.models import SegmentationResult, StatusChoices as SegStatus
 from users.permissions import require_permission
-
+from audit.utils import record_audit
 from .models import ModelVersion
 
 VERIFIED = (SegStatus.APPROVED, SegStatus.CORRECTED)
@@ -101,14 +101,14 @@ def _next_retraining(db_versions):
 def segmentation_overview(request):
     db_versions = (
         ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.SEG)
-        .select_related("decided_by")  # one query instead of one per version
+        .select_related("decided_by")
         .order_by("-created_at")
     )
 
     prod_model = db_versions.filter(status=ModelVersion.StatusChoices.PRODUCTION).first()
     candidate_model = db_versions.filter(status=ModelVersion.StatusChoices.CANDIDATE).first()
     training_model = db_versions.filter(status=ModelVersion.StatusChoices.TRAINING).first()
-    # the one that was in production most recently, not the one created most recently
+
     previous_model = (
         db_versions.filter(status=ModelVersion.StatusChoices.ARCHIVED, deactivated_at__isnull=False)
         .order_by("-deactivated_at")
@@ -243,6 +243,12 @@ def promote_model(request, version):
     model_ver.decided_by = request.user
     model_ver.save()
 
+    record_audit(
+        request,
+        kind="model_promoted",
+        object=str(model_ver.version),
+        detail=f"Dice: {model_ver.dice}" if model_ver.dice else None
+    )
     return Response(version, status=status.HTTP_200_OK)
 
 
@@ -256,6 +262,13 @@ def reject_model(request, version):
     model_ver.decision = ModelVersion.DecisionChoices.REJECTED
     model_ver.decided_by = request.user
     model_ver.save()
+
+    record_audit(
+        request,
+        kind="model_rejected",
+        object=str(model_ver.version),
+        detail=reason or "Odrzucono manualnie"
+    )
 
     return Response(version, status=status.HTTP_200_OK)
 
@@ -276,6 +289,13 @@ def rollback_model(request, version):
     target_model.decided_by = request.user
     target_model.save()
 
+    record_audit(
+        request,
+        kind="model_rolled_back",
+        object=str(target_model.version),
+        detail="Przywrócono starszą wersję produkcyjną"
+    )
+
     return Response(version, status=status.HTTP_200_OK)
 
 
@@ -283,4 +303,11 @@ def rollback_model(request, version):
 @require_permission(["manageModels"])
 def start_training(request):
     current_app.send_task("training.run", kwargs={"training_run_id": 1})
+
+    record_audit(
+        request,
+        kind="training_started",
+        object="v-new",
+        detail="Uruchomiono nocny trening na zgromadzonych poprawkach"
+    )
     return Response(status=200)

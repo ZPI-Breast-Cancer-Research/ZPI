@@ -8,7 +8,8 @@ from .views import (
     unapprove_mask,
     approve_form,
     unapprove_form,
-    review_overview
+    review_overview,
+    report_scan
 )
 
 urlpatterns = [
@@ -21,4 +22,5 @@ urlpatterns = [
     path('cases/<str:study_id>/approve-form/', approve_form, name='approve-form'),
     path('cases/<str:study_id>/unapprove-form/', unapprove_form, name='unapprove-form'),
     path('cases/<str:study_id>/review-overview/', review_overview, name='review-overview'),
+    path("cases/<str:study_id>/report-scan/", report_scan, name="review-report-scan",),
 ]

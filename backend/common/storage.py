@@ -28,6 +28,9 @@ def download_file(bucket: str, key: str, path: Path) -> Path:
     s3_client().download_file(bucket, key, str(path))
     return path
 
+def get_bytes(bucket: str, key: str) -> bytes:
+    return s3_client().get_object(Bucket=bucket, Key=key)["Body"].read()
+
 
 def put_bytes(data: bytes, bucket: str, key: str, content_type: str | None = None) -> None:
     extra = {"ContentType": content_type} if content_type else {}

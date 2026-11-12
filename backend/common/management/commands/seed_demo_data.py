@@ -17,6 +17,14 @@ from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices as SegmentationStatus
 from users.models import Role, User
 
+import json
+
+from common.storage import BUCKET_REPORTS, put_bytes
+
+import random
+import struct
+import zlib
+
 
 STUDY_PREFIX = "DEMO-ORTHANC-"
 MODEL_VERSION_PREFIX = "demo-"
@@ -264,7 +272,78 @@ def _build_demo_nodes(index: int, side: str) -> list[dict]:
             "cytat": quote,
         }
     ]
+def render_scan(text: str) -> bytes:
+    """Fake scan of a report: a grey page with bars standing in for text (PNG, stdlib only)."""
+    width, height = 600, 800
+    rng = random.Random(text)
+    page = [[245] * width for _ in range(height)]
+    y = 60
+    for line in text.split("\n"):
+        end = width - 50
+        for _ in range(max(1, len(line) // 60 + 1)):
+            x = 50
+            while x < end and y + 8 < height - 50:
+                w = rng.randint(18, 70)
+                for yy in range(y, y + 8):
+                    row = page[yy]
+                    for xx in range(x, min(x + w, end)):
+                        row[xx] = 70
+                x += w + 10
+            y += 16
+        y += 14
 
+    raw = b"".join(b"\x00" + bytes(row) for row in page)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _build_demo_case_report(generated_report: dict, number: int, with_scan: bool) -> dict:
+    """CaseReport 1:1 z review/extraction.ts: {originalUrl, result: ExtractionResult}."""
+    quotes = [
+        obs["cytat"]
+        for lesion in generated_report["zmiany"]
+        for obs in lesion["obserwacje"]
+        if obs.get("cytat")
+    ]
+    quotes += [n["cytat"] for n in generated_report.get("wezly", []) if n.get("cytat")]
+    text = "\n".join(quotes + [generated_report["wniosek"]["tekst"] or ""])
+
+    return {
+        "originalUrl": None,  # backend podmienia przy odczycie, gdy jest scanKey
+        "scanKey": f"demo/reports/{number:05d}/scan.png" if with_scan else None,
+        "result": {
+            "source": f"skan_{number:05d}.png" if with_scan else f"opis_{number:05d}.txt",
+            "status": "ok",
+            "data": generated_report,
+            "error": None,
+            "warnings": [],
+            "text": text,
+            "provenance": {
+                "ocr_engine": "demo" if with_scan else None,
+                "ocr_engine_version": None,
+                "ocr_mean_confidence": 0.93 if with_scan else None,
+                "orientation_detector": None,
+                "page_rotations": [0] if with_scan else [],
+                "llm_provider": "demo",
+                "llm_model": "demo",
+                "prompt_version": "demo",
+                "schema_version": "3",
+            },
+            "attempts": 1,
+            "ocr_seconds": 1.2 if with_scan else None,
+            "llm_seconds": None,
+            "created_at": timezone.now().isoformat(),
+        },
+    }
 
 def _build_demo_report(index: int) -> dict:
     """Generates a complete EkstrakcjaBadania JSON object."""
@@ -943,6 +1022,13 @@ class Command(BaseCommand):
             extraction.accepted_by = ext_reviewer
             extraction.accepted_at = ext_accepted_at
             extraction.save()
+            if ext_status not in (ExtractionStatus.PENDING, ExtractionStatus.PROCESSING):
+                with_scan = number % 3 == 0          # co trzeci opis jest skanem, reszta tekstem
+                case = _build_demo_case_report(generated_report, number, with_scan)
+                put_bytes(json.dumps(case, ensure_ascii=False).encode(), BUCKET_REPORTS, report_path, "application/json")
+                if with_scan:
+                    put_bytes(render_scan(case["result"]["text"]), BUCKET_REPORTS, case["scanKey"], "image/jpeg")
+
     def _seed_unassigned_reports(self):
         samples = [
             ("opis_piersi_001.txt", ExtractionStatus.PENDING),
