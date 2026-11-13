@@ -12,11 +12,11 @@ import { t } from "../i18n";
 import { fetchOverview, type Overview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
-import { fieldLabel, FIELDS, lesionSummary, optionLabel } from "../review/fields";
 import { fromExtraction } from "../review/report";
 import ReportOriginal, { scanOf } from "../review/ReportOriginal";
 import LesionSwitcher from "../review/LesionSwitcher";
 import ReportPreview from "../review/ReportPreview";
+import { lesionGroup, lesionSummary, observationGroups, rowLines, rowState, visibleRows } from "../review/rows";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
 import type { Series, Tool } from "../viewer/types";
@@ -76,8 +76,9 @@ export default function LesionOverviewPage() {
   const lesions = extracted ? fromExtraction(extracted).lesions : [];
   const lesionIndex = Math.min(lesionAt, Math.max(0, lesions.length - 1));
   const lesion = lesions[lesionIndex] ?? null;
-  const answers = report && lesion ? (report.lesions[lesion.id] ?? {}) : {};
-  const rows = FIELDS.filter((f) => answers[f.key]);
+  // the approved report, row by row as in the form; corrected where it differs from the model's
+  const accepted = report?.accepted ?? null;
+  const groups = extracted && accepted && lesion ? [lesionGroup(lesionIndex), ...observationGroups(accepted, lesionIndex)] : [];
 
   return (
     <Page
@@ -195,7 +196,7 @@ export default function LesionOverviewPage() {
                     <LesionSwitcher
                       index={lesionIndex}
                       total={lesions.length}
-                      summary={lesionSummary(lesion)}
+                      summary={lesionSummary(accepted ?? extracted!, lesionIndex)}
                       note={null}
                       onPrev={() => setLesionAt(lesionIndex - 1)}
                       onNext={() => setLesionAt(lesionIndex + 1)}
@@ -210,21 +211,38 @@ export default function LesionOverviewPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.map((field) => {
-                        const answer = answers[field.key]!;
-                        const corrected = answer.state === "corrected";
-                        return (
-                          <tr key={field.key}>
-                            <th>{fieldLabel(field.key)}</th>
-                            <td>{answer.value ? `${optionLabel(field.key, answer.value)}${field.unit ? ` ${field.unit}` : ""}` : "—"}</td>
-                            <td className="cell-right">
-                              <span className={corrected ? "status status--corrected" : "status status--confirmed"}>
-                                {t(corrected ? "review.field.corrected" : "review.field.confirmed")}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {extracted &&
+                        accepted &&
+                        groups.flatMap((group, k) => [
+                          ...(k > 0
+                            ? [
+                                <tr key={group.key} className="kv__group">
+                                  <th colSpan={3}>{group.title}</th>
+                                </tr>,
+                              ]
+                            : []),
+                          ...visibleRows(group, extracted, accepted, []).map((row) => {
+                            const corrected = rowState(row, extracted, accepted, []) === "corrected";
+                            return (
+                              <tr key={row.key}>
+                                <th>{row.label}</th>
+                                <td>
+                                  {rowLines(row, accepted, accepted.zmiany[lesionIndex].strona).map((line, i) => (
+                                    <div key={i}>
+                                      {line.text ?? <span className="muted">{t("row.empty")}</span>}
+                                      {line.extra && <span className="muted"> · {line.extra}</span>}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td className="cell-right">
+                                  <span className={corrected ? "status status--corrected" : "status status--confirmed"}>
+                                    {t(corrected ? "review.field.corrected" : "review.field.confirmed")}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          }),
+                        ])}
                     </tbody>
                   </table>
                   <ReportOriginal
