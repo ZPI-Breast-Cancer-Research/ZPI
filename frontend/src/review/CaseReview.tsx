@@ -499,7 +499,7 @@ export default function CaseReview({ data, queue }: Props) {
                     <>
                       <ReportPreview report={report} onOpen={() => setShowOriginal(true)} />
                       {report.result.status === "error" && (
-                        <p className="birads__note">
+                        <p className="review__error">
                           {t("review.original.failed")}
                           {report.result.error && `: ${report.result.error}`}
                         </p>

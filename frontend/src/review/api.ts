@@ -3,8 +3,7 @@ import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
 import type { SegRef } from "../viewer/types";
 import { isCaseReport, type CaseReport, type Extraction } from "./extraction";
-import type { FieldCheck } from "./details";
-import type { FieldKey } from "./fields";
+import type { FieldCheck } from "./rows";
 
 export interface QueueEntry {
   studyId: string;
@@ -38,7 +37,8 @@ export interface ReviewCase {
   maskApproved: "confirmed" | "corrected" | null;
 }
 
-export type FieldAnswers = Partial<Record<FieldKey, { value: string; state: "confirmed" | "corrected" }>>;
+// the old short form, still read back from older approvals; new ones send none
+export type FieldAnswers = Partial<Record<string, { value: string; state: "confirmed" | "corrected" }>>;
 
 // the approved report in the worker's schema, plus the answers per lesion
 export interface FormPayload {
