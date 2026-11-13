@@ -34,6 +34,9 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
     onSuccess: () => {
       toast(t("studies.attach.done"));
       queryClient.invalidateQueries({ queryKey: ["studies"] });
+      // an existing report leaves the unassigned list; a new file may fail its extraction there
+      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
       onClose();
     },
   });
