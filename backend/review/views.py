@@ -130,6 +130,25 @@ def _mask_measurements(segmentation) -> dict | None:
     return segmentation.measurements
 
 
+def _overview_measurements(segmentation) -> dict | None:
+    """What the overview shows as "Pomiary z segmentacji" (frontend/src/lesion-overview/api.ts).
+
+    The worker measures the model's mask. For a mask approved without changes that is the approved
+    mask; a corrected one is not measured yet (#25), so the model's numbers stand in and say so.
+    """
+    measured = (segmentation.measurements if segmentation else None) or {}
+    size = _largest_mm(measured)
+    if size is None or measured.get("volume_ml") is None:
+        return None
+    total = measured["volume_ml"]
+    return {
+        "source": "model" if segmentation.status == StatusChoices.CORRECTED else "approved",
+        # measurements stored before the largest part was measured have the one volume only
+        "largest": {"sizeMm": size, "volumeMl": measured.get("largest_volume_ml", total)},
+        "totalMl": total,
+    }
+
+
 def _largest_mm(measured: dict | None) -> float | None:
     dimensions = (measured or {}).get("dimensions_mm")
     return max(dimensions) if dimensions else None
@@ -622,11 +641,7 @@ def review_overview(request, study_id):
             "date": accepted_at,
             "by": _user_name(segmentation.accepted_by),
         },
-        "measurements": {
-            "volume": (measured or {}).get("volume_ml"),
-            "dimensions": (measured or {}).get("dimensions_mm"),
-            "intensity": None,
-        },
+        "measurements": _overview_measurements(segmentation),
         "report": _overview_report(extraction, study.orthanc_path),
         "comparison": [
             {"feature": "largestSize", "fromMask": _largest_mm(measured), "fromReport": by_field.get("size"), "match": None},

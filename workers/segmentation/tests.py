@@ -257,7 +257,7 @@ def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
     assert orthanc.uploaded == []
     assert result.model_seg_series_uid == result.model_seg_sop_uid == ""
     assert result.generated_path in stored
-    assert result.measurements == {"volume_ml": 0.0, "dimensions_mm": None}
+    assert result.measurements == {"volume_ml": 0.0, "largest_volume_ml": 0.0, "dimensions_mm": None}
 
 
 def test_run_rejects_the_result_when_orthanc_refuses_the_seg(pipeline, study):
@@ -327,7 +327,7 @@ def test_measure_gives_volume_in_ml_and_dimensions_in_mm_longest_first():
 
     result = measure(_box(), affine)
 
-    assert result == {"volume_ml": 0.1, "dimensions_mm": [5.0, 5.0, 4.0]}
+    assert result == {"volume_ml": 0.1, "largest_volume_ml": 0.1, "dimensions_mm": [5.0, 5.0, 4.0]}
 
 
 def test_measure_takes_dimensions_from_the_largest_region_and_volume_from_all():
@@ -342,6 +342,22 @@ def test_measure_takes_dimensions_from_the_largest_region_and_volume_from_all():
 
     assert result["dimensions_mm"] == [10.0, 5.0, 2.0]
     assert result["volume_ml"] == 0.1  # 101 voxels of 1 mm³, rounded
+    assert result["largest_volume_ml"] == 0.1  # 100 voxels; the false region is one more
+
+
+def test_measure_gives_the_volume_of_the_largest_region_apart_from_the_total():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    mask = np.zeros((40, 40, 40), dtype=np.uint8)
+    mask[1:21, 1:21, 1:6] = 1  # 2000 voxels of 1 mm³
+    mask[30:35, 30:35, 30:35] = 1  # 125 voxels, a second part
+
+    result = measure(mask, np.eye(4))
+
+    assert result["volume_ml"] == 2.12
+    assert result["largest_volume_ml"] == 2.0
 
 
 def test_measure_of_an_empty_mask():
@@ -349,4 +365,8 @@ def test_measure_of_an_empty_mask():
 
     from workers.segmentation.measurements import measure
 
-    assert measure(np.zeros((5, 5, 5)), np.eye(4)) == {"volume_ml": 0.0, "dimensions_mm": None}
+    assert measure(np.zeros((5, 5, 5)), np.eye(4)) == {
+        "volume_ml": 0.0,
+        "largest_volume_ml": 0.0,
+        "dimensions_mm": None,
+    }
