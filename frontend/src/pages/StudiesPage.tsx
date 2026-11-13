@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 
@@ -15,7 +15,7 @@ import { ImportTable, UnpairedReports } from "../studies/ImportReview";
 import ProcessingSteps from "../studies/ProcessingSteps";
 import UnassignedReports from "../studies/UnassignedReports";
 import StudiesTable, { matches, parseFilter, parsePart } from "../studies/StudiesTable";
-import { listStudies, listUnassignedReports, sendStudy, type StudyRow } from "../studies/api";
+import { deleteStudy, listStudies, listUnassignedReports, sendStudy, type StudyRow } from "../studies/api";
 import { groupFiles, type GroupedFiles } from "../studies/files";
 import "../studies/studies.css";
 import JSZip from "jszip";
@@ -29,6 +29,7 @@ function errorTitle(error: Error): string {
 
 export default function StudiesPage() {
   const toast = useToast();
+  const queryClient = useQueryClient();
   const adds = useCan()("addStudies");
   const [params, setParams] = useSearchParams();
   const [imported, setImported] = useState<GroupedFiles | null>(null);
@@ -51,6 +52,25 @@ export default function StudiesPage() {
     updateParams({ badanie: row.id });
     // attaching a report belongs to the row it was opened for
     if (attachFor && attachFor.id !== row.id) setAttachFor(null);
+  };
+  const remove = useMutation({
+    mutationFn: (row: StudyRow) => deleteStudy(row.id),
+    onSuccess: (_, row) => {
+      toast(t("studies.delete.done", { number: row.number ?? "—" }));
+      if (attachFor?.id === row.id) setAttachFor(null);
+      // the study is gone, so nothing stays selected
+      const rest = new URLSearchParams(params);
+      rest.delete("badanie");
+      setParams(rest);
+      queryClient.invalidateQueries({ queryKey: ["studies"] });
+      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: Error) => toast(error.message || t("api.unknown")),
+  });
+  const askDelete = (row: StudyRow) => {
+    if (window.confirm(t("studies.delete.confirm", { number: row.number ?? "—" }))) remove.mutate(row);
   };
   const attach = (row: StudyRow) => {
     updateParams({ badanie: row.id });
@@ -223,7 +243,7 @@ const send = useMutation({
                   </Panel>
                 </>
               )}
-              <ProcessingSteps study={selected} />
+              <ProcessingSteps study={selected} onDelete={adds ? askDelete : undefined} deleting={remove.isPending} />
             </>
           )}
         </div>

@@ -202,6 +202,16 @@ export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<
   }
 }
 
+// removes the study everywhere (Orthanc, storage, database); the backend refuses a verified one
+export async function deleteStudy(studyId: string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 300);
+  try {
+    await api.delete(`/api/studies/${studyId}/`);
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
 export async function attachReport(studyId: string, source: File | string): Promise<void> {
   if (MOCK_API) return mockDelay(undefined, 400);
   const formData = new FormData();

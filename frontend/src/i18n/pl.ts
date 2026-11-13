@@ -148,6 +148,9 @@ export const pl = {
   "studies.action.overview": "Przegląd",
   "studies.action.details": "Szczegóły",
   "studies.action.attach": "Dołącz",
+  "studies.action.delete": "Usuń badanie",
+  "studies.delete.confirm": "Usunąć badanie #{number}? Obrazy, maski i pliki opisu zostaną skasowane bez możliwości odzyskania.",
+  "studies.delete.done": "Usunięto badanie #{number}.",
 
   "studies.add": "Dodaj badania",
   "studies.drop.title": "Przeciągnij folder, .zip lub pliki",
@@ -794,6 +797,7 @@ export const pl = {
   "audit.kind.account_unblocked": "Odblokowanie konta",
   "audit.kind.password_reset": "Reset hasła",
   "audit.kind.study_imported": "Import badania",
+  "audit.kind.study_deleted": "Usunięcie badania",
   "audit.kind.attach_report": "Dołączenie raportu",
   "audit.kind.login_failed": "Nieudane logowanie",
   "audit.empty": "Brak wpisów dla wybranych filtrów.",
