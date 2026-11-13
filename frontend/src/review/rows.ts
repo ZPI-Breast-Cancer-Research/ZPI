@@ -333,6 +333,17 @@ export function rowLines(row: Row, report: Extraction, side: WireSide | null = n
 // --- comparisons, shown while the field waits ---
 
 const largest = (s: WireSize | null) => (s?.wartosci.length ? toMm(Math.max(...s.wartosci), s.jednostka) : null);
+
+// under the lesion's number: side, clock, the largest size and the report's own words for it
+export function lesionSummary(data: Extraction, i: number): string {
+  const lesion = data.zmiany[i];
+  const clocked = lesion.obserwacje.find((o) => o.godzina);
+  const sized = lesion.obserwacje.filter((o) => largest(o.wymiary) !== null).sort((a, b) => largest(b.wymiary)! - largest(a.wymiary)!)[0];
+  const words = [...new Set(lesion.obserwacje.map((o) => o.typ).filter((w): w is string => !!w))];
+  return [t(`review.lesion.side.${SIDE_CODE[lesion.strona]}`), clocked && t("report.clock", { h: clocked.godzina! }), sized && sizeText(sized.wymiary!), ...words]
+    .filter(Boolean)
+    .join(" · ");
+}
 const modalityShort = (m: WireModality) => t(m === "usg" ? "modality.ultrasound" : "modality.mammography");
 
 function sizeNote(report: Extraction, i: number, j: number): Note | null {

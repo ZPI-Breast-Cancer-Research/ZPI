@@ -16,10 +16,11 @@ export default function LesionSwitcher({ index, total, summary, note, onPrev, on
         ‹
       </button>
       <div className="lesion-switch__body">
-        <div>
-          {t("review.lesion.of", { n: index + 1, total })} · {summary}
+        <div className="lesion-switch__title">
+          {t("review.lesion.of", { n: index + 1, total })}
+          {note && <span className="lesion-switch__note"> · {note}</span>}
         </div>
-        {note && <div className="lesion-switch__note">{note}</div>}
+        <div className="lesion-switch__summary">{summary}</div>
       </div>
       <button type="button" className="lesion-switch__arrow" aria-label={t("review.lesion.next")} disabled={index === total - 1} onClick={onNext}>
         ›

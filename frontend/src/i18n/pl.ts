@@ -524,7 +524,7 @@ export const pl = {
   "review.lesion.side.left": "pierś lewa",
   "review.lesion.side.right": "pierś prawa",
   "review.lesion.side.both": "obie piersi",
-  "review.lesion.confirmed": "potwierdzona",
+  "review.lesion.confirmed": "sprawdzona",
   "review.lesion.prev": "Poprzednia zmiana",
   "review.lesion.next": "Następna zmiana",
   "field.side": "Strona",

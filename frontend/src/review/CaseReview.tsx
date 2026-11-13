@@ -19,14 +19,13 @@ import { useMaskEditor } from "../viewer/useMaskEditor";
 import { approveCase, approveForm, approveMask, reopenCase, type FormPayload, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
-import { lesionSummary } from "./fields";
 import { fromExtraction } from "./report";
 import LesionSwitcher from "./LesionSwitcher";
 import MaskStrip from "./MaskStrip";
 import ReportOriginal, { scanOf } from "./ReportOriginal";
 import ReportPreview from "./ReportPreview";
 import ReportRows, { rowId } from "./ReportRows";
-import { applyAnswers, fieldChecks, getAt, lesionGroup, NO_ANSWERS, observationGroups, pathKey, waiting, type Answers, type Group, type Path, type Row } from "./rows";
+import { applyAnswers, fieldChecks, getAt, lesionGroup, lesionSummary, NO_ANSWERS, observationGroups, pathKey, waiting, type Answers, type Group, type Path, type Row } from "./rows";
 
 const FULL_VIEW_KEY = "maria.review.fullView";
 const UPCOMING = 4;
@@ -531,7 +530,7 @@ export default function CaseReview({ data, queue }: Props) {
                   <LesionSwitcher
                     index={index}
                     total={lesions.length}
-                    summary={lesionSummary(lesions[index])}
+                    summary={lesionSummary(currentReport ?? extraction, index)}
                     note={complete.includes(current) ? t("review.lesion.confirmed") : null}
                     onPrev={() => setCurrent(lesions[index - 1].id)}
                     onNext={() => setCurrent(lesions[index + 1].id)}
