@@ -1,18 +1,6 @@
 import { formatNumber } from "../format";
 import { t, type MessageKey } from "../i18n";
-import {
-  WIRE_BIRADS,
-  WIRE_COUNTS,
-  WIRE_ECHOES,
-  WIRE_HOMOGENEITY,
-  WIRE_MARGINS,
-  WIRE_SHAPES,
-  type Extraction,
-  type WireMeasure,
-  type WireModality,
-  type WireSide,
-  type WireSize,
-} from "./extraction";
+import { WIRE_ECHOES, WIRE_HOMOGENEITY, WIRE_MARGINS, WIRE_SHAPES, type Extraction, type WireMeasure, type WireModality, type WireSize } from "./extraction";
 import { largestMm, measureOfWire, sizeOfWire } from "./report";
 import { measureText, sizeText } from "./fields";
 
@@ -22,10 +10,10 @@ export type Path = (string | number)[];
 export const pathKey = (path: Path) => path.join(".");
 const pathOf = (key: string): Path => key.split(".").map((step) => (/^\d+$/.test(step) ? Number(step) : step));
 
-export type Kind = "text" | "list" | "bool" | "measure" | "size" | "fixed" | readonly string[];
+export type Kind = "text" | "list" | "bool" | "measure" | "size" | readonly string[];
 
 export interface Cell {
-  // which observation or breast the value belongs to
+  // which observation the value belongs to
   tag: string | null;
   path: Path;
 }
@@ -37,10 +25,6 @@ export interface DetailRow {
   cells: Cell[];
   // MG and USG should agree
   compare?: boolean;
-  // "obie" when both breasts agree
-  allTag?: string;
-  // a warning, from the report as it reads now
-  check?: (current: Extraction) => string | null;
 }
 
 export interface DetailGroup {
@@ -93,7 +77,6 @@ export function applyDetails(data: Extraction, edits: Edits): Extraction {
 
 const label = (key: string) => t(`detail.${key}` as MessageKey);
 const modality = (m: WireModality) => t(`modality.${m === "usg" ? "ultrasound" : "mammography"}`);
-const SIDES: Record<WireSide, string> = { lewa: "left", prawa: "right", obustronnie: "both" };
 
 export function lesionRows(data: Extraction, index: number): DetailRow[] {
   const obs = data.zmiany[index].obserwacje;
@@ -121,59 +104,6 @@ export function lesionRows(data: Extraction, index: number): DetailRow[] {
   return rows.filter((r) => r.cells.length);
 }
 
-export function caseGroups(data: Extraction): DetailGroup[] {
-  const single = (key: string, path: Path, kind: Kind): DetailRow => ({ key, label: label(key), kind, cells: [{ tag: null, path }] });
-  const breasts = (key: string, field: Path, kind: Kind): DetailRow => ({
-    key,
-    label: label(key),
-    kind,
-    cells: (["lewa", "prawa"] as const).map((side) => ({ tag: t(`field.side.${SIDES[side]}` as MessageKey).toLowerCase(), path: ["piersi", side, ...field] })),
-    allTag: t("detail.bothBreasts"),
-  });
-  return [
-    { key: "study", title: null, rows: [single("modalities", ["modalnosci"], "fixed")] },
-    {
-      key: "breasts",
-      title: label("breasts"),
-      rows: [
-        breasts("composition", ["budowa"], "text"),
-        breasts("edema", ["obrzek"], "bool"),
-        breasts("calcifications", ["zwapnienia"], "bool"),
-        breasts("microcalcifications", ["mikrozwapnienia"], "bool"),
-        breasts("focalLesions", ["zmiany_ogniskowe"], "bool"),
-        breasts("skin", ["skora", "stan"], "text"),
-        breasts("skinInfiltration", ["skora", "naciek"], "bool"),
-      ],
-    },
-    ...data.wezly.map((node, i) => ({
-      key: `node${i}`,
-      title: [label("node"), node.okolica, t(`field.side.${SIDES[node.strona]}` as MessageKey).toLowerCase(), modality(node.modalnosc)].join(" · "),
-      rows: [
-        single("pathological", ["wezly", i, "patologiczne"], "bool"),
-        single("count", ["wezly", i, "liczba"], WIRE_COUNTS),
-        single("size", ["wezly", i, "wymiary"], "size"),
-        single("notes", ["wezly", i, "uwagi"], "text"),
-      ],
-    })),
-    {
-      key: "conclusion",
-      title: label("conclusion"),
-      rows: [
-        { ...single("birads", ["wniosek", "birads"], WIRE_BIRADS), check: conclusionBirads },
-        single("text", ["wniosek", "tekst"], "text"),
-        single("recommendation", ["wniosek", "zalecenie"], "text"),
-      ],
-    },
-  ];
-}
-
-// the conclusion carries the highest category of its lesions
-function conclusionBirads(report: Extraction): string | null {
-  const rank = (b: string | null) => (b ? WIRE_BIRADS.indexOf(b as (typeof WIRE_BIRADS)[number]) : -1);
-  const highest = report.zmiany.map((z) => z.birads).reduce<string | null>((a, b) => (rank(b) > rank(a) ? b : a), null);
-  return highest && highest !== report.wniosek.birads ? t("detail.biradsNotHighest", { v: highest.toUpperCase() }) : null;
-}
-
 export const isEmpty = (value: unknown) => value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length);
 
 export function formatValue(kind: Kind, value: unknown): string {
@@ -181,7 +111,7 @@ export function formatValue(kind: Kind, value: unknown): string {
   if (kind === "bool") return t(value ? "detail.yes" : "detail.no");
   if (kind === "measure") return measureText(measureOfWire(value as WireMeasure)!);
   if (kind === "size") return sizeText(sizeOfWire(value as WireSize)!);
-  if (kind === "fixed" || kind === "list") return (value as string[]).map((v) => (v === "usg" || v === "mammografia" ? modality(v) : v)).join(", ");
+  if (kind === "list") return (value as string[]).join(", ");
   if (kind === "text" && typeof value === "number") return formatNumber(value);
   return String(value);
 }

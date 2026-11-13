@@ -17,7 +17,7 @@ import ViewerToolRail from "../viewer/ViewerToolRail";
 import type { BrushShape, Series, Tool } from "../viewer/types";
 import { useMaskEditor } from "../viewer/useMaskEditor";
 import { approveCase, approveForm, approveMask, reopenCase, type FieldAnswers, type FormPayload, type QueueEntry, type ReviewCase, unapproveForm, unapproveMask } from "./api";
-import { applyDetails, caseGroups, fieldChecks, getAt, lesionRows, NO_DETAILS, pathKey, type Details, type Path } from "./details";
+import { applyDetails, fieldChecks, getAt, lesionRows, NO_DETAILS, pathKey, type Details, type Path } from "./details";
 import { deleteDraft, loadDraft, saveDraft, type Draft } from "./draft";
 import ApproveButton from "./ApproveButton";
 import BiradsForm, { type FieldState } from "./BiradsForm";
@@ -169,10 +169,7 @@ export default function CaseReview({ data, queue }: Props) {
     if (!extraction || !currentReport) return undefined;
     const answers = (id: number): FieldAnswers =>
       Object.fromEntries(keysOf(id).map((key) => [key, { value: valueOf(id, key), state: stateOf(id, key) === "corrected" ? "corrected" : "confirmed" }]));
-    const sections = [
-      ...lesions.map((l, i) => ({ rows: lesionRows(extraction, i), agreed: details.agreed.includes(`lesion:${l.id}`) })),
-      { rows: caseGroups(extraction).flatMap((g) => g.rows), agreed: details.agreed.includes("case") },
-    ];
+    const sections = lesions.map((l, i) => ({ rows: lesionRows(extraction, i), agreed: details.agreed.includes(`lesion:${l.id}`) }));
     return {
       report: currentReport,
       lesions: Object.fromEntries(complete.map((id) => [id, answers(id)])),
@@ -560,19 +557,6 @@ export default function CaseReview({ data, queue }: Props) {
                           .join(" · ")
                 }
               >
-                {extraction && currentReport && (
-                  <div className="review__case">
-                    <ReportDetails
-                      title={t("detail.wholeStudy")}
-                      groups={caseGroups(extraction)}
-                      current={currentReport}
-                      original={extraction}
-                      confirmed={details.agreed.includes("case")}
-                      onEdit={editDetail}
-                      onConfirm={(yes) => agree("case", yes)}
-                    />
-                  </div>
-                )}
                 {extraction && current !== null && lesions.length > 1 && (
                   <LesionSwitcher
                     index={index}

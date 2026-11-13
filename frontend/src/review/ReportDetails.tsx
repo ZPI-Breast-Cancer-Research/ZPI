@@ -33,7 +33,7 @@ function linesOf(row: DetailRow, values: unknown[]): Line[] {
   const tag = (cells: Cell[]) => cells.map((c) => c.tag).filter((x): x is string => !!x);
   if (new Set(present.map((c) => JSON.stringify(c.value))).size === 1) {
     const cells = present.map((c) => c.cell);
-    return [{ cells, value: present[0].value, tags: cells.length === row.cells.length && row.allTag ? [row.allTag] : tag(cells) }];
+    return [{ cells, value: present[0].value, tags: tag(cells) }];
   }
   return present.map((c) => ({ cells: [c.cell], value: c.value, tags: tag([c.cell]) }));
 }
@@ -48,12 +48,11 @@ export default function ReportDetails({ title, groups, current, original, confir
     const id = `${group}.${r.key}`;
     const values = r.cells.map((c) => getAt(current, c.path));
     const corrected = r.cells.some((c) => !same(getAt(current, c.path), getAt(original, c.path)));
-    const note = r.check?.(current) ?? null;
-    const warn = (!!r.compare && disagree(r.kind, values)) || !!note;
+    const warn = !!r.compare && disagree(r.kind, values);
     return (
       <tr key={r.key} className={corrected ? "details__row details__row--corrected" : "details__row"}>
         <th>
-          {warn && <WarningIcon label={note ?? t("detail.disagree")} />}
+          {warn && <WarningIcon label={t("detail.disagree")} />}
           {r.label}
         </th>
         <td>
@@ -62,18 +61,13 @@ export default function ReportDetails({ title, groups, current, original, confir
           ) : (
             linesOf(r, values).map((line) => (
               <div key={pathKey(line.cells[0].path)} className="details__line">
-                {r.kind === "fixed" ? (
-                  <span className={isEmpty(line.value) ? "details__value--empty" : undefined}>{formatValue(r.kind, line.value)}</span>
-                ) : (
-                  <button type="button" className={isEmpty(line.value) ? "details__value details__value--empty" : "details__value"} onClick={() => setEditing(id)}>
-                    {formatValue(r.kind, line.value)}
-                  </button>
-                )}
+                <button type="button" className={isEmpty(line.value) ? "details__value details__value--empty" : "details__value"} onClick={() => setEditing(id)}>
+                  {formatValue(r.kind, line.value)}
+                </button>
                 {line.tags.length > 0 && <span className="details__tag">{line.tags.join(", ")}</span>}
               </div>
             ))
           )}
-          {note && <p className="details__note">{note}</p>}
         </td>
         <td className="details__status">{corrected && <span className="status status--corrected">{t("review.field.corrected")}</span>}</td>
       </tr>
@@ -120,7 +114,7 @@ export default function ReportDetails({ title, groups, current, original, confir
   );
 }
 
-// one field per observation or breast
+// one field per observation
 function EditRow({ row, values, onEdit, onClose }: { row: DetailRow; values: unknown[]; onEdit: Props["onEdit"]; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const cancelled = useRef(false);
