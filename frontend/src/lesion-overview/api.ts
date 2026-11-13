@@ -39,7 +39,7 @@ export interface Overview {
   measurements: Measurements | null;
   report: OverviewReport | null;
   reportPending?: boolean;
-  comparison: { feature: "largestSize" | "quadrant"; fromMask: string | null; fromReport: string | null; match: boolean | null }[];
+  comparison: { feature: "largestSize" | "quadrant"; fromMask: string | number | null; fromReport: string | number | null; match: boolean | null }[];
   verification: {
     by: string;
     date: string;

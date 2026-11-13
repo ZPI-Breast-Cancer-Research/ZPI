@@ -7,8 +7,8 @@ import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
-import { formatDate, formatDecimal, formatMetric, formatOneDecimal } from "../format";
-import { t } from "../i18n";
+import { formatDate, formatDecimal, formatMetric, formatNumber, formatOneDecimal } from "../format";
+import { hasMessage, t, type MessageKey } from "../i18n";
 import { fetchOverview, type Overview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
@@ -24,6 +24,15 @@ import { usePreferences } from "../settings/preferences";
 import { useViewerLayout } from "../viewer/layout";
 import Viewer from "../viewer/Viewer";
 import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
+
+// the backend sends plain numbers and area codes ("upper_outer"); on screen "16 mm" and "KGZ"
+function comparisonValue(feature: Overview["comparison"][number]["feature"], value: string | number | null): string {
+  if (value === null || value === "") return "—";
+  const text = String(value);
+  if (feature === "largestSize") return /^\d+([.,]\d+)?$/.test(text) ? `${formatNumber(Number(text.replace(",", ".")))} mm` : text;
+  const key = `field.quadrant.${text}`;
+  return hasMessage(key) ? t(key as MessageKey) : text;
+}
 
 function agreement({ mask, verification }: Overview): string {
   if (!mask.corrected) return t("overview.agreement.same");
@@ -281,8 +290,8 @@ export default function LesionOverviewPage() {
                     {data.comparison.map((row) => (
                       <tr key={row.feature}>
                         <th>{t(`overview.${row.feature}`)}</th>
-                        <td>{saving ? "…" : (row.fromMask ?? "—")}</td>
-                        <td>{row.fromReport ?? "—"}</td>
+                        <td>{saving ? "…" : comparisonValue(row.feature, row.fromMask)}</td>
+                        <td>{comparisonValue(row.feature, row.fromReport)}</td>
                         <td className="cell-right">
                           {saving || row.match === null ? (
                             "—"
