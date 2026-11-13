@@ -1,6 +1,25 @@
+# DICOMweb frames are addressed by study/series/instance UIDs and never change, so the browser may
+# keep them on disk: a study opened once opens again without the download, even after a reload.
+# Only for the logged-in browser (private) and for a day. Lists and metadata stay uncached, since a
+# study can still get new series (a mask) under the same URL.
+map $uri $dicom_cache_control {
+    ~/frames/  "private, max-age=86400, immutable";
+    default    "";
+}
+
 server {
     listen 80;
     client_max_body_size 2g;
+
+    # Lossless compression for whatever the browser accepts gzip for, which matters on a slow uplink.
+    gzip on;
+    gzip_proxied any;
+    gzip_comp_level 4;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types
+        application/javascript text/javascript text/css application/json application/wasm
+        image/svg+xml;
 
     location /api/ {
         proxy_pass http://backend:8000;
@@ -16,6 +35,11 @@ server {
     }
 
     location /dicom-web/ {
+        # Frames are raw pixel data and shrink ~2.5x on MRI. They come as
+        # multipart/related; type=...; boundary=..., and nginx matches gzip_types against the whole
+        # header (it strips only charset), so a "multipart/related" entry would never match.
+        gzip_types *;
+        add_header Cache-Control $dicom_cache_control;
         auth_request /_auth/orthanc;
         proxy_pass http://orthanc:8042/dicom-web/;
         proxy_set_header Authorization "Basic ${ORTHANC_GATEWAY_AUTH}";
