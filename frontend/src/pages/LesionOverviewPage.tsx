@@ -7,7 +7,7 @@ import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
-import { formatDate, formatMetric, formatOneDecimal } from "../format";
+import { formatDate, formatDecimal, formatMetric, formatOneDecimal } from "../format";
 import { t } from "../i18n";
 import { fetchOverview, type Overview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
@@ -67,7 +67,10 @@ export default function LesionOverviewPage() {
 
   const saving = data.status === "saving";
   const value = (text: string) => (saving ? <span className="muted">{t("overview.recalc")}</span> : text);
-  const dims = data.measurements.dimensions;
+  const measure = data.measurements;
+  const severalParts = !!measure && measure.totalMl > measure.largest.volumeMl;
+  const volume = (ml: number | undefined) => value(ml === undefined ? "—" : `${formatDecimal(ml)} cm³`);
+  const measuredFrom = measure ? t(measure.source === "model" ? "overview.fromModel" : "overview.fromApproved") : undefined;
   const report = data.report;
   const extracted = report?.source.result.data;
   const lesions = extracted ? fromExtraction(extracted).lesions : [];
@@ -158,22 +161,24 @@ export default function LesionOverviewPage() {
         </section>
 
         <section className="overview__info">
-          <Panel title={t("overview.measurements")} aux={saving ? t("overview.recalculating") : t("overview.fromApproved")}>
+          <Panel title={t("overview.measurements")} aux={saving ? t("overview.recalculating") : measuredFrom}>
             <div className="overview__pad">
               <table className="kv">
                 <tbody>
                   <tr>
-                    <th>{t("overview.volume")}</th>
-                    <td className="cell-right">{value(`${formatMetric(data.measurements.volume)} cm³`)}</td>
+                    <th>{t("overview.largestSize")}</th>
+                    <td className="cell-right">{value(measure ? `${Math.round(measure.largest.sizeMm)} mm` : "—")}</td>
                   </tr>
                   <tr>
-                    <th>{t("overview.dimensions")}</th>
-                    <td className="cell-right">{value(dims ? dims.map((d) => formatMetric(d)).join(" × ") + " mm" : "— × — × — mm")}</td>
+                    <th>{t(severalParts ? "overview.volumeLargest" : "overview.volume")}</th>
+                    <td className="cell-right">{volume(measure?.largest.volumeMl)}</td>
                   </tr>
-                  <tr>
-                    <th>{t("overview.intensity")}</th>
-                    <td className="cell-right">{value(formatMetric(data.measurements.intensity))}</td>
-                  </tr>
+                  {severalParts && (
+                    <tr>
+                      <th>{t("overview.volumeTotal")}</th>
+                      <td className="cell-right">{volume(measure?.totalMl)}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

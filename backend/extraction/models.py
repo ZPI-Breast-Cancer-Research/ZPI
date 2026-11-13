@@ -60,6 +60,13 @@ class ExtractionResult(models.Model):
     lesion_answers = models.JSONField(
         blank=True, null=True, help_text="Confirmed or corrected fields per lesion, from the review form"
     )
+    # Every field on the review screen by its path in accepted_report:
+    # {"zmiany.0.obserwacje.1.brzeg": "confirmed" | "corrected" | "unverified"}
+    field_checks = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="The doctor's check of each field on screen, by its path in the report",
+    )
 
     # Written by the extraction worker (workers/extraction/tasks.py). generated_report, error,
     # warnings and provenance hold no report text; result does (the OCR text and the quotes).

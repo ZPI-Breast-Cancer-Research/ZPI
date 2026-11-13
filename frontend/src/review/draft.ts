@@ -1,17 +1,13 @@
 import { toIsoDate } from "../format";
 import type { MaskPatch } from "../viewer/maskTools";
-import type { FieldState } from "./BiradsForm";
-import type { FieldKey } from "./fields";
+import type { Details } from "./details";
 
 // work on a case that is not approved yet, kept so leaving and coming back loses nothing
 export interface Draft {
   // local date and time, YYYY-MM-DDTHH:MM
   savedAt: string;
-  // older drafts don't have it
-  form?: {
-    values: Record<number, Partial<Record<FieldKey, string>>>;
-    states: Record<number, Partial<Record<FieldKey, FieldState>>>;
-  };
+  // older drafts kept the form in another shape and are not read back
+  answers?: Details;
   mask: MaskPatch | null;
 }
 

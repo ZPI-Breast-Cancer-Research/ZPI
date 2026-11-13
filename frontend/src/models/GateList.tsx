@@ -1,6 +1,6 @@
 import { formatMetric } from "../format";
 import { t, type MessageKey } from "../i18n";
-import { fieldLabel, FIELDS, type FieldKey } from "../review/fields";
+import { anyFieldLabel } from "../review/fields";
 import type { GateCheck } from "./api";
 
 // gate rule codes from the backend → sentences in pl.ts; an unknown code shows as is.
@@ -11,8 +11,6 @@ const GATE_RULES: Record<string, { label: MessageKey; result: MessageKey; whole?
   no_field_drop: { label: "models.gate.no_field_drop", result: "models.gate.no_field_drop.result", whole: true },
   failed_not_more: { label: "models.gate.failed_not_more", result: "models.gate.failed_not_more.result", whole: true },
 };
-
-const isField = (key: string): key is FieldKey => FIELDS.some((f) => f.key === key);
 
 export default function GateList({ gate }: { gate: GateCheck[] | null }) {
   if (!gate) return <p className="models__empty">{t("models.gate.pending")}</p>;
@@ -29,7 +27,7 @@ export default function GateList({ gate }: { gate: GateCheck[] | null }) {
             value: number(check.value),
             baseline: number(check.baseline),
             study: check.studyNumber ?? "—",
-            field: check.field ? (isField(check.field) ? fieldLabel(check.field) : check.field) : "—",
+            field: check.field ? anyFieldLabel(check.field) : "—",
           };
           return (
             <li key={check.rule}>

@@ -9,15 +9,17 @@ interface Props {
   label?: (value: string) => string;
   // shown while nothing is picked
   placeholder?: string;
-  // one option marked in the list only (e.g. the model's answer), so the closed field shows the value alone
+  // the model's answer, marked in the list only
   mark?: { value: string; text: string };
   ariaLabel?: string;
   className?: string;
+  // opened in place of a value that was just clicked
+  startOpen?: boolean;
   onChange: (value: string) => void;
 }
 
 // a list in the app's own look instead of the system one; arrows, Enter and Esc work as in a select
-export default function Select({ id, value, options, mark, placeholder = "—", ariaLabel, className, onChange, label = (v) => v }: Props) {
+export default function Select({ id, value, options, mark, placeholder = "—", ariaLabel, className, startOpen, onChange, label = (v) => v }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -47,6 +49,12 @@ export default function Select({ id, value, options, mark, placeholder = "—", 
     setActive(Math.max(0, options.indexOf(value)));
     setOpen(true);
   };
+  useEffect(() => {
+    if (!startOpen) return;
+    box.current?.querySelector("button")?.focus({ preventScroll: true });
+    show();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const pick = (option: string) => {
     onChange(option);
     setOpen(false);

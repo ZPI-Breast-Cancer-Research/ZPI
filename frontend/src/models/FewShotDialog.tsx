@@ -15,7 +15,7 @@ function Answer({ example, json }: { example: FewShotExample; json: boolean }) {
     <>
       {lesions.map((lesion, i) => {
         // as the model should answer: BI-RADS only when given at the lesion
-        const proposals = { ...lesionFields(lesion, conclusion), birads: { value: lesion.birads ?? "" } };
+        const proposals = { ...lesionFields(lesion, conclusion, lesions.length), birads: { value: lesion.birads ?? "" } };
         const fields = Object.entries(proposals).filter(([, p]) => p?.value) as [FieldKey, { value: string }][];
         const unit = (key: FieldKey) => FIELDS.find((f) => f.key === key)?.unit;
         return (

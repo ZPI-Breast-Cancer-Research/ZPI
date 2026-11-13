@@ -10,6 +10,20 @@ export interface OverviewReport {
   lesions: Record<number, FieldAnswers>;
 }
 
+export interface Measurements {
+  // the model's mask stands in while a corrected one is still being saved
+  source: "approved" | "model";
+  // the biggest connected part of the mask; size is its longest diameter in mm
+  largest: { sizeMm: number; volumeMl: number };
+  // every part together
+  totalMl: number;
+}
+
+function isMeasurements(value: unknown): value is Measurements {
+  const m = value as Measurements | null;
+  return !!m && typeof m === "object" && !!m.largest && typeof m.largest.sizeMm === "number" && typeof m.totalMl === "number";
+}
+
 export interface Overview {
   studyId: string;
   studyNumber: string;
@@ -22,7 +36,7 @@ export interface Overview {
   // approved mask and the model's original one
   masks: { approved: SegRef | null; model: SegRef | null };
   mask: { corrected: boolean; version: number; date: string; by: string };
-  measurements: { volume: number | null; dimensions: [number, number, number] | null; intensity: number | null };
+  measurements: Measurements | null;
   report: OverviewReport | null;
   reportPending?: boolean;
   comparison: { feature: "largestSize" | "quadrant"; fromMask: string | null; fromReport: string | null; match: boolean | null }[];
@@ -55,7 +69,7 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
       // mock studies are not in Orthanc, so there is no SEG to point to
       masks: { approved: null, model: null },
       mask: { corrected: true, version: 1, date: "2026-10-21", by: "Użytkownik" },
-      measurements: { volume: null, dimensions: null, intensity: null },
+      measurements: saving ? null : { source: "approved", largest: { sizeMm: 18, volumeMl: 2.41 }, totalMl: 2.41 },
       report: null,
       comparison: [
         { feature: "largestSize", fromMask: null, fromReport: "16 mm", match: null },
@@ -75,6 +89,7 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
     const ready = !!data.report && isCaseReport(data.report.source);
     return {
       ...data,
+      measurements: isMeasurements(data.measurements) ? data.measurements : null,
       report: ready ? data.report : null,
       reportPending: !ready && !!data.report,
       verification: { ...data.verification, agreement: data.verification.agreement ?? null },
