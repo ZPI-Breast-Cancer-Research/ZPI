@@ -786,6 +786,13 @@
   padding: 4px 6px;
 }
 
+.rows__dims {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
 .rows__dim {
   display: inline-flex;
   align-items: center;

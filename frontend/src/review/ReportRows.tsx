@@ -438,13 +438,16 @@ function Controls({ id, row, values, draft, set, side, error, again, onPick }: C
             ariaLabel={t("rows.qualifier")}
             onChange={(q) => set(0, q)}
           />
-          {draft.slice(1).map((_, k) => (
-            <span key={k} className="rows__dim">
-              {k > 0 && unit("×")}
-              {input(k + 1, 36, row.label)}
-            </span>
-          ))}
-          {unit((values[0] as WireSize | null)?.jednostka ?? "mm")}
+          {/* the numbers and their unit move to the next line together */}
+          <span className="rows__dims">
+            {draft.slice(1).map((_, k) => (
+              <span key={k} className="rows__dim">
+                {k > 0 && unit("×")}
+                {input(k + 1, 36, row.label)}
+              </span>
+            ))}
+            {unit((values[0] as WireSize | null)?.jednostka ?? "mm")}
+          </span>
         </>
       );
     case "place": {
