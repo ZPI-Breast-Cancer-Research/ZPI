@@ -153,6 +153,22 @@ class OrthancClient:
             "viewer_url": self.viewer_url(uid),
         }
 
+    def delete_study(self, orthanc_id: str) -> None:
+        """Remove a study with all its series and instances; a study Orthanc no longer has is fine."""
+        url = f"{self.base_url}/studies/{orthanc_id}"
+        try:
+            response = requests.delete(url, auth=self.auth, timeout=TIMEOUT)
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc delete of {url} failed: {exc}") from exc
+        if response.status_code == 401:
+            raise OrthancUnauthorized(f"Orthanc rejected credentials for {url} (HTTP 401)")
+        if response.status_code == 404:
+            return
+        try:
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc delete of {url} failed: {exc}") from exc
+
     def upload_dicom_zip(self, zip_bytes: bytes) -> dict:
         return self._post_instances(zip_bytes, "application/zip")
 

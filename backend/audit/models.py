@@ -20,6 +20,7 @@ class AuditKind(models.TextChoices):
     PASSWORD_RESET = "password_reset", "Reset hasła"
     LOGIN_FAILED = "login_failed", "Nieudane logowanie"
     STUDY_IMPORTED = "study_imported", "Badanie zaimportowane"
+    STUDY_DELETED = "study_deleted", "Badanie usunięte"
     ATTACH_REPORT = "attach_report"
 
 class AuditLog(models.Model):
