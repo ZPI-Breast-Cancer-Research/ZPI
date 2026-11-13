@@ -1,13 +1,13 @@
 import { toIsoDate } from "../format";
 import type { MaskPatch } from "../viewer/maskTools";
-import type { Details } from "./details";
+import type { Answers } from "./rows";
 
 // work on a case that is not approved yet, kept so leaving and coming back loses nothing
 export interface Draft {
   // local date and time, YYYY-MM-DDTHH:MM
   savedAt: string;
   // older drafts kept the form in another shape and are not read back
-  answers?: Details;
+  answers?: Partial<Answers>;
   mask: MaskPatch | null;
 }
 

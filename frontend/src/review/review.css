@@ -1,6 +1,6 @@
 .review {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-columns: minmax(0, 1fr) 440px;
   height: 100%;
   min-height: 0;
 }
@@ -657,7 +657,7 @@
 
 @media (max-width: 1360px) {
   .review {
-    grid-template-columns: minmax(0, 1fr) 380px;
+    grid-template-columns: minmax(0, 1fr) 410px;
   }
 
   .review--full {
@@ -888,4 +888,215 @@
 /* long values like Hipoechogeniczna wrap instead of widening the form */
 .field-select__button {
   hyphens: auto;
+}
+
+/* report rows: a field waits with its control, a checked one reads as text */
+.rows__group + .rows__group {
+  margin-top: 14px;
+}
+
+.rows__band {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 -14px 2px;
+  padding: 8px 14px;
+  background: var(--color-banner);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rows__band span {
+  color: var(--color-ink-faint);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.rows__row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) 88px;
+  gap: 10px;
+  align-items: start;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.rows__row--confirmed,
+.rows__row--corrected {
+  cursor: pointer;
+}
+
+.rows__row--confirmed:hover,
+.rows__row--corrected:hover {
+  margin: 0 -14px;
+  padding: 5px 14px;
+  background: var(--color-hover);
+}
+
+.rows__label {
+  padding-top: 6px;
+  color: var(--color-ink-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.rows__value {
+  min-width: 0;
+}
+
+.rows__text {
+  line-height: 30px;
+  overflow-wrap: anywhere;
+}
+
+.rows__text + .rows__text {
+  margin-top: -6px;
+}
+
+.rows__none {
+  color: var(--color-ink-faint);
+  font-style: italic;
+}
+
+.rows__extra,
+.rows__unit {
+  color: var(--color-ink-faint);
+  font-size: 13px;
+}
+
+.rows__model {
+  margin: -2px 0 4px;
+  color: var(--color-ink-faint);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+
+.rows__act {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 30px;
+}
+
+.rows__act .link {
+  font-size: 13px;
+}
+
+.rows__change {
+  visibility: hidden;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--color-ink-faint);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rows__row:hover .rows__change {
+  visibility: visible;
+}
+
+.rows__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+}
+
+.input.rows__input {
+  max-width: 100%;
+  height: 30px;
+  padding: 0 7px;
+}
+
+.input.rows__input--error {
+  border-color: var(--color-warning);
+}
+
+.rows__select {
+  width: 190px;
+  max-width: 100%;
+}
+
+.rows__select--narrow {
+  width: 84px;
+}
+
+.rows__select--qualifier {
+  width: 88px;
+  white-space: nowrap;
+}
+
+.rows__select--qualifier .field-select__button {
+  padding: 4px 6px;
+}
+
+.rows__dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rows__pair {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rows__side {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rows__side .rows__unit {
+  width: 34px;
+}
+
+.rows__side .rows__select {
+  width: 150px;
+}
+
+.rows__error,
+.rows__note {
+  margin: 3px 0 4px;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.rows__error {
+  color: var(--color-warning);
+}
+
+.rows__note {
+  color: var(--color-ink-faint);
+}
+
+.rows__note em {
+  color: var(--color-warning);
+  font-style: normal;
+}
+
+.btn.rows__confirm {
+  width: 88px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.btn.rows__confirm[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rows__add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding-top: 8px;
+  font-size: 13px;
 }
