@@ -201,6 +201,15 @@ textarea {
   text-align: right;
 }
 
+/* a heading row inside the table, e.g. an observation */
+.kv .kv__group th {
+  padding-top: 14px;
+  border-bottom-color: var(--color-rule-strong);
+  color: var(--color-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
 /* status words */
 .status {
   font-size: var(--text-sm);

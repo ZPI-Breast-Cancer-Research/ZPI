@@ -2,41 +2,47 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { t } from "../i18n";
-import { fieldLabel, FIELDS, lesionFields, optionLabel, type FieldKey } from "../review/fields";
-import { fromExtraction } from "../review/report";
+import { lesionGroup, observationGroups, rowLines, visibleRows } from "../review/rows";
 import ReportText from "../review/ReportText";
 import { fetchFewShot, type FewShotExample } from "./extraction";
 import "../review/review.css";
 
 function Answer({ example, json }: { example: FewShotExample; json: boolean }) {
   if (json) return <pre className="examples__json">{JSON.stringify(example.output, null, 2)}</pre>;
-  const { lesions, conclusion } = fromExtraction(example.output);
+  const report = example.output;
   return (
     <>
-      {lesions.map((lesion, i) => {
-        // as the model should answer: BI-RADS only when given at the lesion
-        const proposals = { ...lesionFields(lesion, conclusion, lesions.length), birads: { value: lesion.birads ?? "" } };
-        const fields = Object.entries(proposals).filter(([, p]) => p?.value) as [FieldKey, { value: string }][];
-        const unit = (key: FieldKey) => FIELDS.find((f) => f.key === key)?.unit;
-        return (
-          <div key={lesion.id}>
-            <p className="models__label">{t("models.examples.lesion", { n: i + 1 })}</p>
-            <table className="kv">
-              <tbody>
-                {fields.map(([key, p]) => (
-                  <tr key={key}>
-                    <th>{fieldLabel(key)}</th>
-                    <td className="cell-right">
-                      {optionLabel(key, p.value)}
-                      {unit(key) && ` ${unit(key)}`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      })}
+      {report.zmiany.map((lesion, i) => (
+        <div key={lesion.id}>
+          <p className="models__label">{t("models.examples.lesion", { n: i + 1 })}</p>
+          <table className="kv">
+            <tbody>
+              {[lesionGroup(i), ...observationGroups(report, i)].flatMap((group, k) => [
+                ...(k > 0
+                  ? [
+                      <tr key={group.key} className="kv__group">
+                        <th colSpan={2}>{group.title}</th>
+                      </tr>,
+                    ]
+                  : []),
+                // as the model should answer: only what the report says
+                ...visibleRows(group, report, report, [])
+                  .filter((row) => rowLines(row, report).some((line) => line.text))
+                  .map((row) => (
+                    <tr key={row.key}>
+                      <th>{row.label}</th>
+                      <td className="cell-right">
+                        {rowLines(row, report, lesion.strona)
+                          .map((line) => [line.text, line.extra].filter(Boolean).join(" · "))
+                          .join("; ")}
+                      </td>
+                    </tr>
+                  )),
+              ])}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </>
   );
 }
