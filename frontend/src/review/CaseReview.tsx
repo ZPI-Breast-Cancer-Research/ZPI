@@ -25,7 +25,7 @@ import MaskStrip from "./MaskStrip";
 import ReportOriginal, { scanOf } from "./ReportOriginal";
 import ReportPreview from "./ReportPreview";
 import ReportRows, { rowId } from "./ReportRows";
-import { applyAnswers, fieldChecks, getAt, lesionGroup, lesionSummary, NO_ANSWERS, observationGroups, pathKey, waiting, type Answers, type Group, type Path, type Row } from "./rows";
+import { applyAnswers, caseGroups, fieldChecks, getAt, lesionGroup, lesionSummary, NO_ANSWERS, observationGroups, pathKey, waiting, type Answers, type Group, type Path, type Row } from "./rows";
 
 const FULL_VIEW_KEY = "maria.review.fullView";
 const UPCOMING = 4;
@@ -79,6 +79,10 @@ export default function CaseReview({ data, queue }: Props) {
   const lesions = useMemo(() => model?.lesions ?? [], [model]);
   // each lesion: its own fields, then one group for each observation
   const groups = useMemo<Group[][]>(() => (extraction ? extraction.zmiany.map((_, i) => [lesionGroup(i), ...observationGroups(extraction, i)]) : []), [extraction]);
+  // breasts, lymph nodes and the conclusion
+  const studyGroups = useMemo<Group[]>(() => (extraction ? caseGroups(extraction) : []), [extraction]);
+  // folded by hand, or open while something there waits
+  const [studyOpen, setStudyOpen] = useState<boolean | null>(null);
   // every lesion in the report is confirmed before the case is verified
   const [current, setCurrent] = useState<number | null>(lesions[0]?.id ?? null);
   // every answer in the form
@@ -130,22 +134,27 @@ export default function CaseReview({ data, queue }: Props) {
     setAnswers((a) => ({ ...a, added: [...new Set([...a.added, row.key])] }));
   };
 
-  const waitingOf = (i: number) => (extraction && currentReport ? groups[i].flatMap((g) => waiting(g, extraction, currentReport, answers)) : []);
-  const openFields = lesions.flatMap((l, i) => waitingOf(i).map((row) => ({ id: l.id, row })));
+  const waitingIn = (list: Group[]) => (extraction && currentReport ? list.flatMap((g) => waiting(g, extraction, currentReport, answers)) : []);
+  const waitingOf = (i: number) => waitingIn(groups[i]);
+  const studyWaiting = waitingIn(studyGroups);
+  // the whole study first, as on screen
+  const openFields = [...studyWaiting.map((row) => ({ id: null, row })), ...lesions.flatMap((l, i) => waitingOf(i).map((row) => ({ id: l.id, row })))];
   const currentOpen = index < 0 ? [] : waitingOf(index);
   const complete = lesions.filter((_, i) => !waitingOf(i).length).map((l) => l.id);
-  // just the lesion on screen
-  const confirmAll = () => {
+  const showStudy = studyOpen ?? studyWaiting.length > 0;
+  const confirmRows = (rows: Row[]) => {
     touch();
-    const keys = currentOpen.flatMap((row) => row.paths.map(pathKey));
+    const keys = rows.flatMap((row) => row.paths.map(pathKey));
     setAnswers((a) => ({ ...a, confirmed: [...new Set([...a.confirmed, ...keys])] }));
   };
+  // just the lesion on screen
+  const confirmAll = () => confirmRows(currentOpen);
 
   // sent once every lesion is answered
   const formPayload = useRef<() => FormPayload | undefined>(() => undefined);
   formPayload.current = () => {
     if (!extraction || !currentReport) return undefined;
-    return { report: currentReport, lesions: {}, fields: fieldChecks(groups.flat(), extraction, currentReport, answers) };
+    return { report: currentReport, lesions: {}, fields: fieldChecks([...studyGroups, ...groups.flat()], extraction, currentReport, answers) };
   };
   // edits that all ended up undone or restored leave the model's mask as it was
   const corrected = mask.state === "corrected" && (maskInfo?.edited ?? 1) > 0;
@@ -192,22 +201,22 @@ export default function CaseReview({ data, queue }: Props) {
   // sent again after any later change
   const sentFor = useRef<string | null>(null);
   const completeKey = `${complete.join(",")}|${JSON.stringify(answers)}`;
-  // the lesion on screen waits again; corrections stay
-  function unconfirmLesion() {
-    if (index < 0) return;
+  // these fields wait again; corrections stay
+  function unconfirm(list: Group[]) {
     touch();
-    const keys = groups[index].flatMap((g) => g.rows.flatMap((r) => r.paths.map(pathKey)));
+    const keys = list.flatMap((g) => g.rows.flatMap((r) => r.paths.map(pathKey)));
     setAnswers((a) => ({ ...a, confirmed: a.confirmed.filter((k) => !keys.includes(k)) }));
     if (sentFor.current !== null) {
       sentFor.current = null;
       unapproveForm(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
     }
   }
+  const unconfirmLesion = () => index >= 0 && unconfirm(groups[index]);
   useEffect(() => {
-    if (!extraction || !lesions.length || openFields.length || sentFor.current === completeKey) return;
+    if (!extraction || openFields.length || sentFor.current === completeKey) return;
     sentFor.current = completeKey;
     approveForm(data.studyId, formPayload.current()!).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
-  }, [extraction, lesions.length, openFields.length, completeKey, data.studyId, queryClient]);
+  }, [extraction, openFields.length, completeKey, data.studyId, queryClient]);
 
   // verified = the mask approved and every field confirmed, in either order; leaving keeps it
   const verified = maskApproved !== null && openFields.length === 0;
@@ -234,7 +243,8 @@ export default function CaseReview({ data, queue }: Props) {
   const showOpenField = () => {
     const first = openFields[0];
     setFullView(false);
-    if (first) setCurrent(first.id);
+    if (first?.id === null) setStudyOpen(true);
+    else if (first) setCurrent(first.id);
     // the form comes back on the next render
     requestAnimationFrame(() => {
       const row = first && document.getElementById(rowId(first.row));
@@ -519,14 +529,48 @@ export default function CaseReview({ data, queue }: Props) {
                 aux={
                   !extraction
                     ? t("review.formWaitsAux")
-                    : current === null
-                      ? null
-                      : currentOpen.length
-                        ? t("review.left", { n: currentOpen.length })
-                        : t("review.formConfirmed")
+                    : openFields.length
+                      ? t("review.left", { n: openFields.length })
+                      : t("review.formConfirmed")
                 }
               >
-                {extraction && current !== null && lesions.length > 1 && (
+                {extraction && currentReport && (
+                  <section className="study">
+                    <button type="button" className="study__head" aria-expanded={showStudy} onClick={() => setStudyOpen(!showStudy)}>
+                      <span className={showStudy ? "study__chevron study__chevron--open" : "study__chevron"} aria-hidden="true" />
+                      {t("row.section.case")}
+                      <span className="study__state">
+                        {studyWaiting.length ? t("study.waiting", { n: studyWaiting.length }) : t("rows.checked")}
+                      </span>
+                    </button>
+                    {showStudy && (
+                      <div className="study__body">
+                        <ReportRows
+                          sections={studyGroups.map((group) => ({ group, band: true }))}
+                          original={extraction}
+                          current={currentReport}
+                          answers={answers}
+                          side={null}
+                          onAnswer={answer}
+                          onRestore={restore}
+                          onAdd={add}
+                        />
+                        <div className="study__foot">
+                          {studyWaiting.length ? (
+                            <button type="button" className="btn btn--confirm" onClick={() => confirmRows(studyWaiting)}>
+                              {t("study.confirm")}
+                            </button>
+                          ) : (
+                            <button type="button" className="btn" title={t("study.unconfirmTitle")} onClick={() => unconfirm(studyGroups)}>
+                              {t("review.unconfirmLesion")}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+                {extraction && current !== null && (
                   <LesionSwitcher
                     index={index}
                     total={lesions.length}

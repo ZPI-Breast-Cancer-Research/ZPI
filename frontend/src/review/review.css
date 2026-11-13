@@ -760,6 +760,10 @@
   border-bottom: 1px solid var(--color-rule);
 }
 
+.lesion-switch--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .lesion-switch__body {
   min-width: 0;
 }
@@ -933,12 +937,14 @@
 }
 
 .rows__row--confirmed,
-.rows__row--corrected {
+.rows__row--corrected,
+.rows__row--todo:not(.rows__row--open) {
   cursor: pointer;
 }
 
 .rows__row--confirmed:hover,
-.rows__row--corrected:hover {
+.rows__row--corrected:hover,
+.rows__row--todo:not(.rows__row--open):hover {
   margin: 0 -14px;
   padding: 5px 14px;
   background: var(--color-hover);
@@ -1035,6 +1041,10 @@
   width: 84px;
 }
 
+.rows__controls .input + .rows__select {
+  width: 92px;
+}
+
 .rows__select--qualifier {
   width: 88px;
   white-space: nowrap;
@@ -1109,4 +1119,58 @@
   gap: 4px 14px;
   padding-top: 8px;
   font-size: 13px;
+}
+
+/* the whole study: breasts, lymph nodes and the conclusion, above the lesions */
+.study {
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.study__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  background: none;
+  border: 0;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.study__head:hover {
+  background: var(--color-hover);
+}
+
+.study__chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--color-ink-muted);
+  border-bottom: 1.5px solid var(--color-ink-muted);
+  transform: rotate(-45deg);
+}
+
+.study__chevron--open {
+  transform: rotate(45deg) translate(-2px, -2px);
+}
+
+.study__state {
+  margin-left: auto;
+  color: var(--color-ink-faint);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.study__body {
+  padding: 0 14px 12px;
+}
+
+.study__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
 }

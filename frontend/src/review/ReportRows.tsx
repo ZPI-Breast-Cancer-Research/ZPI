@@ -136,7 +136,9 @@ interface RowProps {
 
 function RowView({ row, state, original, current, side, editing, onEdit, onAnswer, onRestore }: RowProps) {
   const id = rowId(row);
-  const open = state === "todo" || editing;
+  // two controls in one row (both breasts, a node's region and side) wait as text and open on a click
+  const pair = row.perSide || row.kind.type === "where";
+  const open = (state === "todo" && !pair) || editing;
   const values = row.paths.map((p) => getAt(current, p));
   const note = state === "todo" ? (row.note?.(current) ?? null) : null;
 
@@ -154,7 +156,19 @@ function RowView({ row, state, original, current, side, editing, onEdit, onAnswe
           {model !== null && <div className="rows__model">{t("rows.model", { v: model })}</div>}
         </div>
         <div className="rows__act">
-          {state === "corrected" ? (
+          {state === "todo" ? (
+            <button
+              type="button"
+              className="btn rows__confirm"
+              onClick={(event) => {
+                event.stopPropagation();
+                onAnswer(null, true);
+                focusNext(id);
+              }}
+            >
+              {t("rows.confirm")}
+            </button>
+          ) : state === "corrected" ? (
             <button
               type="button"
               className="link"
@@ -448,7 +462,7 @@ function Controls({ id, row, values, draft, set, side, error, again, onPick }: C
     case "where":
       return (
         <>
-          {input(0, 150, row.label)}
+          {input(0, 118, row.label)}
           {choice(1, draft[1], ["lewa", "prawa", "obustronnie"], (v) => t(`field.side.${FROM_WIRE.side[v as WireSide]}`).toLowerCase(), (v) => set(1, v))}
         </>
       );

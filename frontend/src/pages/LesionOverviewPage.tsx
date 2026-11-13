@@ -192,7 +192,7 @@ export default function LesionOverviewPage() {
                   <div style={{ margin: "8px 0 10px" }}>
                     <ReportPreview report={report.source} onOpen={() => setShowOriginal(true)} />
                   </div>
-                  {lesion && lesions.length > 1 && (
+                  {lesion && (
                     <LesionSwitcher
                       index={lesionIndex}
                       total={lesions.length}
