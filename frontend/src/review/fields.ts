@@ -5,8 +5,8 @@ import {
   FROM_WIRE,
   largestMm,
   lesionType,
-  quadrantOfClock,
-  quadrantOfPlaces,
+  areaOfClock,
+  areaOfPlaces,
   quotesBirads,
   sizeOfWire,
   TO_WIRE,
@@ -116,7 +116,7 @@ export function lesionFields(lesion: Lesion, conclusion: Conclusion, lesionCount
   fields.type = typed === undefined ? { value: "", hints: missing() } : { value: lesionType(obs[typed].type)!, from: typed, hints: [`${obs[typed].type} · ${modality(obs[typed])}`] };
 
   const clocked = pick((o) => o.clock);
-  const quadrant = (clocked !== undefined && quadrantOfClock(obs[clocked].clock, lesion.side)) || quadrantOfPlaces(obs.flatMap((o) => o.places));
+  const quadrant = (clocked !== undefined && areaOfClock(obs[clocked].clock, lesion.side, obs[clocked].fromNipple)) || areaOfPlaces(obs.flatMap((o) => o.places));
   const places = obs.filter((o) => o.places.length).map((o) => `${o.places.join(", ")} · ${modality(o)}`);
   const where = [...(quadrant ? [t(`field.quadrant.${quadrant}`)] : []), ...places];
   fields.clock = { value: clocked === undefined ? "" : String(Number.parseInt(obs[clocked].clock!, 10) || ""), from: clocked ?? pick((o) => o.places.length), hints: where.length ? where : missing() };
