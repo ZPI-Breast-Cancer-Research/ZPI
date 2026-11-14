@@ -279,3 +279,14 @@ def test_segmentation_overview_returns_every_usage_period_and_the_new_fields(
     assert data["inUse"]["version"] == "restored"
     assert data["inUse"]["since"] is not None
     assert data["compareWith"] == "other"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role, expected",
+    [("admin", 200), ("researcher", 200), ("radiologist", 403)],
+)
+def test_segmentation_overview_needs_the_view_models_permission(client_as, role, expected):
+    response = client_as(role).get(reverse("segmentation-overview"))
+
+    assert response.status_code == expected

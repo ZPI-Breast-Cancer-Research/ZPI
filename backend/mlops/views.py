@@ -6,8 +6,7 @@ from django.db.models.functions import TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from celery import current_app
 
@@ -114,7 +113,7 @@ def _next_retraining(db_versions):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@require_permission(["viewModels"])
 def segmentation_overview(request):
     db_versions = (
         ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.SEG)
@@ -312,7 +311,7 @@ def segmentation_overview(request):
     return Response(overview, status=status.HTTP_200_OK)
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@require_permission(["viewModels"])
 def extraction_overview(request):
     prod_ext = (
         ModelVersion.objects.filter(
@@ -407,10 +406,31 @@ def _segmentation_version(version):
     return get_object_or_404(ModelVersion, module=ModelVersion.ModuleChoices.SEG, version=version)
 
 
+# a version that waits for a decision: a draft or a proposal
+UNDECIDED = (ModelVersion.StatusChoices.NEW, ModelVersion.StatusChoices.CANDIDATE)
+
+
+def _wrong_status(model, allowed):
+    """409 when the version is not in a status the action applies to, otherwise None."""
+    if model.status in allowed:
+        return None
+    return Response(
+        {
+            "code": "wrong_status",
+            "detail": f"Wersja {model.version} ma status „{model.get_status_display()}”, "
+                      "tej operacji nie można na niej wykonać.",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 @api_view(["POST"])
 @require_permission(["manageModels"])
 def promote_model(request, version):
     model_ver = _segmentation_version(version)
+    refused = _wrong_status(model_ver, UNDECIDED)
+    if refused:
+        return refused
     model_ver.put_in_use(request.user, reason=request.data.get("reason", ""))
 
     dice = model_ver.metrics.get("dice")
@@ -427,6 +447,10 @@ def promote_model(request, version):
 @require_permission(["manageModels"])
 def reject_model(request, version):
     model_ver = _segmentation_version(version)
+    # the version in use is replaced by promoting another one, never rejected
+    refused = _wrong_status(model_ver, UNDECIDED)
+    if refused:
+        return refused
     reason = request.data.get("reason", "")
 
     model_ver.status = ModelVersion.StatusChoices.REJECTED
@@ -448,6 +472,9 @@ def reject_model(request, version):
 @require_permission(["manageModels"])
 def rollback_model(request, version):
     target_model = _segmentation_version(version)
+    refused = _wrong_status(target_model, (ModelVersion.StatusChoices.ARCHIVED,))
+    if refused:
+        return refused
     target_model.put_in_use(request.user, reason=request.data.get("reason", ""))
 
     record_audit(

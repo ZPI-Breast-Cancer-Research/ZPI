@@ -270,15 +270,17 @@ def _overview_report(extraction, study_id):
 
 def _is_corrected(field_checks) -> bool:
     """The radiologist changed at least one field of the form."""
-    return any(check == "corrected" for check in (field_checks or {}).values())
+    return isinstance(field_checks, dict) and any(
+        check == "corrected" for check in field_checks.values()
+    )
 
 
 def _apply_form(extraction, submitted, user):
     """Store the review form: {"report": <worker schema>,
     "fields": {path in the report: "confirmed" | "corrected" | "unverified"}}.
 
-    Without a report the doctor accepts the model's report as it is.
-    Sent again, it replaces the last answers.
+    Without a report the doctor accepts the model's report as it is, or keeps the form accepted
+    before together with its checks. Sent again, a report replaces the last answers.
     """
     submitted = submitted if isinstance(submitted, dict) else {}
     report = submitted.get("report")
@@ -289,7 +291,8 @@ def _apply_form(extraction, submitted, user):
         extraction.field_checks = field_checks
     elif not extraction.accepted_report:
         extraction.accepted_report = extraction.generated_report
-    corrected = _is_corrected(field_checks)
+    # the checks stored with the accepted report, not only the ones in this request
+    corrected = _is_corrected(extraction.field_checks)
     extraction.status = StatusChoices.CORRECTED if corrected else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()

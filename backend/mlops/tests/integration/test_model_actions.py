@@ -161,30 +161,31 @@ def test_start_training_sends_celery_task(authenticated_client):
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("action", ["promote-model", "reject-model", "rollback-model"])
+@pytest.mark.parametrize(
+    "action, before",
+    [
+        ("promote-model", ModelVersion.StatusChoices.CANDIDATE),
+        ("reject-model", ModelVersion.StatusChoices.CANDIDATE),
+        ("rollback-model", ModelVersion.StatusChoices.ARCHIVED),
+    ],
+)
 def test_model_action_ignores_extraction_version_with_the_same_number(
     authenticated_client,
-    candidate_model,
     action,
+    before,
 ):
-    extraction = ModelVersion.objects.create(
-        module=ModelVersion.ModuleChoices.EXT,
-        name="extraction",
-        version=candidate_model.version,
-        status=ModelVersion.StatusChoices.CANDIDATE,
-    )
+    segmentation = ModelVersion.objects.create(module="seg", name="segmentation", version="2.0", status=before)
+    extraction = ModelVersion.objects.create(module="ext", name="extraction", version="2.0", status=before)
 
-    response = authenticated_client.post(
-        reverse(action, kwargs={"version": candidate_model.version})
-    )
+    response = authenticated_client.post(reverse(action, kwargs={"version": "2.0"}))
 
     assert response.status_code == status.HTTP_200_OK
 
     extraction.refresh_from_db()
-    candidate_model.refresh_from_db()
+    segmentation.refresh_from_db()
 
-    assert extraction.status == ModelVersion.StatusChoices.CANDIDATE
-    assert candidate_model.status != ModelVersion.StatusChoices.CANDIDATE
+    assert extraction.status == before
+    assert segmentation.status != before
 
 
 @pytest.mark.django_db
@@ -258,3 +259,58 @@ def test_promote_closes_the_period_of_the_replaced_version_and_saves_the_reason(
     assert candidate_model.reason == "Better on small lesions"
     assert production_model.periods.get().ended_at is not None
     assert candidate_model.periods.get().ended_at is None
+
+
+ALL = set(ModelVersion.StatusChoices.values)
+ALLOWED = {
+    "promote-model": {"new", "candidate"},
+    "reject-model": {"new", "candidate"},
+    "rollback-model": {"archived"},
+}
+REFUSED = [(action, state) for action, allowed in ALLOWED.items() for state in sorted(ALL - allowed)]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action, state", REFUSED)
+def test_model_action_is_refused_in_a_status_it_does_not_apply_to(
+    authenticated_client,
+    action,
+    state,
+):
+    model = ModelVersion.objects.create(module="seg", name="segmentation", version="1", status=state)
+
+    response = authenticated_client.post(reverse(action, kwargs={"version": "1"}))
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.json()["code"] == "wrong_status"
+
+    model.refresh_from_db()
+
+    assert model.status == state
+    assert model.periods.count() == 0
+
+
+@pytest.mark.django_db
+def test_version_in_use_cannot_be_rejected_and_keeps_its_period(authenticated_client, user):
+    model = ModelVersion.objects.create(module="seg", name="segmentation", version="1")
+    model.put_in_use(user)
+
+    response = authenticated_client.post(reverse("reject-model", kwargs={"version": "1"}))
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+    model.refresh_from_db()
+
+    assert model.status == ModelVersion.StatusChoices.PRODUCTION
+    assert model.periods.get().ended_at is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("state", ["new", "candidate"])
+def test_draft_and_proposal_can_be_promoted_and_rejected(authenticated_client, state):
+    for version, action in (("a", "promote-model"), ("b", "reject-model")):
+        ModelVersion.objects.create(module="seg", name="segmentation", version=version, status=state)
+
+        response = authenticated_client.post(reverse(action, kwargs={"version": version}))
+
+        assert response.status_code == status.HTTP_200_OK
