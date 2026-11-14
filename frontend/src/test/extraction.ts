@@ -1,4 +1,4 @@
-import type { Extraction, WireBreast, WireLesion, WireNode, WireObservation } from "../review/extraction";
+import type { CaseReport, Extraction, WireBreast, WireLesion, WireNode, WireObservation } from "../review/extraction";
 
 // made-up reports in the worker's shape, no patient data
 
@@ -56,4 +56,32 @@ export const extraction = (overrides: Partial<Extraction> = {}): Extraction => (
   wezly: [],
   wniosek: { birads: null, tekst: null, zalecenie: null },
   ...overrides,
+});
+
+// a report the extraction worker has read, as the review API sends it
+export const caseReport = (data: Extraction = extraction()): CaseReport => ({
+  originalUrl: null,
+  result: {
+    source: "opis.txt",
+    status: "ok",
+    data,
+    error: null,
+    warnings: [],
+    text: "",
+    provenance: {
+      ocr_engine: null,
+      ocr_engine_version: null,
+      ocr_mean_confidence: null,
+      orientation_detector: null,
+      page_rotations: [],
+      llm_provider: "test",
+      llm_model: "test",
+      prompt_version: "1",
+      schema_version: "3",
+    },
+    attempts: 1,
+    ocr_seconds: null,
+    llm_seconds: null,
+    created_at: "2026-11-13T10:00:00Z",
+  },
 });

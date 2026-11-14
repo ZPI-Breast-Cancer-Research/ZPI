@@ -1,0 +1,37 @@
+{
+  "studyId": "26564f74-bb5d39af-dc72a279-17cda776-b2177883",
+  "studyNumber": "0015",
+  "patientId": "DEMO-P0015",
+  "age": null,
+  "studyDate": "2026-10-03",
+  "description": "MR piersi z kontrastem",
+  "uncertainty": 0.9,
+  "segmentationVersion": "2",
+  "extractionVersion": "8",
+  "studyUid": "2.25.190623026198283903021199658259517825685",
+  "mask": null,
+  "report": "pending",
+  "proposals": {
+    "birads": {
+      "value": "2"
+    },
+    "location": {
+      "value": "lower_outer"
+    },
+    "size": {
+      "value": "12"
+    },
+    "shape": {
+      "value": "irregular"
+    },
+    "margin": {
+      "value": "microlobulated"
+    }
+  },
+  "measurements": {
+    "volume": null,
+    "size": null,
+    "sizeInReport": null
+  },
+  "maskApproved": null
+}

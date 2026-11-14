@@ -1,0 +1,20 @@
+[
+  {
+    "studyId": "26564f74-bb5d39af-dc72a279-17cda776-b2177883",
+    "studyNumber": "0015",
+    "studyDate": "2026-10-03",
+    "uncertainty": 0.9
+  },
+  {
+    "studyId": "9dea1b4d-c512a8e8-26ccc404-70ed1576-1236d9d6",
+    "studyNumber": "0010",
+    "studyDate": "2026-11-07",
+    "uncertainty": 0.85
+  },
+  {
+    "studyId": "9735ab22-57b7886c-369855cb-2c6cb4cb-e9b15f82",
+    "studyNumber": "0005",
+    "studyDate": "2026-10-13",
+    "uncertainty": 0.8
+  }
+]
