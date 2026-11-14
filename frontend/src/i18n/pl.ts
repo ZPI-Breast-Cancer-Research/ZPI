@@ -25,6 +25,7 @@ export const pl = {
   "login.required": "Wpisz login i hasło.",
   "login.failed": "Nieprawidłowy login lub hasło.",
   "login.unavailable": "Nie udało się połączyć z serwerem. Spróbuj ponownie.",
+  "login.expired": "Sesja wygasła. Zaloguj się ponownie.",
   "login.firstTitle": "Pierwsze logowanie: ustaw hasło",
   "login.tempPassword": "Hasło tymczasowe",
   "login.tempPlaceholder": "hasło tymczasowe",

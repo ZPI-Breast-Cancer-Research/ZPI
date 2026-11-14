@@ -14,6 +14,40 @@ export const api = axios.create({
   withXSRFToken: true,
 });
 
+// the server no longer knows the session (it expired or was signed out elsewhere)
+const sessionEnded = new Set<() => void>();
+
+export function onSessionEnd(listener: () => void): () => void {
+  sessionEnded.add(listener);
+  return () => sessionEnded.delete(listener);
+}
+
+let checking: Promise<boolean> | null = null;
+
+// a refusal can also mean a missing permission; the profile tells whether there is a session at all
+export function hasSession(): Promise<boolean> {
+  checking ??= api
+    .get("/api/profile/", { validateStatus: () => true })
+    .then((response) => response.status !== 401 && response.status !== 403)
+    .catch(() => true)
+    .finally(() => (checking = null));
+  return checking;
+}
+
+// sign-in answers 401 for a wrong password, and the profile is the check itself
+const NOT_CHECKED = /^\/api\/(auth\/|profile\/)/;
+
+api.interceptors.response.use(undefined, async (error: unknown) => {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    if ((status === 401 || status === 403) && !NOT_CHECKED.test(error.config?.url ?? "") && !(await hasSession())) {
+      sessionEnded.forEach((listener) => listener());
+    }
+  }
+  return Promise.reject(error);
+});
+
+
 
 export class ApiError extends Error {
   constructor(

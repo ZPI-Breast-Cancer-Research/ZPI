@@ -1,8 +1,16 @@
 import { http, HttpResponse, type JsonBodyType } from "msw";
 import { setupServer } from "msw/node";
 
-// the backend as the tests see it; each test adds the endpoints it needs with server.use()
-export const server = setupServer(http.get("/api/health", () => HttpResponse.json({ orthanc: "ok" })));
+import profile from "./fixtures/profile.json";
+
+// the backend as the tests see it, with a live session; each test adds the endpoints it needs with server.use()
+export const server = setupServer(
+  http.get("/api/health", () => HttpResponse.json({ orthanc: "ok" })),
+  http.get("/api/profile/", () => HttpResponse.json(profile)),
+);
+
+// what Django answers without a session cookie
+export const noSession = () => HttpResponse.json({ detail: "Authentication credentials were not provided." }, { status: 403 });
 
 export interface Sent {
   path: string;
