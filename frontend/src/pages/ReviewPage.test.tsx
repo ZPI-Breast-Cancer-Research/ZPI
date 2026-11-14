@@ -1,10 +1,10 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { t } from "../i18n";
-import { loadDraft, saveDraft } from "../review/draft";
+import { deleteDraft, loadDraft, saveDraft } from "../review/draft";
 import type { Extraction } from "../review/extraction";
 import { caseReport, extraction, lesion, observation } from "../test/extraction";
 import reviewCase from "../test/fixtures/review-case.json";
@@ -87,6 +87,7 @@ const confirmEverything = async (user: ReturnType<typeof userEvent.setup>) => {
 beforeEach(() => {
   vi.mocked(loadDraft).mockResolvedValue(null);
   vi.mocked(saveDraft).mockClear();
+  vi.mocked(deleteDraft).mockClear();
 });
 
 describe("ReviewPage", () => {
@@ -109,7 +110,7 @@ describe("ReviewPage", () => {
     );
     renderReview();
     expect(await screen.findByText(t("review.error"))).toBeInTheDocument();
-    expect(screen.getByText(t("api.http", { status: 404 }))).toBeInTheDocument();
+    expect(screen.getByText("Nie znaleziono.")).toBeInTheDocument();
   });
 
   it("waits while the worker hasn't read the report", async () => {
@@ -217,5 +218,79 @@ describe("drafts", () => {
     const [id, draft] = vi.mocked(saveDraft).mock.lastCall!;
     expect(id).toBe(studyId);
     expect(draft.answers?.confirmed).toContain("wniosek.birads");
+  });
+});
+
+// the endpoint fails until `fixed` is set, then answers as usual
+function failing(path: string, answer: () => Response) {
+  const state = { fixed: false };
+  server.use(http.post(`${base}/${path}/`, () => (state.fixed ? undefined : answer())));
+  return state;
+}
+
+describe("a save the backend didn't take", () => {
+  it("says so with the reason and sends it again on retry", async () => {
+    const sent = backend();
+    const down = failing("approve-form", () => HttpResponse.error());
+    const user = userEvent.setup();
+    renderReview();
+    await confirmEverything(user);
+
+    const reason = t("api.unreachable", { url: window.location.origin });
+    expect(await screen.findByRole("status")).toHaveTextContent(t("review.saveFailedToast", { n: reviewCase.studyNumber, reason }));
+    expect(screen.getByText(t("review.saveFailed"))).toBeInTheDocument();
+
+    down.fixed = true;
+    await user.click(screen.getByRole("button", { name: t("review.saveRetry") }));
+    await waitFor(() => expect(paths(sent)).toEqual(["approve-form"]));
+    expect(screen.queryByText(t("review.saveFailed"))).not.toBeInTheDocument();
+  });
+
+  it("offers no retry when the backend refuses with a reason", async () => {
+    backend();
+    failing("approve-form", () => HttpResponse.json({ detail: "Przypadek zatwierdził już inny lekarz." }, { status: 409 }));
+    const user = userEvent.setup();
+    renderReview();
+    await confirmEverything(user);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Przypadek zatwierdził już inny lekarz.");
+    expect(screen.getByText(t("review.saveFailed"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("review.saveRetry") })).not.toBeInTheDocument();
+  });
+
+  it("keeps the draft and doesn't call the case verified until the backend has it", async () => {
+    const sent = backend();
+    const down = failing("approve", () => new HttpResponse(null, { status: 502 }));
+    const user = userEvent.setup();
+    renderReview();
+    await confirmEverything(user);
+    await user.click(await button(t("review.mask.approve")));
+
+    expect(await screen.findByText(t("review.saveFailed"))).toBeInTheDocument();
+    expect(screen.queryByText(t("review.verified"))).not.toBeInTheDocument();
+    expect(deleteDraft).not.toHaveBeenCalled();
+
+    down.fixed = true;
+    await user.click(screen.getByRole("button", { name: t("review.saveRetry") }));
+    expect(await screen.findByText(t("review.verified"))).toBeInTheDocument();
+    expect(paths(sent)).toEqual(["approve-form", "approve-mask", "approve"]);
+    expect(deleteDraft).toHaveBeenCalledWith(studyId);
+  });
+
+  it("leaves the mask waiting and retries it from the message", async () => {
+    const sent = backend();
+    const down = failing("approve-mask", () => new HttpResponse(null, { status: 500 }));
+    const user = userEvent.setup();
+    renderReview();
+    await user.click(await button(t("review.mask.approve")));
+
+    const message = await screen.findByRole("status");
+    await waitFor(() => expect(message).toHaveTextContent(t("api.http", { status: 500 })));
+    expect(screen.getByRole("button", { name: t("review.mask.approve") })).toBeInTheDocument();
+
+    down.fixed = true;
+    await user.click(within(message).getByRole("button", { name: t("review.retry") }));
+    await waitFor(() => expect(paths(sent)).toEqual(["approve-mask"]));
+    expect(await button(t("review.mask.unapprove"))).toBeInTheDocument();
   });
 });

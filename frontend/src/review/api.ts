@@ -1,4 +1,4 @@
-import { api } from "../api";
+import { api, request } from "../api";
 import { mockDelay, mockStudyUid, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
 import type { SegRef } from "../viewer/types";
@@ -77,7 +77,7 @@ export async function fetchQueue(): Promise<QueueEntry[]> {
   if (MOCK_API) {
     return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => (b.uncertainty ?? 0) - (a.uncertainty ?? 0)));
   }
-  const { data } = await api.get<QueueEntry[]>("/api/review/queue/");
+  const { data } = await request(api.get<QueueEntry[]>("/api/review/queue/"));
   return data;
 }
 
@@ -101,11 +101,12 @@ export async function fetchCase(studyId: string): Promise<ReviewCase> {
       mask: null,
       report: null,
       reportPending: false,
-      segmentation: { series: null },      measurements: { volume: null, size: null, sizeInReport: null },
+      segmentation: { series: null },
+      measurements: { volume: null, size: null, sizeInReport: null },
       maskApproved: masksApproved.get(studyId) ?? null,
     });
   }
-  const { data } = await api.get<ReviewCase>(`/api/review/cases/${studyId}/`);
+  const { data } = await request(api.get<ReviewCase>(`/api/review/cases/${studyId}/`));
   const ready = isCaseReport(data.report);
   return { ...data, report: ready ? data.report : null, reportPending: !ready && !!data.report, segmentation: data.segmentation ?? null };
 }
@@ -119,7 +120,7 @@ export async function approveCase(studyId: string, payload: ApprovalPayload): Pr
     record("form_approved", label(studyId));
     return mockDelay(undefined, 400);
   }
-  await api.post(`/api/review/cases/${studyId}/approve/`, payload);
+  await request(api.post(`/api/review/cases/${studyId}/approve/`, payload));
   record("mask_approved", `#${studyId}`);
   record("form_approved", `#${studyId}`);
 }
@@ -131,7 +132,7 @@ export async function approveMask(studyId: string, payload: Pick<ApprovalPayload
     record("mask_approved", label(studyId));
     return mockDelay(undefined, 300);
   }
-  await api.post(`/api/review/cases/${studyId}/approve-mask/`, payload);
+  await request(api.post(`/api/review/cases/${studyId}/approve-mask/`, payload));
   record("mask_approved", `#${studyId}`);
 }
 
@@ -141,7 +142,7 @@ export async function reopenCase(studyId: string): Promise<void> {
     approved.delete(studyId);
     return mockDelay(undefined, 200);
   }
-  await api.post(`/api/review/cases/${studyId}/reopen/`);
+  await request(api.post(`/api/review/cases/${studyId}/reopen/`));
 }
 
 export async function unapproveMask(studyId: string): Promise<void> {
@@ -150,7 +151,7 @@ export async function unapproveMask(studyId: string): Promise<void> {
     record("mask_unapproved", label(studyId));
     return mockDelay(undefined, 200);
   }
-  await api.post(`/api/review/cases/${studyId}/unapprove-mask/`);
+  await request(api.post(`/api/review/cases/${studyId}/unapprove-mask/`));
   record("mask_unapproved", `#${studyId}`);
 }
 
@@ -161,7 +162,7 @@ export async function approveForm(studyId: string, payload: FormPayload): Promis
     record("form_approved", label(studyId));
     return mockDelay(undefined, 200);
   }
-  await api.post(`/api/review/cases/${studyId}/approve-form/`, payload);
+  await request(api.post(`/api/review/cases/${studyId}/approve-form/`, payload));
   record("form_approved", `#${studyId}`);
 }
 
@@ -171,6 +172,6 @@ export async function unapproveForm(studyId: string): Promise<void> {
     record("form_unapproved", label(studyId));
     return mockDelay(undefined, 200);
   }
-  await api.post(`/api/review/cases/${studyId}/unapprove-form/`);
+  await request(api.post(`/api/review/cases/${studyId}/unapprove-form/`));
   record("form_unapproved", `#${studyId}`);
 }

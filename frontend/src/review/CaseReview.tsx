@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import { canRetry, errorText } from "../api";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
@@ -178,6 +179,26 @@ export default function CaseReview({ data, queue }: Props) {
 
   const goOn = () => navigate(next ? `/weryfikacja/${next.studyId}` : VERIFIED_TODAY, { state: { from: backTo } });
 
+  // the last save the backend didn't take
+  const [failed, setFailed] = useState<{ reason: string; retry: (() => void) | null } | null>(null);
+  const fail = (error: unknown, again: () => void) => {
+    const reason = errorText(error);
+    const retry = canRetry(error) ? again : null;
+    setFailed({ reason, retry });
+    toast(t("review.saveFailedToast", { n: data.studyNumber, reason }), retry ? { label: t("review.retry"), onClick: retry } : undefined);
+  };
+  const save = (send: () => Promise<void>, done?: () => void) =>
+    send().then(
+      () => {
+        setFailed(null);
+        done?.();
+        queryClient.invalidateQueries({ queryKey: ["studies"] });
+      },
+      (error: unknown) => fail(error, () => save(send, done)),
+    );
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
   const approveMaskNow = useMutation({
     mutationFn: () => approveMask(data.studyId, { mask: corrected ? "corrected" : "confirmed", edits: mask.edits }),
     onSuccess: () => {
@@ -186,16 +207,20 @@ export default function CaseReview({ data, queue }: Props) {
       setTool((current) => (current === "pan" || current === "window" ? current : "pan"));
       queryClient.invalidateQueries({ queryKey: ["studies"] });
       // when the form is done too, the case is verified and that toast says it
+      setFailed(null);
       if (openFields.length) toast(t("review.mask.approvedToast", { n: data.studyNumber }));
     },
+    onError: (error) => fail(error, () => approveMaskNow.mutate()),
   });
   const unapproveMaskNow = useMutation({
     mutationFn: () => unapproveMask(data.studyId),
     onSuccess: () => {
       touch();
       setMaskApproved(null);
+      setFailed(null);
       queryClient.invalidateQueries({ queryKey: ["studies"] });
     },
+    onError: (error) => fail(error, () => unapproveMaskNow.mutate()),
   });
 
   // sent again after any later change
@@ -208,15 +233,16 @@ export default function CaseReview({ data, queue }: Props) {
     setAnswers((a) => ({ ...a, confirmed: a.confirmed.filter((k) => !keys.includes(k)) }));
     if (sentFor.current !== null) {
       sentFor.current = null;
-      unapproveForm(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+      save(() => unapproveForm(data.studyId));
     }
   }
   const unconfirmLesion = () => index >= 0 && unconfirm(groups[index]);
   useEffect(() => {
     if (!extraction || openFields.length || sentFor.current === completeKey) return;
     sentFor.current = completeKey;
-    approveForm(data.studyId, formPayload.current()!).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
-  }, [extraction, openFields.length, completeKey, data.studyId, queryClient]);
+    const payload = formPayload.current()!;
+    saveRef.current(() => approveForm(data.studyId, payload));
+  }, [extraction, openFields.length, completeKey, data.studyId]);
 
   // verified = the mask approved and every field confirmed, in either order; leaving keeps it
   const verified = maskApproved !== null && openFields.length === 0;
@@ -225,17 +251,19 @@ export default function CaseReview({ data, queue }: Props) {
     if (verified === wasVerified.current) return;
     wasVerified.current = verified;
     if (verified) {
-      approveCase(data.studyId, {
-        mask: maskApproved ?? "confirmed",
-        edits: mask.edits,
-        ...formPayload.current(),
-      }).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
-      deleteDraft(data.studyId);
-      toast(t("review.verifiedToast", { n: data.studyNumber }), { label: t("review.openOverview"), to: `/badania/${data.studyId}` });
+      const payload = { mask: maskApproved ?? "confirmed", edits: mask.edits, ...formPayload.current() };
+      // the draft goes only once the backend has the case
+      saveRef.current(
+        () => approveCase(data.studyId, payload),
+        () => {
+          deleteDraft(data.studyId);
+          toast(t("review.verifiedToast", { n: data.studyNumber }), { label: t("review.openOverview"), to: `/badania/${data.studyId}` });
+        },
+      );
     } else {
-      reopenCase(data.studyId).then(() => queryClient.invalidateQueries({ queryKey: ["studies"] }));
+      saveRef.current(() => reopenCase(data.studyId));
     }
-  }, [verified, data.studyId, data.studyNumber, maskApproved, mask.edits, queryClient, toast]);
+  }, [verified, data.studyId, data.studyNumber, maskApproved, mask.edits, toast]);
 
   const nextRef = useRef(() => {});
   nextRef.current = goOn;
@@ -387,6 +415,7 @@ export default function CaseReview({ data, queue }: Props) {
           )}
           <ApproveButton
             waiting={{ mask: maskApproved === null, fields: openFields.length }}
+            failed={failed}
             onShowMask={() => document.querySelector<HTMLButtonElement>(".mask-strip .btn")?.focus()}
             onShowFields={showOpenField}
             next={next}

@@ -1,7 +1,7 @@
 import { AxiosError, AxiosHeaders, type AxiosResponse } from "axios";
 import { describe, expect, it } from "vitest";
 
-import { ApiError, errorText, handleApiError } from "./api";
+import { ApiError, canRetry, errorText, handleApiError, request } from "./api";
 import { t } from "./i18n";
 
 const config = { headers: new AxiosHeaders() };
@@ -48,6 +48,25 @@ describe("handleApiError", () => {
   it("falls back to the status code, then to a generic message", () => {
     expect(thrown(httpError(500))).toMatchObject({ message: t("api.http", { status: 500 }), kind: "unknown" });
     expect(thrown(new TypeError("x is undefined"))).toMatchObject({ message: t("api.unknown"), kind: "unknown" });
+  });
+});
+
+describe("request", () => {
+  it("passes the answer through and turns a failure into ApiError with its status", async () => {
+    expect(await request(Promise.resolve(7))).toBe(7);
+    await expect(request(Promise.reject(httpError(409, { detail: "Przypadek zatwierdził już inny lekarz." })))).rejects.toMatchObject({
+      message: "Przypadek zatwierdził już inny lekarz.",
+      status: 409,
+    });
+  });
+});
+
+describe("canRetry", () => {
+  it("retries when the server didn't answer or failed, not when it refused", () => {
+    expect(canRetry(thrown(networkError()))).toBe(true);
+    expect(canRetry(thrown(httpError(502)))).toBe(true);
+    expect(canRetry(thrown(httpError(409, { detail: "Już zatwierdzone." })))).toBe(false);
+    expect(canRetry(thrown(httpError(400)))).toBe(false);
   });
 });
 

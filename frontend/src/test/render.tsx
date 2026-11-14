@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 
 import type { User } from "../auth/api";
 import { AuthProvider } from "../auth/AuthProvider";
+import { ToastProvider } from "../components/Toast";
 
 export const radiologist: User = { login: "demo.radiologist", name: "Anna Nowak", role: "radiologist" };
 export const researcher: User = { login: "demo.researcher", name: "Marta Wiśniewska", role: "researcher" };
@@ -17,7 +18,9 @@ export function renderScreen(ui: ReactNode, { route = "/", user = null }: { rout
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[route]}>
-        <AuthProvider>{ui}</AuthProvider>
+        <AuthProvider>
+          <ToastProvider>{ui}</ToastProvider>
+        </AuthProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
