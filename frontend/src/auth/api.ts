@@ -1,11 +1,11 @@
-import { mockDelay, mockScenario, MOCK_API } from "../mock";
 import axios from "axios";
 
-import { api } from "../api";
+import { api, handleApiError } from "../api";
+import { mockDelay, mockScenario, MOCK_API } from "../mock";
 
 export type Role = "radiologist" | "researcher" | "admin";
 
-// one role per account; the admin runs the system and the models but doesn't verify cases
+// one role per account
 export const PERMISSIONS = {
   review: ["radiologist", "admin"],
   addStudies: ["radiologist", "admin"],
@@ -52,7 +52,7 @@ export async function signIn(login: string, password: string): Promise<SignInRes
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new AuthError("bad credentials");
     }
-    throw new AuthError("Wystąpił błąd logowania.");
+    handleApiError(error);
   }
 }
 
