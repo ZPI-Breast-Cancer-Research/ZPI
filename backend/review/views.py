@@ -11,9 +11,11 @@ import logging
 import mimetypes
 
 from audit.utils import record_audit
+from common.errors import ObjectNotFound
 from common.storage import BUCKET_REPORTS, get_bytes
 from patients.models import Study
-from patients.orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
+from patients.errors import OrthancUnauthorized, OrthancUnavailable
+from patients.orthanc_client import OrthancClient
 from extraction.models import ExtractionResult, StatusChoices
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
@@ -339,8 +341,9 @@ def report_scan(request, study_id):
         return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
     try:
         data = get_bytes(BUCKET_REPORTS, extraction.report_path)
-    except Exception:
-        logger.exception("Could not read the report scan of study %s", study.id)
+    except ObjectNotFound:
+        # the row points at a file that is gone; an unreachable storage is reported as such
+        logger.error("Report scan of study %s is missing: %s", study.id, extraction.report_path)
         return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
     content_type = mimetypes.guess_type(extraction.report_path)[0] or "application/octet-stream"
     return HttpResponse(data, content_type=content_type)

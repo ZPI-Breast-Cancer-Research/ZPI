@@ -12,6 +12,8 @@ from urllib.parse import quote
 import requests
 from django.conf import settings
 
+from .errors import OrthancUnauthorized, OrthancUnavailable, StudyNotFound
+
 # (connect, read) timeouts in seconds
 TIMEOUT = (2, 5)
 DOWNLOAD_TIMEOUT = (2, 60)
@@ -19,18 +21,6 @@ DOWNLOAD_TIMEOUT = (2, 60)
 UPLOAD_TIMEOUT = (2, 300)
 
 SERIES_INSTANCE_UID = "0020000E"
-
-
-class OrthancUnavailable(Exception):
-    """Orthanc could not be reached or returned an unusable response."""
-
-
-class OrthancUnauthorized(OrthancUnavailable):
-    """Orthanc is reachable but rejected the request (HTTP 401)."""
-
-
-class StudyNotFound(Exception):
-    """Orthanc has no study with the given StudyInstanceUID."""
 
 
 def _tag(item: dict, tag: str) -> str:

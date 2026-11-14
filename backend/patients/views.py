@@ -1,12 +1,14 @@
 import io
 import logging
 import zipfile
+import zlib
 from uuid import uuid4
 from datetime import timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
 import pydicom
+from pydicom.errors import InvalidDicomError
 from celery import current_app
 from django.core.cache import cache
 from django.db import transaction
@@ -17,6 +19,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from common.errors import StorageError
 from common.storage import BUCKET_MASKS, BUCKET_REPORTS, delete_object, delete_prefix, put_bytes
 from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ExtractionStatus
@@ -24,18 +27,14 @@ from segmentation.models import SegmentationResult
 from users.permissions import require_permission
 from audit.utils import record_audit
 from .models import Study
-from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
+from .errors import OrthancUnavailable
+from .orthanc_client import OrthancClient
 
 logger = logging.getLogger(__name__)
 
 # The list and the dashboard both ask Orthanc for the same thing; a few seconds of cache is enough.
 STUDIES_CACHE_KEY = "orthanc:studies"
 STUDIES_CACHE_TTL = 5
-
-SERVER_ERROR = {
-    "code": "server_error",
-    "detail": "Wystąpił nieoczekiwany błąd serwera.",
-}
 
 # What the extraction worker can read (workers/extraction/documents.py); the same list as the
 # file picker in the frontend (AttachReport.tsx).
@@ -53,21 +52,8 @@ def _orthanc_studies() -> list[dict]:
 
 
 def _orthanc_error_response(exc: OrthancUnavailable) -> Response:
-    if isinstance(exc, OrthancUnauthorized):
-        return Response(
-            {
-                "code": "orthanc_unauthorized",
-                "detail": "Orthanc (DICOM server) rejected the backend's credentials.",
-            },
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-    return Response(
-        {
-            "code": "orthanc_unavailable",
-            "detail": "Orthanc (DICOM server) is unavailable.",
-        },
-        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-    )
+    """The code and the text come from the error itself (patients/errors.py)."""
+    return Response(exc.payload(), status=exc.status_code)
 
 
 def _load_state(orthanc_studies: list[dict]):
@@ -123,8 +109,8 @@ def _check_archive(archive_bytes: bytes) -> Response | None:
                         ds = pydicom.dcmread(dicom_file, stop_before_pixels=True, specific_tags=["StudyInstanceUID"])
                     if hasattr(ds, "StudyInstanceUID"):
                         study_uids.add(str(ds.StudyInstanceUID))
-                except Exception:
-                    continue
+                except (InvalidDicomError, EOFError, ValueError):
+                    continue  # not a DICOM file (e.g. a README) or a cut-off one: skipped
                 if len(study_uids) > 1:
                     break  # no need to read the rest
 
@@ -144,7 +130,7 @@ def _check_archive(archive_bytes: bytes) -> Response | None:
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-    except zipfile.BadZipFile:
+    except (zipfile.BadZipFile, zlib.error):  # zlib: a member that cannot be decompressed
         return Response({"detail": "ZIP archive is damaged."}, status=status.HTTP_400_BAD_REQUEST)
     return None
 
@@ -296,30 +282,27 @@ def study_import(request):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-    # 2. Database rows, files and tasks
-    try:
-        with transaction.atomic():
-            study = None
-            if orthanc_study_id:
-                study, created = Study.objects.get_or_create(orthanc_path=orthanc_study_id)
-                if not created:
-                    return Response(
-                        {"code": "study_already_exists", "detail": "To badanie jest już w systemie."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                # stored only after Orthanc accepted it, so a rejected study leaves no orphan in MinIO
-                # put_bytes(archive_bytes, "studies", f"ZIP/{archive_file.name}")
-                study_pk = study.id
-                transaction.on_commit(
-                    lambda: current_app.send_task("segmentation.run", kwargs={"study_id": study_pk})
+    # 2. Database rows, files and tasks. A failed write of the report (StorageError) rolls the
+    # rows back and is reported by common/exception_handler.py.
+    with transaction.atomic():
+        study = None
+        if orthanc_study_id:
+            study, created = Study.objects.get_or_create(orthanc_path=orthanc_study_id)
+            if not created:
+                return Response(
+                    {"code": "study_already_exists", "detail": "To badanie jest już w systemie."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
+            # stored only after Orthanc accepted it, so a rejected study leaves no orphan in MinIO
+            # put_bytes(archive_bytes, "studies", f"ZIP/{archive_file.name}")
+            study_pk = study.id
+            transaction.on_commit(
+                lambda: current_app.send_task("segmentation.run", kwargs={"study_id": study_pk})
+            )
 
-            if report_file:
-                # no DICOM in this request: the report stays unassigned (study=None)
-                _store_report(report_file, study, request.user)
-    except Exception:
-        logger.exception("Study import failed")
-        return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if report_file:
+            # no DICOM in this request: the report stays unassigned (study=None)
+            _store_report(report_file, study, request.user)
 
     cache.delete(STUDIES_CACHE_KEY)  # the new study should show up in the list right away
 
@@ -353,12 +336,8 @@ def attach_report_to_study(request, orthanc_id):
     if error := _check_report_file(report_file):
         return error
 
-    try:
-        with transaction.atomic():
-            _store_report(report_file, study, request.user)
-    except Exception:
-        logger.exception("Attaching report failed")
-        return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    with transaction.atomic():
+        _store_report(report_file, study, request.user)
     
     record_audit(
         request,
@@ -528,8 +507,8 @@ def study_delete(request, orthanc_id):
             delete_object(BUCKET_REPORTS, key)
     except OrthancUnavailable as exc:  # includes OrthancUnauthorized
         return _orthanc_error_response(exc)
-    except Exception:
-        logger.exception("Deleting study %s failed", study.id)
+    except StorageError as exc:
+        logger.error("Deleting study %s failed: %s", study.id, exc)
         return Response(
             {"code": "delete_failed", "detail": "Nie udało się usunąć badania; spróbuj ponownie."},
             status=status.HTTP_502_BAD_GATEWAY,
