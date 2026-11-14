@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
+import { ApiError, errorText } from "../api";
 import type { Role } from "../auth/api";
 import { useAuth } from "../auth/AuthProvider";
 import Panel from "../components/layout/Panel";
@@ -82,7 +83,7 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
       else toast(t("settings.saved"));
       onClose();
     },
-    onError: () => setTaken(true),
+    onError: (error) => (error instanceof ApiError && error.message === "login-taken" ? setTaken(true) : toast(errorText(error))),
   });
 
   const block = useMutation({
