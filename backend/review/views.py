@@ -75,6 +75,12 @@ def _dicom_date(value):
     return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
 
 
+def _model_version(result) -> str | None:
+    """Version of the model that produced a result; None without a result or a model."""
+    model = result.model if result else None
+    return model.version if model else None
+
+
 def _uncertainty(segmentation, extraction) -> float | None:
     for result in (segmentation, extraction):
         if result is not None and result.uncertainty is not None:
@@ -444,8 +450,8 @@ def review_case_detail(request, study_id):
         "studyDate": _dicom_date(o_study.get("study_date")),
         "description": o_study.get("description") or None,
         "uncertainty": _uncertainty(segmentation, extraction),
-        "segmentationVersion": str(segmentation.model_id) if segmentation and segmentation.model_id else "-",
-        "extractionVersion": str(extraction.model_id) if extraction and extraction.model_id else None,
+        "segmentationVersion": _model_version(segmentation) or "-",
+        "extractionVersion": _model_version(extraction),
         "studyUid": o_study.get("study_instance_uid"),
         # null while there is no SEG: still processing, rejected, or the model found nothing
         "mask": _model_seg(segmentation, o_study.get("study_instance_uid")),
@@ -599,8 +605,8 @@ def review_overview(request, study_id):
     measured = _mask_measurements(segmentation)
     by_field = {row["field"]: row["value"] for row in _report_rows(extraction) or []}
  
-    seg_version = str(segmentation.model_id) if segmentation.model_id else None
-    ext_version = str(extraction.model_id) if extraction and extraction.model_id else None
+    seg_version = _model_version(segmentation)
+    ext_version = _model_version(extraction)
     accepted_at = segmentation.accepted_at.isoformat() if segmentation.accepted_at else ""
  
     return Response({

@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from extraction.models import ExtractionResult, StatusChoices
+from mlops.models import ModelVersion
 from segmentation.models import SegmentationResult
 
 
@@ -124,3 +125,35 @@ def test_review_overview_returns_404_for_unknown_study(
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+def test_review_overview_returns_model_versions_not_database_ids(
+    authenticated_client,
+    study,
+):
+    SegmentationResult.objects.create(
+        study=study,
+        status=StatusChoices.APPROVED,
+        model=ModelVersion.objects.create(module="seg", name="segmentation", version="7.1"),
+    )
+    ExtractionResult.objects.create(
+        study=study,
+        status=StatusChoices.APPROVED,
+        accepted_report={"birads": "4C"},
+        model=ModelVersion.objects.create(module="ext", name="extraction", version="3.2"),
+    )
+
+    with mock.patch("review.views.OrthancClient") as orthanc:
+        orthanc.return_value.list_studies.return_value = []
+
+        response = authenticated_client.get(
+            reverse(
+                "review-overview",
+                kwargs={"study_id": study.orthanc_path},
+            )
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["verification"]["segmentationVersion"] == "7.1"
+    assert response.data["verification"]["extractionVersion"] == "3.2"
