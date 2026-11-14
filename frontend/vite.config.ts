@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { viteCommonjs } from "@originjs/vite-plugin-commonjs";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
@@ -22,5 +23,12 @@ export default defineConfig({
     allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? "").split(",").filter(Boolean),
     // File change events don't propagate into docker bind mounts on Windows/macOS.
     watch: { usePolling: process.env.VITE_USE_POLLING === "true" },
+  },
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"],
+    setupFiles: ["src/test/setup.ts"],
+    // Node 25 has its own localStorage, which hides the browser one from jsdom
+    poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] } },
   },
 });
