@@ -1,0 +1,61 @@
+{
+  "version": "demo-ext-1.0.0",
+  "models": [
+    {
+      "version": "demo-ext-1.1.0",
+      "status": "candidate",
+      "createdAt": "2026-11-08",
+      "activatedAt": null
+    },
+    {
+      "version": "demo-ext-1.0.0",
+      "status": "production",
+      "createdAt": "2026-10-06",
+      "activatedAt": "2026-10-11"
+    },
+    {
+      "version": "demo-ext-0.9.0",
+      "status": "archived",
+      "createdAt": "2026-09-01",
+      "activatedAt": "2026-09-01"
+    }
+  ],
+  "fewShots": [],
+  "since": "2026-10-11",
+  "examplePool": 11,
+  "verifiedDescriptions": 11,
+  "failedDescriptions": 0,
+  "correctedDescriptions": 2,
+  "fields": [
+    {
+      "field": "BI-RADS",
+      "f1": null,
+      "correctedShare": 0.27
+    },
+    {
+      "field": "Lokalizacja",
+      "f1": null,
+      "correctedShare": 0
+    },
+    {
+      "field": "Wymiar",
+      "f1": null,
+      "correctedShare": 0.3
+    },
+    {
+      "field": "Kształt",
+      "f1": null,
+      "correctedShare": 0
+    },
+    {
+      "field": "Brzegi",
+      "f1": null,
+      "correctedShare": 0.1
+    },
+    {
+      "field": "Krzywa",
+      "f1": null,
+      "correctedShare": null
+    }
+  ]
+}

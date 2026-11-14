@@ -41,6 +41,7 @@ function sample(studies) {
 
 const radiologist = await signIn("radiologist");
 const researcher = await signIn("researcher");
+const admin = await signIn("admin");
 
 const studies = sample(await get(radiologist, "/api/studies"));
 const queue = (await get(radiologist, "/api/review/queue/")).slice(0, 3);
@@ -56,6 +57,11 @@ const fixtures = {
   "review-case": await get(radiologist, `/api/review/cases/${encodeURIComponent(queue[0].studyId)}/`),
   "review-overview": await get(radiologist, `/api/review/cases/${encodeURIComponent(corrected.orthanc_id)}/review-overview/`),
   "models-segmentation": await get(researcher, "/api/models/segmentation/"),
+  "models-extraction": await get(researcher, "/api/models/extraction/"),
+  dashboard: await get(radiologist, "/api/dashboard/"),
+  health: await get(admin, "/api/health"),
+  users: await get(admin, "/api/users/"),
+  "audit-logs": (await get(admin, "/api/logs/")).slice(0, 5),
 };
 
 // the Duke study sits in the same Orthanc, but its data can't go into the repo

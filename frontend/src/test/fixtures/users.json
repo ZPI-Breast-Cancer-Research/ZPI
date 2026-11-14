@@ -1,0 +1,62 @@
+[
+  {
+    "id": "3",
+    "name": "Piotr Kowalski",
+    "login": "demo.radiologist2",
+    "email": "piotr.kowalski@example.test",
+    "role": "radiologist",
+    "pwz": "DEMO-PWZ-002",
+    "state": "active",
+    "lastLogin": "2026-11-09"
+  },
+  {
+    "id": "5",
+    "name": "Tomasz Zieliński",
+    "login": "demo.temporary",
+    "email": "tomasz.zielinski@example.test",
+    "role": "radiologist",
+    "pwz": "DEMO-PWZ-003",
+    "state": "temporary",
+    "lastLogin": null
+  },
+  {
+    "id": "6",
+    "name": "Ewa Kamińska",
+    "login": "demo.blocked",
+    "email": "ewa.kaminska@example.test",
+    "role": "radiologist",
+    "pwz": "DEMO-PWZ-004",
+    "state": "blocked",
+    "lastLogin": "2026-10-21"
+  },
+  {
+    "id": "2",
+    "name": "Anna Nowak",
+    "login": "demo.radiologist",
+    "email": "anna.nowak@example.test",
+    "role": "radiologist",
+    "pwz": "DEMO-PWZ-001",
+    "state": "active",
+    "lastLogin": "2026-11-14"
+  },
+  {
+    "id": "4",
+    "name": "Marta Wiśniewska",
+    "login": "demo.researcher",
+    "email": "marta.wisniewska@example.test",
+    "role": "researcher",
+    "pwz": null,
+    "state": "active",
+    "lastLogin": "2026-11-14"
+  },
+  {
+    "id": "1",
+    "name": "Demo Administrator",
+    "login": "demo.admin",
+    "email": "demo.admin@example.test",
+    "role": "admin",
+    "pwz": null,
+    "state": "active",
+    "lastLogin": "2026-11-14"
+  }
+]

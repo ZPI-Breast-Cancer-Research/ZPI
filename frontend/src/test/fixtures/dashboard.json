@@ -1,0 +1,135 @@
+{
+  "toReview": 9,
+  "processing": 5,
+  "verifiedToday": 0,
+  "queue": [
+    {
+      "studyId": "19",
+      "studyNumber": "0019",
+      "patientId": "DEMO-P0019",
+      "studyDate": "2026-11-04",
+      "uncertainty": 0.76
+    },
+    {
+      "studyId": "14",
+      "studyNumber": "0014",
+      "patientId": "DEMO-P0014",
+      "studyDate": "2026-10-10",
+      "uncertainty": 0.71
+    },
+    {
+      "studyId": "3",
+      "studyNumber": "0003",
+      "patientId": "DEMO-P0003",
+      "studyDate": "2026-10-27",
+      "uncertainty": 0.42
+    },
+    {
+      "studyId": "15",
+      "studyNumber": "0015",
+      "patientId": "DEMO-P0015",
+      "studyDate": "2026-10-03",
+      "uncertainty": 0.9
+    },
+    {
+      "studyId": "20",
+      "studyNumber": "0020",
+      "patientId": "DEMO-P0020",
+      "studyDate": "2026-10-28",
+      "uncertainty": 0.05
+    },
+    {
+      "studyId": "4",
+      "studyNumber": "0004",
+      "patientId": "DEMO-P0004",
+      "studyDate": "2026-10-20",
+      "uncertainty": 0.61
+    },
+    {
+      "studyId": "5",
+      "studyNumber": "0005",
+      "patientId": "DEMO-P0005",
+      "studyDate": "2026-10-13",
+      "uncertainty": 0.8
+    },
+    {
+      "studyId": "10",
+      "studyNumber": "0010",
+      "patientId": "DEMO-P0010",
+      "studyDate": "2026-11-07",
+      "uncertainty": 0.85
+    },
+    {
+      "studyId": "9",
+      "studyNumber": "0009",
+      "patientId": "DEMO-P0009",
+      "studyDate": "2026-09-15",
+      "uncertainty": 0.66
+    }
+  ],
+  "attention": [],
+  "inProgress": [
+    {
+      "studyNumber": "0021",
+      "stage": "extraction",
+      "state": "queued"
+    },
+    {
+      "studyNumber": "0001",
+      "stage": "extraction",
+      "state": "queued"
+    },
+    {
+      "studyNumber": "0011",
+      "stage": "extraction",
+      "state": "queued"
+    },
+    {
+      "studyNumber": "0002",
+      "stage": "segmentation",
+      "state": "running"
+    },
+    {
+      "studyNumber": "0012",
+      "stage": "segmentation",
+      "state": "running"
+    }
+  ],
+  "verifiedLastWeek": [
+    {
+      "date": "2026-11-08",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-09",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-10",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-11",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-12",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-13",
+      "unchanged": 1,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-14",
+      "unchanged": 0,
+      "corrected": 0
+    }
+  ]
+}
