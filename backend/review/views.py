@@ -11,9 +11,11 @@ import logging
 import mimetypes
 
 from audit.utils import record_audit
+from common.errors import ObjectNotFound
 from common.storage import BUCKET_REPORTS, get_bytes
 from patients.models import Study
-from patients.orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
+from patients.errors import OrthancUnauthorized, OrthancUnavailable
+from patients.orthanc_client import OrthancClient
 from extraction.models import ExtractionResult, StatusChoices
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
@@ -259,47 +261,40 @@ def _failed_result(extraction) -> dict:
 
 
 def _overview_report(extraction, study_id):
-    """{source, accepted, lesions} of an approved form, as frontend/src/lesion-overview/api.ts reads it."""
+    """{source, accepted} of an approved form, as frontend/src/lesion-overview/api.ts reads it."""
     if extraction is None or not extraction.accepted_report:
         return None
     return {
         "source": _report_payload(extraction, study_id),
         "accepted": extraction.accepted_report,
-        "lesions": extraction.lesion_answers or {},
     }
 
 
-def _is_corrected(lesions, field_checks=None) -> bool:
-    """A field changed in the form or in the details below it."""
-    in_form = any(
-        isinstance(answer, dict) and answer.get("state") == "corrected"
-        for fields in lesions.values()
-        if isinstance(fields, dict)
-        for answer in fields.values()
+def _is_corrected(field_checks) -> bool:
+    """The radiologist changed at least one field of the form."""
+    return isinstance(field_checks, dict) and any(
+        check == "corrected" for check in field_checks.values()
     )
-    return in_form or any(check == "corrected" for check in (field_checks or {}).values())
 
 
 def _apply_form(extraction, submitted, user):
-    """Store the review form: {"report": <worker schema>, "lesions": {index: {field: answer}},
+    """Store the review form: {"report": <worker schema>,
     "fields": {path in the report: "confirmed" | "corrected" | "unverified"}}.
 
-    Without a report the doctor accepts the model's report as it is.
-    Sent again, it replaces the last answers.
+    Without a report the doctor accepts the model's report as it is, or keeps the form accepted
+    before together with its checks. Sent again, a report replaces the last answers.
     """
     submitted = submitted if isinstance(submitted, dict) else {}
     report = submitted.get("report")
-    lesions = submitted.get("lesions")
-    lesions = lesions if isinstance(lesions, dict) else {}
     field_checks = submitted.get("fields")
     field_checks = field_checks if isinstance(field_checks, dict) else None
     if isinstance(report, dict):
         extraction.accepted_report = report
-        extraction.lesion_answers = lesions
         extraction.field_checks = field_checks
     elif not extraction.accepted_report:
         extraction.accepted_report = extraction.generated_report
-    corrected = _is_corrected(lesions, field_checks)
+    # the checks stored with the accepted report, not only the ones in this request
+    corrected = _is_corrected(extraction.field_checks)
     extraction.status = StatusChoices.CORRECTED if corrected else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()
@@ -346,8 +341,9 @@ def report_scan(request, study_id):
         return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
     try:
         data = get_bytes(BUCKET_REPORTS, extraction.report_path)
-    except Exception:
-        logger.exception("Could not read the report scan of study %s", study.id)
+    except ObjectNotFound:
+        # the row points at a file that is gone; an unreachable storage is reported as such
+        logger.error("Report scan of study %s is missing: %s", study.id, extraction.report_path)
         return Response({"detail": "Brak skanu."}, status=status.HTTP_404_NOT_FOUND)
     content_type = mimetypes.guess_type(extraction.report_path)[0] or "application/octet-stream"
     return HttpResponse(data, content_type=content_type)

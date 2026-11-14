@@ -1,16 +1,14 @@
 import requests
 from django.conf import settings
 
+from .errors import MlflowUnavailable
+
 TIMEOUT = (2, 5)
 
 ALIAS_CHAMPION = "champion"
 ALIAS_CHALLENGER = "challenger"
 
 _ALIAS_PATH = "/api/2.0/mlflow/registered-models/alias"
-
-
-class MlflowUnavailable(Exception):
-    pass
 
 
 class MlflowClient:

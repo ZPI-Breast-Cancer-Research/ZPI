@@ -110,6 +110,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     # Authentication/roles are out of scope for the skeleton.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # every error leaves the API as {"code", "detail"} (common/errors.py)
+    "EXCEPTION_HANDLER": "common.exception_handler.api_exception_handler",
 }
 CORS_ALLOW_CREDENTIALS = True
 

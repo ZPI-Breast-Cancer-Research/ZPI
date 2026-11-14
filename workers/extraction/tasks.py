@@ -98,7 +98,7 @@ def _production_model() -> ModelVersion | None:
             module=ModelVersion.ModuleChoices.EXT,
             status=ModelVersion.StatusChoices.PRODUCTION,
         )
-        .order_by("-activated_at", "-id")
+        .order_by("-id")
         .first()
     )
     if model is None:

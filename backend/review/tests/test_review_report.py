@@ -75,7 +75,7 @@ def test_approved_form_reaches_the_overview(authenticated_client, study):
     ExtractionResult.objects.create(study=study, status=StatusChoices.COMPLETED, result=RESULT)
     form = {
         "report": {"zmiany": [{"birads": "5"}]},
-        "lesions": {"0": {"birads": {"value": "5", "state": "corrected"}}},
+        "fields": {"zmiany.0.birads": "corrected"},
     }
 
     # Act
@@ -89,5 +89,4 @@ def test_approved_form_reaches_the_overview(authenticated_client, study):
     assert response.data["report"] == {
         "source": {"originalUrl": None, "result": RESULT},  # no uploaded file
         "accepted": form["report"],
-        "lesions": form["lesions"],
     }

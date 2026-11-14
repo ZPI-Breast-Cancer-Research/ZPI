@@ -154,7 +154,7 @@ export default function CaseReview({ data, queue }: Props) {
   const formPayload = useRef<() => FormPayload | undefined>(() => undefined);
   formPayload.current = () => {
     if (!extraction || !currentReport) return undefined;
-    return { report: currentReport, lesions: {}, fields: fieldChecks([...studyGroups, ...groups.flat()], extraction, currentReport, answers) };
+    return { report: currentReport, fields: fieldChecks([...studyGroups, ...groups.flat()], extraction, currentReport, answers) };
   };
   // edits that all ended up undone or restored leave the model's mask as it was
   const corrected = mask.state === "corrected" && (maskInfo?.edited ?? 1) > 0;
