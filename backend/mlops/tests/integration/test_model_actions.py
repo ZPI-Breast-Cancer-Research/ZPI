@@ -28,11 +28,9 @@ def test_promote_model(
     candidate_model.refresh_from_db()
 
     assert production_model.status == ModelVersion.StatusChoices.ARCHIVED
-    assert production_model.deactivated_at is not None
 
     assert candidate_model.status == ModelVersion.StatusChoices.PRODUCTION
-    assert candidate_model.decision == ModelVersion.DecisionChoices.PROMOTED
-    assert candidate_model.activated_at is not None
+    assert candidate_model.periods.get().ended_at is None
     assert candidate_model.decided_by == user
 
 
@@ -52,8 +50,9 @@ def test_reject_model(authenticated_client, user, candidate_model):
     candidate_model.refresh_from_db()
 
     assert candidate_model.status == ModelVersion.StatusChoices.REJECTED
-    assert candidate_model.decision == ModelVersion.DecisionChoices.REJECTED
+    assert candidate_model.reason == "Bad model"
     assert candidate_model.decided_by == user
+    assert candidate_model.periods.count() == 0
 
 
 @pytest.mark.django_db
@@ -98,11 +97,9 @@ def test_rollback_model(
     old_model.refresh_from_db()
 
     assert production_model.status == ModelVersion.StatusChoices.ARCHIVED
-    assert production_model.deactivated_at is not None
 
     assert old_model.status == ModelVersion.StatusChoices.PRODUCTION
-    assert old_model.decision == ModelVersion.DecisionChoices.PROMOTED
-    assert old_model.activated_at is not None
+    assert old_model.periods.get().ended_at is None
     assert old_model.decided_by == user
 
 
@@ -237,3 +234,27 @@ def test_training_is_started_by_roles_that_propose_models(client_as, role, expec
 
     assert response.status_code == expected
     assert send_task.called == (expected == status.HTTP_200_OK)
+
+
+@pytest.mark.django_db
+def test_promote_closes_the_period_of_the_replaced_version_and_saves_the_reason(
+    authenticated_client,
+    user,
+    production_model,
+    candidate_model,
+):
+    production_model.put_in_use(user)
+
+    response = authenticated_client.post(
+        reverse("promote-model", kwargs={"version": candidate_model.version}),
+        {"reason": "Better on small lesions"},
+        format="json",
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    candidate_model.refresh_from_db()
+
+    assert candidate_model.reason == "Better on small lesions"
+    assert production_model.periods.get().ended_at is not None
+    assert candidate_model.periods.get().ended_at is None

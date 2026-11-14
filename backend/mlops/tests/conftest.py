@@ -48,7 +48,7 @@ def production_model(db):
         name="segmentation",
         version="1.0",
         status=ModelVersion.StatusChoices.PRODUCTION,
-        dice=0.85,
+        metrics={"dice": 0.85},
     )
 
 
@@ -59,7 +59,7 @@ def candidate_model(db):
         name="segmentation",
         version="2.0",
         status=ModelVersion.StatusChoices.CANDIDATE,
-        dice=0.90,
+        metrics={"dice": 0.90},
     )
 
 @pytest.fixture
