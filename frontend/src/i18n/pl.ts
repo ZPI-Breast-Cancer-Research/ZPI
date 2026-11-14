@@ -215,6 +215,7 @@ export const pl = {
   "studies.assign.noStudies": "Nie ma badań bez opisu.",
   "studies.attach.cancel": "Anuluj",
   "studies.attach.done": "Opis dołączony, ekstrakcja w kolejce",
+  "studies.attach.failed": "Nie udało się dołączyć opisu. {why}",
 
   "models.segmentation": "Segmentacja",
   "models.extraction": "Ekstrakcja z opisu",

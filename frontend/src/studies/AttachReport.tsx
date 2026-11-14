@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { errorText } from "../api";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n";
@@ -36,6 +37,7 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
       queryClient.invalidateQueries({ queryKey: ["studies"] });
       onClose();
     },
+    onError: (error) => toast(t("studies.attach.failed", { why: errorText(error) })),
   });
 
   const chosen = file !== null || existing !== null;

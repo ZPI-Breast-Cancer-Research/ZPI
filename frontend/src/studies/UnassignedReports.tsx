@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { errorText } from "../api";
 import { useToast } from "../components/Toast";
 import { useAuth, useCan } from "../auth/AuthProvider";
 import { formatDate } from "../format";
@@ -40,6 +41,7 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
       queryClient.invalidateQueries({ queryKey: ["studies"] });
       queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
     },
+    onError: (error) => toast(t("studies.attach.failed", { why: errorText(error) })),
   });
 
   const remove = useMutation({

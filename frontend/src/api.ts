@@ -88,11 +88,11 @@ export function handleApiError(error: unknown, fallbackUrl?: string): never {
 }
 
 // a request whose errors always come out as ApiError
-export async function request<T>(sent: Promise<T>): Promise<T> {
+export async function request<T>(sent: Promise<T>, fallbackUrl?: string): Promise<T> {
   try {
     return await sent;
   } catch (error) {
-    handleApiError(error);
+    handleApiError(error, fallbackUrl);
   }
 }
 

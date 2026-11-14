@@ -1,4 +1,4 @@
-import { api, ApiError, handleApiError, API_URL } from "../api";
+import { api, ApiError, API_URL, request } from "../api";
 import { toIsoDate } from "../format";
 import { t } from "../i18n";
 import { MOCK_API, mockDelay } from "../mock";
@@ -140,24 +140,20 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
 export async function listStudies(): Promise<StudyRow[]> {
   if (MOCK_API) return mockDelay(MOCK_ROWS.map(withReview));
   const url = API_URL || window.location.origin;
-  try {
-    const { data } = await api.get<Study[]>("/api/studies");
-    // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
-    if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
-    return data.map((study) => ({
-      id: study.orthanc_id,
-      number: study.number ?? null,
-      patientId: study.patient_id ?? "—",
-      studyDate: dicomDateToIso(study.study_date),
-      image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
-      report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
-      uncertainty: study.uncertainty,
-      verifiedAt: null,
-      closed: study.closed ?? false,
-    }));
-  } catch (error) {
-    handleApiError(error, url);
-  }
+  const { data } = await request(api.get<Study[]>("/api/studies"), url);
+  // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
+  if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
+  return data.map((study) => ({
+    id: study.orthanc_id,
+    number: study.number ?? null,
+    patientId: study.patient_id ?? "—",
+    studyDate: dicomDateToIso(study.study_date),
+    image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
+    report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
+    uncertainty: study.uncertainty,
+    verifiedAt: null,
+    closed: study.closed ?? false,
+  }));
 }
 
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
@@ -167,25 +163,16 @@ export async function listUnassignedReports(): Promise<UnassignedReport[]> {
       { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null, status: "FAILED", error: "OCR" },
     ]);
   }
-  const reports = await api.get<
-    {
-      id: string;
-      file_name?: string;
-      fileName?: string;
-      kind: UnassignedReport["kind"];
-      added_at?: string;
-      addedAt?: string;
-      originalUrl?: string | null;
-      report?: unknown;
-      status?: string;
-      error?: string;
-    }[]
-  >("/api/reports/unassigned/");
-  return reports.data.map((report) => ({
+  const { data } = await request(
+    api.get<{ id: string; fileName: string; kind: UnassignedReport["kind"]; addedAt: string | null; originalUrl?: string | null; report?: unknown; status?: string; error?: string }[]>(
+      "/api/reports/unassigned/",
+    ),
+  );
+  return data.map((report) => ({
     id: report.id,
-    fileName: report.file_name ?? report.fileName ?? "",
+    fileName: report.fileName,
     kind: report.kind,
-    addedAt: report.added_at ?? report.addedAt ?? "",
+    addedAt: report.addedAt ?? "",
     originalUrl: report.originalUrl ?? null,
     report: isCaseReport(report.report) ? report.report : null,
     status: report.status ?? "",
@@ -196,11 +183,7 @@ export async function listUnassignedReports(): Promise<UnassignedReport[]> {
 // orders OCR and extraction of a report, the first time or again; the backend checks who may
 export async function processReport(reportId: string): Promise<void> {
   if (MOCK_API) return mockDelay(undefined, 300);
-  try {
-    await api.post(`/api/reports/${reportId}/process/`);
-  } catch (error) {
-    handleApiError(error);
-  }
+  await request(api.post(`/api/reports/${reportId}/process/`));
 }
 
 // TODO: no backend endpoint for the processing steps yet
@@ -230,33 +213,21 @@ export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<
   if (archiveFile) formData.append("archives", archiveFile);
   if (reportFile) formData.append("report", reportFile);
 
-  try {
-    const { data } = await api.post("/api/studies/import/", formData);
-    return data;
-  } catch (error) {
-    handleApiError(error);
-  }
+  const { data } = await request(api.post("/api/studies/import/", formData));
+  return data;
 }
 
 // removes the study (Orthanc, masks, database); its reports stay, without a study. The backend
 // refuses a verified study and one that is still being processed
 export async function deleteStudy(studyId: string): Promise<void> {
   if (MOCK_API) return mockDelay(undefined, 300);
-  try {
-    await api.delete(`/api/studies/${studyId}/`);
-  } catch (error) {
-    handleApiError(error);
-  }
+  await request(api.delete(`/api/studies/${studyId}/`));
 }
 
 // removes a report without a study, file included; refused while it is being processed
 export async function deleteReport(reportId: string): Promise<void> {
   if (MOCK_API) return mockDelay(undefined, 300);
-  try {
-    await api.delete(`/api/reports/${reportId}/`);
-  } catch (error) {
-    handleApiError(error);
-  }
+  await request(api.delete(`/api/reports/${reportId}/`));
 }
 
 export async function attachReport(studyId: string, source: File | string): Promise<void> {
@@ -264,12 +235,8 @@ export async function attachReport(studyId: string, source: File | string): Prom
   const formData = new FormData();
   if (source instanceof File) {
     formData.append("report", source);
-    await api.post(`/api/studies/${studyId}/attach-report/`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    await request(api.post(`/api/studies/${studyId}/attach-report/`, formData));
   } else {
-    await api.post(`/api/studies/${studyId}/attach-existing-report/`, {
-      report_id: source,
-    });
+    await request(api.post(`/api/studies/${studyId}/attach-existing-report/`, { report_id: source }));
   }
 }

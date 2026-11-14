@@ -83,4 +83,20 @@ describe("attaching a report", () => {
     await waitFor(() => expect(sent[0]?.body).toEqual({ report_id: unassigned[1].id }));
     expect(await screen.findByRole("status")).toHaveTextContent(t("studies.attach.done"));
   });
+
+  it("says why a report wasn't attached", async () => {
+    const study = { ...studies[0], extraction_status: "missing" };
+    backend([study]);
+    server.use(
+      http.post(`/api/studies/${study.orthanc_id}/attach-existing-report/`, () => HttpResponse.json({ detail: "Opis jest już przypisany." }, { status: 400 })),
+    );
+    const user = userEvent.setup();
+    renderScreen(<StudiesPage />, { route: "/badania?dzis=0", user: radiologist });
+
+    await user.click(await screen.findByRole("button", { name: t("studies.action.attach") }));
+    await user.click(screen.getByRole("button", { name: new RegExp(unassigned[1].fileName) }));
+    await user.click(screen.getByRole("button", { name: t("studies.attach.submit") }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(t("studies.attach.failed", { why: "Opis jest już przypisany." }));
+  });
 });
