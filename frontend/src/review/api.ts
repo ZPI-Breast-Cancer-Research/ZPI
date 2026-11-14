@@ -37,13 +37,9 @@ export interface ReviewCase {
   maskApproved: "confirmed" | "corrected" | null;
 }
 
-// the old short form, still read back from older approvals; new ones send none
-export type FieldAnswers = Partial<Record<string, { value: string; state: "confirmed" | "corrected" }>>;
-
-// the approved report in the worker's schema, plus the answers per lesion
+// the approved report in the worker's schema, plus the check of each field
 export interface FormPayload {
   report: Extraction;
-  lesions: Record<number, FieldAnswers>;
   // "zmiany.0.obserwacje.1.brzeg" → confirmed, corrected or unverified
   fields: Record<string, FieldCheck>;
 }

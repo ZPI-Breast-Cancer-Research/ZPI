@@ -259,29 +259,22 @@ def _failed_result(extraction) -> dict:
 
 
 def _overview_report(extraction, study_id):
-    """{source, accepted, lesions} of an approved form, as frontend/src/lesion-overview/api.ts reads it."""
+    """{source, accepted} of an approved form, as frontend/src/lesion-overview/api.ts reads it."""
     if extraction is None or not extraction.accepted_report:
         return None
     return {
         "source": _report_payload(extraction, study_id),
         "accepted": extraction.accepted_report,
-        "lesions": extraction.lesion_answers or {},
     }
 
 
-def _is_corrected(lesions, field_checks=None) -> bool:
-    """A field changed in the form or in the details below it."""
-    in_form = any(
-        isinstance(answer, dict) and answer.get("state") == "corrected"
-        for fields in lesions.values()
-        if isinstance(fields, dict)
-        for answer in fields.values()
-    )
-    return in_form or any(check == "corrected" for check in (field_checks or {}).values())
+def _is_corrected(field_checks) -> bool:
+    """The radiologist changed at least one field of the form."""
+    return any(check == "corrected" for check in (field_checks or {}).values())
 
 
 def _apply_form(extraction, submitted, user):
-    """Store the review form: {"report": <worker schema>, "lesions": {index: {field: answer}},
+    """Store the review form: {"report": <worker schema>,
     "fields": {path in the report: "confirmed" | "corrected" | "unverified"}}.
 
     Without a report the doctor accepts the model's report as it is.
@@ -289,17 +282,14 @@ def _apply_form(extraction, submitted, user):
     """
     submitted = submitted if isinstance(submitted, dict) else {}
     report = submitted.get("report")
-    lesions = submitted.get("lesions")
-    lesions = lesions if isinstance(lesions, dict) else {}
     field_checks = submitted.get("fields")
     field_checks = field_checks if isinstance(field_checks, dict) else None
     if isinstance(report, dict):
         extraction.accepted_report = report
-        extraction.lesion_answers = lesions
         extraction.field_checks = field_checks
     elif not extraction.accepted_report:
         extraction.accepted_report = extraction.generated_report
-    corrected = _is_corrected(lesions, field_checks)
+    corrected = _is_corrected(field_checks)
     extraction.status = StatusChoices.CORRECTED if corrected else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()

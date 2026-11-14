@@ -18,7 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from common.storage import BUCKET_MASKS, BUCKET_REPORTS, delete_object, delete_prefix, put_bytes
-from extraction.models import ExtractionResult
+from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
@@ -202,13 +202,17 @@ def _check_report_file(report_file) -> Response | None:
     )
 
 
-def _store_report(report_file, study) -> ExtractionResult:
+def _store_report(report_file, study, user) -> ExtractionResult:
     """Saves the file, creates the row and schedules extraction once the transaction commits."""
     # uuid folder: two reports with the same file name must not overwrite each other
     key = f"reports/{uuid4().hex}/{report_file.name}"
     put_bytes(report_file.read(), "reports", key, report_file.content_type)
     extraction = ExtractionResult.objects.create(
-        study=study, report_path=key, assigned_at=timezone.now() if study else None
+        study=study,
+        report_path=key,
+        source=SourceChoices.of_file(report_file.name),
+        assigned_at=timezone.now() if study else None,
+        requested_by=user,
     )
     extraction_id = extraction.id
     transaction.on_commit(
@@ -312,7 +316,7 @@ def study_import(request):
 
             if report_file:
                 # no DICOM in this request: the report stays unassigned (study=None)
-                _store_report(report_file, study)
+                _store_report(report_file, study, request.user)
     except Exception:
         logger.exception("Study import failed")
         return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -351,7 +355,7 @@ def attach_report_to_study(request, orthanc_id):
 
     try:
         with transaction.atomic():
-            _store_report(report_file, study)
+            _store_report(report_file, study, request.user)
     except Exception:
         logger.exception("Attaching report failed")
         return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

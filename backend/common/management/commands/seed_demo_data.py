@@ -11,7 +11,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from extraction.models import ExtractionResult, StatusChoices as ExtractionStatus
+from extraction.models import ExtractionResult, SourceChoices, StatusChoices as ExtractionStatus
 from mlops.models import ModelVersion
 from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices as SegmentationStatus
@@ -1136,6 +1136,7 @@ class Command(BaseCommand):
 
             # report_path wskazuje bezpośrednio na oryginalny plik w MinIO.
             extraction.report_path = report_path
+            extraction.source = SourceChoices.of_file(report_path)
 
             # Raport AI
             extraction.generated_report = generated_report
@@ -1221,6 +1222,7 @@ class Command(BaseCommand):
             )
 
             report.status = state
+            report.source = SourceChoices.of_file(path)
             report.uncertainty = None
 
             report.generated_report = None
