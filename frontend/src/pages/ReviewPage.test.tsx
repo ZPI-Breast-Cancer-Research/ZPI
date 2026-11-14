@@ -13,19 +13,7 @@ import { radiologist, renderScreen } from "../test/render";
 import { capturePosts, http, HttpResponse, server, type JsonBodyType } from "../test/server";
 import ReviewPage from "./ReviewPage";
 
-// no WebGL in jsdom; the stand-in only reports a brush stroke
-vi.mock("../viewer/Viewer", async () => {
-  const { forwardRef } = await import("react");
-  return {
-    default: forwardRef<unknown, { onEdit?: () => void }>(function Viewer({ onEdit }) {
-      return (
-        <button type="button" onClick={onEdit}>
-          brush stroke
-        </button>
-      );
-    }),
-  };
-});
+vi.mock("../viewer/Viewer", () => import("../test/viewer"));
 
 // drafts live in IndexedDB, which jsdom doesn't have
 vi.mock("../review/draft", () => ({
