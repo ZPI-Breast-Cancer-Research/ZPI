@@ -393,10 +393,15 @@ def extraction_overview(request):
 
     return Response(overview, status=status.HTTP_200_OK)
 
+def _segmentation_version(version):
+    """These endpoints act on segmentation; extraction can have the same version number."""
+    return get_object_or_404(ModelVersion, module=ModelVersion.ModuleChoices.SEG, version=version)
+
+
 @api_view(["POST"])
 @require_permission(["manageModels"])
 def promote_model(request, version):
-    model_ver = get_object_or_404(ModelVersion, version=version)
+    model_ver = _segmentation_version(version)
 
     ModelVersion.objects.filter(module=model_ver.module, status=ModelVersion.StatusChoices.PRODUCTION).update(
         status=ModelVersion.StatusChoices.ARCHIVED,
@@ -421,7 +426,7 @@ def promote_model(request, version):
 @api_view(["POST"])
 @require_permission(["manageModels"])
 def reject_model(request, version):
-    model_ver = get_object_or_404(ModelVersion, version=version)
+    model_ver = _segmentation_version(version)
     reason = request.data.get("reason", "")
 
     model_ver.status = ModelVersion.StatusChoices.REJECTED
@@ -442,7 +447,7 @@ def reject_model(request, version):
 @api_view(["POST"])
 @require_permission(["manageModels"])
 def rollback_model(request, version):
-    target_model = get_object_or_404(ModelVersion, version=version)
+    target_model = _segmentation_version(version)
 
     ModelVersion.objects.filter(module=target_model.module, status=ModelVersion.StatusChoices.PRODUCTION).update(
         status=ModelVersion.StatusChoices.ARCHIVED,
@@ -466,7 +471,7 @@ def rollback_model(request, version):
 
 
 @api_view(["POST"])
-@require_permission(["manageModels"])
+@require_permission(["proposeModels"])
 def start_training(request):
     current_app.send_task("training.run", kwargs={"training_run_id": 1})
 

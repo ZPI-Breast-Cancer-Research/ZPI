@@ -12,7 +12,7 @@ def user(db):
     return User.objects.create_user(
         username="testuser",
         password="testpassword",
-        role = "researcher"
+        role="admin",
     )
 
 
@@ -21,6 +21,17 @@ def authenticated_client(user):
     client = APIClient()
     client.force_authenticate(user=user)
     return client
+
+
+@pytest.fixture
+def client_as(db):
+    """APIClient signed in as a new user with the given role."""
+    def make(role):
+        User = get_user_model()
+        client = APIClient()
+        client.force_authenticate(user=User.objects.create_user(username=role, password="x", role=role))
+        return client
+    return make
 
 
 @pytest.fixture

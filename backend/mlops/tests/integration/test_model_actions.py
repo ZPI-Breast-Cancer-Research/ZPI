@@ -161,3 +161,79 @@ def test_start_training_sends_celery_task(authenticated_client):
         "training.run",
         kwargs={"training_run_id": 1}
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ["promote-model", "reject-model", "rollback-model"])
+def test_model_action_ignores_extraction_version_with_the_same_number(
+    authenticated_client,
+    candidate_model,
+    action,
+):
+    extraction = ModelVersion.objects.create(
+        module=ModelVersion.ModuleChoices.EXT,
+        name="extraction",
+        version=candidate_model.version,
+        status=ModelVersion.StatusChoices.CANDIDATE,
+    )
+
+    response = authenticated_client.post(
+        reverse(action, kwargs={"version": candidate_model.version})
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+
+    extraction.refresh_from_db()
+    candidate_model.refresh_from_db()
+
+    assert extraction.status == ModelVersion.StatusChoices.CANDIDATE
+    assert candidate_model.status != ModelVersion.StatusChoices.CANDIDATE
+
+
+@pytest.mark.django_db
+def test_model_action_returns_404_for_a_version_only_extraction_has(authenticated_client):
+    ModelVersion.objects.create(
+        module=ModelVersion.ModuleChoices.EXT,
+        name="extraction",
+        version="ext-only",
+    )
+
+    response = authenticated_client.post(
+        reverse("promote-model", kwargs={"version": "ext-only"})
+    )
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("action", ["promote-model", "reject-model", "rollback-model"])
+@pytest.mark.parametrize("role", ["researcher", "radiologist"])
+def test_only_admin_decides_about_a_model(client_as, candidate_model, action, role):
+    response = client_as(role).post(
+        reverse(action, kwargs={"version": candidate_model.version})
+    )
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    candidate_model.refresh_from_db()
+
+    assert candidate_model.status == ModelVersion.StatusChoices.CANDIDATE
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role, expected",
+    [
+        ("admin", status.HTTP_200_OK),
+        ("researcher", status.HTTP_200_OK),
+        ("radiologist", status.HTTP_403_FORBIDDEN),
+    ],
+)
+def test_training_is_started_by_roles_that_propose_models(client_as, role, expected):
+    from mlops import views
+
+    with mock.patch.object(views.current_app, "send_task") as send_task:
+        response = client_as(role).post(reverse("start-training"))
+
+    assert response.status_code == expected
+    assert send_task.called == (expected == status.HTTP_200_OK)
