@@ -61,4 +61,27 @@ describe("LoginPage", () => {
     await signInWith("nowy", "tymczasowe");
     expect(await screen.findByRole("heading", { name: t("login.firstTitle") })).toBeInTheDocument();
   });
+
+  async function setFirstPassword() {
+    server.use(http.post("/api/auth/signin/", () => HttpResponse.json({ kind: "first-login", login: "nowy" })));
+    renderLogin();
+    await signInWith("nowy", "tymczasowe");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(t("login.tempPassword")), "tymczasowe");
+    await user.type(screen.getByPlaceholderText(t("login.newPlaceholder")), "NoweHaslo123!");
+    await user.type(screen.getByPlaceholderText(t("login.repeatPlaceholder")), "NoweHaslo123!");
+    await user.click(screen.getByRole("button", { name: t("login.setAndSignIn") }));
+  }
+
+  it("gives the server's reason when the new password is refused", async () => {
+    server.use(http.post("/api/auth/set-password/", () => HttpResponse.json({ detail: "Użytkownik nie istnieje." }, { status: 404 })));
+    await setFirstPassword();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Użytkownik nie istnieje.");
+  });
+
+  it("says the server can't be reached when setting the password fails", async () => {
+    server.use(http.post("/api/auth/set-password/", () => new HttpResponse(null, { status: 503 })));
+    await setFirstPassword();
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("login.unavailable"));
+  });
 });
