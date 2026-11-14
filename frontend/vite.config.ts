@@ -26,9 +26,13 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.{ts,tsx}"],
-    setupFiles: ["src/test/setup.ts"],
     // Node 25 has its own localStorage, which hides the browser one from jsdom
     poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] } },
+    projects: [
+      // logic on its own, next to the code it checks
+      { extends: true, test: { name: "unit", include: ["src/**/*.test.{ts,tsx}"], exclude: ["src/**/*.integration.test.{ts,tsx}"] } },
+      // API modules and screens against a simulated backend (MSW)
+      { extends: true, test: { name: "integration", include: ["src/**/*.integration.test.{ts,tsx}"], setupFiles: ["src/test/setup.ts"] } },
+    ],
   },
 });

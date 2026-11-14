@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
     "fixtures": "node scripts/record-fixtures.mjs"
   },
   "dependencies": {

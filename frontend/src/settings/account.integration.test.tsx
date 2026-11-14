@@ -6,7 +6,7 @@ import { t } from "../i18n";
 import profile from "../test/fixtures/profile.json";
 import { radiologist, renderScreen } from "../test/render";
 import { capturePosts, http, HttpResponse, server } from "../test/server";
-import AccountPage from "./AccountPage";
+import AccountPage from "../pages/AccountPage";
 
 // a field's label also holds its help text
 const startsWith = (label: string) => new RegExp(`^${label}`);

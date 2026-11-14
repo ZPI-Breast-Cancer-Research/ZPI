@@ -6,7 +6,7 @@ import studies from "../test/fixtures/studies.json";
 import unassigned from "../test/fixtures/unassigned-reports.json";
 import { radiologist, renderScreen, researcher } from "../test/render";
 import { http, HttpResponse, server, type JsonBodyType } from "../test/server";
-import StudiesPage from "./StudiesPage";
+import StudiesPage from "../pages/StudiesPage";
 
 function backend(list: JsonBodyType, status = 200) {
   server.use(

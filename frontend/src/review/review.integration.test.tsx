@@ -4,19 +4,19 @@ import { Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { t } from "../i18n";
-import { deleteDraft, loadDraft, saveDraft } from "../review/draft";
-import type { Extraction } from "../review/extraction";
+import { deleteDraft, loadDraft, saveDraft } from "./draft";
+import type { Extraction } from "./extraction";
 import { caseReport, extraction, lesion, observation } from "../test/extraction";
 import reviewCase from "../test/fixtures/review-case.json";
 import queue from "../test/fixtures/review-queue.json";
 import { radiologist, renderScreen } from "../test/render";
 import { capturePosts, http, HttpResponse, server, type JsonBodyType } from "../test/server";
-import ReviewPage from "./ReviewPage";
+import ReviewPage from "../pages/ReviewPage";
 
 vi.mock("../viewer/Viewer", () => import("../test/viewer"));
 
 // drafts live in IndexedDB, which jsdom doesn't have
-vi.mock("../review/draft", () => ({
+vi.mock("./draft", () => ({
   loadDraft: vi.fn(async () => null),
   saveDraft: vi.fn(async () => "2026-11-14T10:00"),
   deleteDraft: vi.fn(async () => undefined),

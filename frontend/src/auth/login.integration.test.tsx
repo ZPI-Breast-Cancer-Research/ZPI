@@ -7,7 +7,7 @@ import { t } from "../i18n";
 import signin from "../test/fixtures/signin.json";
 import { renderScreen } from "../test/render";
 import { http, HttpResponse, server } from "../test/server";
-import LoginPage from "./LoginPage";
+import LoginPage from "../pages/LoginPage";
 
 function renderLogin() {
   renderScreen(

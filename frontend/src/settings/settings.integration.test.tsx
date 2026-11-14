@@ -8,7 +8,7 @@ import health from "../test/fixtures/health.json";
 import users from "../test/fixtures/users.json";
 import { admin, renderScreen } from "../test/render";
 import { capturePosts, http, HttpResponse, server } from "../test/server";
-import SettingsPage from "./SettingsPage";
+import SettingsPage from "../pages/SettingsPage";
 
 // a field's label also holds its help text
 const startsWith = (label: string) => new RegExp(`^${label}`);

@@ -3,13 +3,13 @@ import { Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { t } from "../i18n";
-import type { Overview } from "../lesion-overview/api";
+import type { Overview } from "./api";
 import { caseReport } from "../test/extraction";
 import overview from "../test/fixtures/review-overview.json";
 import { radiologist, renderScreen, researcher } from "../test/render";
 import { http, HttpResponse, server, type JsonBodyType } from "../test/server";
 import type { User } from "../auth/api";
-import LesionOverviewPage from "./LesionOverviewPage";
+import LesionOverviewPage from "../pages/LesionOverviewPage";
 
 vi.mock("../viewer/Viewer", () => import("../test/viewer"));
 

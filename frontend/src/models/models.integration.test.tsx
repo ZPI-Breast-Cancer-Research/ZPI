@@ -5,12 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import type { User } from "../auth/api";
 import { t } from "../i18n";
-import type { Proposal } from "../models/api";
+import type { Proposal } from "./api";
 import extraction from "../test/fixtures/models-extraction.json";
 import segmentation from "../test/fixtures/models-segmentation.json";
 import { admin, renderScreen, researcher } from "../test/render";
 import { capturePosts, http, HttpResponse, server } from "../test/server";
-import ModelsPage from "./ModelsPage";
+import ModelsPage from "../pages/ModelsPage";
 
 const proposal: Proposal = {
   version: "demo-seg-1.2.0",

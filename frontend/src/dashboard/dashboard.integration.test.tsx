@@ -6,7 +6,7 @@ import { t } from "../i18n";
 import dashboard from "../test/fixtures/dashboard.json";
 import { radiologist, renderScreen, researcher } from "../test/render";
 import { http, HttpResponse, server, type JsonBodyType } from "../test/server";
-import DashboardPage from "./DashboardPage";
+import DashboardPage from "../pages/DashboardPage";
 
 function renderDashboard(user: User, body: JsonBodyType = dashboard, status = 200) {
   server.use(http.get("/api/dashboard/", () => HttpResponse.json(body, { status })));
