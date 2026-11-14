@@ -11,7 +11,7 @@ describe("fetchOverview", () => {
   it("reads today's measurements and agreement as not there yet", async () => {
     server.use(http.get(url, () => HttpResponse.json(overview)));
     const data = await fetchOverview(overview.studyId);
-    expect(data).toMatchObject({ studyNumber: "0007", status: "verified", measurements: null, report: null, reportPending: false });
+    expect(data).toMatchObject({ studyNumber: overview.studyNumber, status: "verified", measurements: null, report: null, reportPending: false });
     expect(data.verification.agreement).toBeNull();
   });
 

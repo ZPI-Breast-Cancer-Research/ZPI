@@ -27,7 +27,7 @@ afterEach(() => {
 describe("fetchQueue", () => {
   it("returns the queue as the backend orders it", async () => {
     server.use(http.get("/api/review/queue/", () => HttpResponse.json(queue)));
-    expect((await fetchQueue()).map((entry) => entry.studyNumber)).toEqual(["0015", "0010", "0005"]);
+    expect(await fetchQueue()).toEqual(queue);
   });
 });
 
@@ -35,7 +35,7 @@ describe("fetchCase", () => {
   it("waits for the report while the worker hasn't read it", async () => {
     server.use(http.get(`/api/review/cases/${studyId}/`, () => HttpResponse.json(reviewCase)));
     const data = await fetchCase(studyId);
-    expect(data).toMatchObject({ studyNumber: "0015", report: null, reportPending: true, segmentation: null, maskApproved: null });
+    expect(data).toMatchObject({ studyNumber: reviewCase.studyNumber, report: null, reportPending: true, segmentation: null, maskApproved: null });
   });
 
   it("keeps a report in the worker's shape", async () => {

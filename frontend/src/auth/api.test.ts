@@ -8,10 +8,8 @@ import { AuthError, signIn } from "./api";
 describe("signIn", () => {
   it("returns the signed-in user", async () => {
     server.use(http.post("/api/auth/signin/", () => HttpResponse.json(signin)));
-    expect(await signIn("demo.radiologist", "haslo")).toEqual({
-      kind: "signed-in",
-      user: { login: "demo.radiologist", name: "Anna Nowak", role: "radiologist" },
-    });
+    expect(await signIn("demo.radiologist", "haslo")).toEqual(signin);
+    expect(signin).toMatchObject({ kind: "signed-in", user: { login: "demo.radiologist", role: "radiologist" } });
   });
 
   it("passes on a first sign-in with a temporary password", async () => {
