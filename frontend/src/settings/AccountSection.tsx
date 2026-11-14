@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
+import { errorText } from "../api";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { t, type MessageKey } from "../i18n";
@@ -54,6 +55,7 @@ export function PasswordSection() {
       setRepeat("");
       setTried(false);
     },
+    onError: (error) => toast(errorText(error)),
   });
 
   const submit = (event: FormEvent) => {
