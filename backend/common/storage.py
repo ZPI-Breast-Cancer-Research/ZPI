@@ -36,6 +36,22 @@ def put_bytes(data: bytes, bucket: str, key: str, content_type: str | None = Non
     extra = {"ContentType": content_type} if content_type else {}
     s3_client().put_object(Bucket=bucket, Key=key, Body=data, **extra)
 
+def delete_object(bucket: str, key: str) -> None:
+    """Delete one object; S3 does not complain about a key that is already gone."""
+    s3_client().delete_object(Bucket=bucket, Key=key)
+
+
+def delete_prefix(bucket: str, prefix: str) -> int:
+    """Delete every object whose key starts with the prefix; returns how many there were."""
+    deleted = 0
+    for page in s3_client().get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+        if keys:
+            s3_client().delete_objects(Bucket=bucket, Delete={"Objects": keys})
+            deleted += len(keys)
+    return deleted
+
+
 def is_avaible() -> bool:
     try:
         s3_client().list_buckets()

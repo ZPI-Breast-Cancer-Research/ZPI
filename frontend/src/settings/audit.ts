@@ -20,6 +20,7 @@ export type AuditKind =
   | "password_reset"
   | "login_failed"
   | "study_imported"
+  | "study_deleted"
   | "attach_report";
 
 export type AuditGroup = "review" | "models" | "accounts" | "logins";
@@ -43,6 +44,7 @@ export const GROUP_OF: Record<AuditKind, AuditGroup> = {
   password_reset: "accounts",
   login_failed: "logins",
   study_imported: "review",
+  study_deleted: "review",
   attach_report: "review",
 };
 

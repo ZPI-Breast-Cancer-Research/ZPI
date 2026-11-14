@@ -121,3 +121,45 @@ class OrthancClientSegmentationTests(SimpleTestCase):
         self.assertEqual(post.call_args.kwargs["data"], b"DICM")
         self.assertEqual(post.call_args.kwargs["headers"]["Content-Type"], "application/dicom")
         self.assertEqual(post.call_args.kwargs["timeout"], UPLOAD_TIMEOUT)
+
+
+@override_settings(
+    ORTHANC_URL="http://orthanc.test:8042",
+    ORTHANC_PUBLIC_URL="http://public.test",
+    ORTHANC_USER="orthanc",
+    ORTHANC_PASSWORD="secret",
+)
+class OrthancClientDeleteStudyTests(SimpleTestCase):
+    @mock.patch("patients.orthanc_client.requests.delete")
+    def test_deletes_the_study_with_credentials(self, delete):
+        delete.return_value = _response({})
+
+        OrthancClient().delete_study("abc")
+
+        self.assertEqual(delete.call_args.args[0], "http://orthanc.test:8042/studies/abc")
+        self.assertEqual(delete.call_args.kwargs["auth"], ("orthanc", "secret"))
+
+    @mock.patch("patients.orthanc_client.requests.delete")
+    def test_a_study_that_is_already_gone_is_fine(self, delete):
+        delete.return_value = _response({}, status_code=404)
+
+        OrthancClient().delete_study("abc")  # does not raise
+
+    @mock.patch("patients.orthanc_client.requests.delete")
+    def test_rejected_credentials(self, delete):
+        from patients.orthanc_client import OrthancUnauthorized
+
+        delete.return_value = _response({}, status_code=401)
+
+        with self.assertRaises(OrthancUnauthorized):
+            OrthancClient().delete_study("abc")
+
+    @mock.patch("patients.orthanc_client.requests.delete")
+    def test_server_error_and_connection_error_are_unavailable(self, delete):
+        delete.return_value = _response({}, status_code=500)
+        with self.assertRaises(OrthancUnavailable):
+            OrthancClient().delete_study("abc")
+
+        delete.side_effect = requests.ConnectionError("down")
+        with self.assertRaises(OrthancUnavailable):
+            OrthancClient().delete_study("abc")

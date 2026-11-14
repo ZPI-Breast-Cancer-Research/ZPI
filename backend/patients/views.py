@@ -17,7 +17,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from common.storage import put_bytes
+from common.storage import BUCKET_MASKS, BUCKET_REPORTS, delete_object, delete_prefix, put_bytes
 from extraction.models import ExtractionResult
 from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
@@ -494,3 +494,44 @@ def dashboard_view(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+@api_view(["DELETE"])
+@require_permission("addStudies")
+def study_delete(request, orthanc_id):
+    """Removes a study everywhere: DICOM in Orthanc, masks and report files in storage, DB rows.
+
+    A study a radiologist has verified is refused; the verification has to be taken back first, so
+    nobody deletes approved work by accident. Orthanc and storage go first and a failure there
+    leaves the rows in place, so the request can simply be repeated.
+    """
+    study = get_object_or_404(Study, orthanc_path=orthanc_id)
+    verified = (ExtractionStatus.APPROVED, ExtractionStatus.CORRECTED)
+    if (
+        SegmentationResult.objects.filter(study=study, status__in=verified).exists()
+        or ExtractionResult.objects.filter(study=study, status__in=verified).exists()
+    ):
+        return Response(
+            {"code": "verified", "detail": "Badanie jest zweryfikowane; najpierw cofnij weryfikację."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    label = f"#{str(study.id).zfill(4)}"
+    try:
+        OrthancClient().delete_study(study.orthanc_path)
+        delete_prefix(BUCKET_MASKS, f"{study.id}/")  # model mask, probabilities, corrected masks
+        for key in study.extractions.exclude(report_path__isnull=True).values_list("report_path", flat=True):
+            delete_object(BUCKET_REPORTS, key)
+    except OrthancUnavailable as exc:  # includes OrthancUnauthorized
+        return _orthanc_error_response(exc)
+    except Exception:
+        logger.exception("Deleting study %s failed", study.id)
+        return Response(
+            {"code": "delete_failed", "detail": "Nie udało się usunąć badania; spróbuj ponownie."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    study.delete()  # results go with it (CASCADE)
+    cache.delete(STUDIES_CACHE_KEY)
+    record_audit(request, kind="study_deleted", object=label, detail="Badanie usunięte z systemu")
+    return Response(status=status.HTTP_204_NO_CONTENT)

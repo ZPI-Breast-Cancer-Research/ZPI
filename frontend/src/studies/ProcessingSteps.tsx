@@ -12,7 +12,14 @@ const STATE_CLASS: Record<StepState, string> = {
   error: "status status--warning",
 };
 
-export default function ProcessingSteps({ study }: { study: StudyRow | null }) {
+interface Props {
+  study: StudyRow | null;
+  // set when the user may delete the study
+  onDelete?: (study: StudyRow) => void;
+  deleting?: boolean;
+}
+
+export default function ProcessingSteps({ study, onDelete, deleting = false }: Props) {
   const { data } = useQuery({
     queryKey: ["processing-steps", study?.id],
     queryFn: () => getProcessingSteps(study!),
@@ -39,6 +46,13 @@ export default function ProcessingSteps({ study }: { study: StudyRow | null }) {
             ))}
           </tbody>
         </table>
+      )}
+      {study && onDelete && (
+        <div className="pad">
+          <button type="button" className="btn btn--small" disabled={deleting} onClick={() => onDelete(study)}>
+            {t("studies.action.delete")}
+          </button>
+        </div>
       )}
     </Panel>
   );
