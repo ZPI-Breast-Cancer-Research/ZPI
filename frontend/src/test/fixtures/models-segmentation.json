@@ -139,7 +139,7 @@
       ],
       "agreement": {
         "approved": 1,
-        "unchanged": 1.0,
+        "unchanged": 1,
         "dice": null,
         "iou": null,
         "volumeMl": null
