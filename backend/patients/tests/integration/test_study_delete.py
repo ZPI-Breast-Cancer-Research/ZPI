@@ -4,10 +4,9 @@ verified one."""
 from unittest import mock
 
 import pytest
-from django.urls import reverse
-
 from audit.models import AuditLog
-from common.errors import ObjectNotFound, StorageError
+from common.errors import StorageError
+from django.urls import reverse
 from extraction.models import ExtractionResult, StatusChoices
 from patients.models import Study
 from patients.orthanc_client import OrthancUnavailable

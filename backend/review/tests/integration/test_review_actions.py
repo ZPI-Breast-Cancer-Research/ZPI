@@ -1,15 +1,14 @@
 import pytest
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework import status
-
-from segmentation.models import SegmentationResult
 from extraction.models import ExtractionResult, StatusChoices
-
+from rest_framework import status
+from segmentation.models import SegmentationResult
 
 # =========================================================
 # APPROVE CASE
 # =========================================================
+
 
 @pytest.mark.django_db
 def test_approve_case_approves_segmentation_and_extraction(
@@ -156,6 +155,7 @@ def test_approve_case_returns_404_for_unknown_study(
 # APPROVE MASK
 # =========================================================
 
+
 @pytest.mark.django_db
 def test_approve_mask_approves_segmentation(
     authenticated_client,
@@ -235,6 +235,7 @@ def test_approve_mask_does_not_change_pending_segmentation(
 # REOPEN CASE
 # =========================================================
 
+
 @pytest.mark.django_db
 def test_reopen_case_reopens_approved_results(
     authenticated_client,
@@ -298,6 +299,7 @@ def test_reopen_case_does_not_change_unapproved_results(
 # =========================================================
 # UNAPPROVE MASK
 # =========================================================
+
 
 @pytest.mark.django_db
 def test_unapprove_mask_changes_approved_to_completed(
@@ -371,6 +373,7 @@ def test_unapprove_mask_does_not_change_pending_segmentation(
 # APPROVE FORM
 # =========================================================
 
+
 @pytest.mark.django_db
 def test_approve_form_approves_extraction(
     authenticated_client,
@@ -389,7 +392,10 @@ def test_approve_form_approves_extraction(
         ),
         {
             "report": {"zmiany": [{"birads": "4C"}]},
-            "fields": {"zmiany.0.birads": "confirmed", "zmiany.0.obserwacje.0.wymiary": "confirmed"},
+            "fields": {
+                "zmiany.0.birads": "confirmed",
+                "zmiany.0.obserwacje.0.wymiary": "confirmed",
+            },
         },
         format="json",
     )
@@ -546,6 +552,7 @@ def test_approve_form_does_not_change_pending_extraction(
 # =========================================================
 # UNAPPROVE FORM
 # =========================================================
+
 
 @pytest.mark.django_db
 def test_unapprove_form_changes_approved_to_completed(

@@ -1,4 +1,5 @@
 from django.urls import path
+
 from .views import approve_segmentation, get_segmentation_result
 
 urlpatterns = [

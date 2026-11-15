@@ -33,11 +33,19 @@ class ModelVersion(models.Model):
     )
 
     proposed_by = models.ForeignKey(
-        "users.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="proposed_versions"
+        "users.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="proposed_versions",
     )
     proposed_at = models.DateTimeField(null=True, blank=True)
-    reason = models.TextField(blank=True, default="", help_text="Reason of the proposal or the decision")
-    restore = models.BooleanField(default=False, help_text="The proposal brings back an archived version")
+    reason = models.TextField(
+        blank=True, default="", help_text="Reason of the proposal or the decision"
+    )
+    restore = models.BooleanField(
+        default=False, help_text="The proposal brings back an archived version"
+    )
     decided_by = models.ForeignKey("users.User", null=True, blank=True, on_delete=models.SET_NULL)
 
     trained_at = models.DateTimeField(null=True, blank=True)
@@ -45,8 +53,12 @@ class ModelVersion(models.Model):
     celery_task_id = models.CharField(max_length=64, blank=True, default="")
 
     dataset = models.CharField(
-        max_length=100, blank=True, default="",
-        help_text="Set the version was trained on and its metrics were computed on; written by the worker",
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=(
+            "Set the version was trained on and its metrics were computed on; written by the worker"
+        ),
     )
     # Keys depend on the module, e.g. seg: dice, iou, hd95, dice_small, volume_error_pct; ext: f1.
     metrics = models.JSONField(default=dict, blank=True)
@@ -79,9 +91,9 @@ class ModelVersion(models.Model):
             replaced = ModelVersion.objects.filter(
                 module=self.module, status=self.StatusChoices.PRODUCTION
             ).exclude(pk=self.pk)
-            ModuleUsagePeriod.objects.filter(module_version__in=replaced, ended_at__isnull=True).update(
-                ended_at=now
-            )
+            ModuleUsagePeriod.objects.filter(
+                module_version__in=replaced, ended_at__isnull=True
+            ).update(ended_at=now)
             replaced.update(status=self.StatusChoices.ARCHIVED)
 
             self.status = self.StatusChoices.PRODUCTION
@@ -95,9 +107,13 @@ class ModelVersion(models.Model):
 class ModuleUsagePeriod(models.Model):
     """When a version was in use. A restored version has more than one period."""
 
-    module_version = models.ForeignKey(ModelVersion, on_delete=models.CASCADE, related_name="periods")
+    module_version = models.ForeignKey(
+        ModelVersion, on_delete=models.CASCADE, related_name="periods"
+    )
     started_at = models.DateTimeField()
-    ended_at = models.DateTimeField(null=True, blank=True, help_text="Empty while the version is in use")
+    ended_at = models.DateTimeField(
+        null=True, blank=True, help_text="Empty while the version is in use"
+    )
     decided_by = models.ForeignKey("users.User", null=True, blank=True, on_delete=models.SET_NULL)
 
     class Meta:
@@ -105,5 +121,8 @@ class ModuleUsagePeriod(models.Model):
         ordering = ["started_at"]
 
     def __str__(self):
-        return f"{self.module_version} {self.started_at:%Y-%m-%d} – {self.ended_at:%Y-%m-%d}" if self.ended_at \
+        return (
+            f"{self.module_version} {self.started_at:%Y-%m-%d} – {self.ended_at:%Y-%m-%d}"
+            if self.ended_at
             else f"{self.module_version} since {self.started_at:%Y-%m-%d}"
+        )

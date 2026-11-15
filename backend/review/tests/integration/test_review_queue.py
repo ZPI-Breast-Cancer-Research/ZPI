@@ -1,11 +1,11 @@
-import pytest
 from unittest import mock
-from django.urls import reverse
-from rest_framework import status
 
-from patients.models import Study
-from segmentation.models import SegmentationResult
+import pytest
+from django.urls import reverse
 from extraction.models import StatusChoices
+from patients.models import Study
+from rest_framework import status
+from segmentation.models import SegmentationResult
 
 
 @pytest.mark.django_db
@@ -13,9 +13,7 @@ def test_review_queue_returns_empty_list(authenticated_client):
     with mock.patch("review.views.OrthancClient") as orthanc:
         orthanc.return_value.list_studies.return_value = []
 
-        response = authenticated_client.get(
-            reverse("review-queue")
-        )
+        response = authenticated_client.get(reverse("review-queue"))
 
     assert response.status_code == status.HTTP_200_OK
     assert response.data == []
@@ -35,9 +33,7 @@ def test_review_queue_returns_studies_with_completed_segmentation(
             }
         ]
 
-        response = authenticated_client.get(
-            reverse("review-queue")
-        )
+        response = authenticated_client.get(reverse("review-queue"))
 
     assert response.status_code == status.HTTP_200_OK
     assert len(response.data) == 1
@@ -59,9 +55,7 @@ def test_review_queue_returns_studies_with_completed_extraction(
     with mock.patch("review.views.OrthancClient") as orthanc:
         orthanc.return_value.list_studies.return_value = []
 
-        response = authenticated_client.get(
-            reverse("review-queue")
-        )
+        response = authenticated_client.get(reverse("review-queue"))
 
     assert response.status_code == status.HTTP_200_OK
     assert len(response.data) == 1
@@ -74,9 +68,7 @@ def test_review_queue_sorts_by_uncertainty_descending(
     authenticated_client,
     study,
 ):
-    second_study = Study.objects.create(
-        orthanc_path="orthanc-study-456"
-    )
+    second_study = Study.objects.create(orthanc_path="orthanc-study-456")
 
     SegmentationResult.objects.create(
         study=study,
@@ -93,9 +85,7 @@ def test_review_queue_sorts_by_uncertainty_descending(
     with mock.patch("review.views.OrthancClient") as orthanc:
         orthanc.return_value.list_studies.return_value = []
 
-        response = authenticated_client.get(
-            reverse("review-queue")
-        )
+        response = authenticated_client.get(reverse("review-queue"))
 
     assert response.status_code == status.HTTP_200_OK
     assert len(response.data) == 2
@@ -117,9 +107,7 @@ def test_review_queue_shows_unknown_uncertainty_as_none(
     with mock.patch("review.views.OrthancClient") as orthanc:
         orthanc.return_value.list_studies.return_value = []
 
-        response = authenticated_client.get(
-            reverse("review-queue")
-        )
+        response = authenticated_client.get(reverse("review-queue"))
 
     assert response.status_code == status.HTTP_200_OK
     assert response.data[0]["uncertainty"] is None
@@ -132,13 +120,9 @@ def test_review_queue_shows_missing_study_date_as_none(
     segmentation,
 ):
     with mock.patch("review.views.OrthancClient") as orthanc:
-        orthanc.return_value.list_studies.return_value = [
-            {"orthanc_id": study.orthanc_path}
-        ]
+        orthanc.return_value.list_studies.return_value = [{"orthanc_id": study.orthanc_path}]
 
-        response = authenticated_client.get(
-            reverse("review-queue")
-        )
+        response = authenticated_client.get(reverse("review-queue"))
 
     assert response.status_code == status.HTTP_200_OK
     assert response.data[0]["studyDate"] is None

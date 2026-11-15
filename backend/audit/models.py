@@ -1,6 +1,7 @@
 from django.db import models
 from users.models import User
 
+
 class AuditKind(models.TextChoices):
     MASK_APPROVED = "mask_approved", "Zatwierdzenie maski"
     MASK_UNAPPROVED = "mask_unapproved", "Cofnięcie zatwierdzenia maski"
@@ -23,20 +24,21 @@ class AuditKind(models.TextChoices):
     STUDY_DELETED = "study_deleted", "Badanie usunięte"
     ATTACH_REPORT = "attach_report"
 
+
 class AuditLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
-    
+
     fallback_login = models.CharField(max_length=150, blank=True, null=True)
     fallback_name = models.CharField(max_length=150, blank=True, null=True)
-    
+
     kind = models.CharField(max_length=50, choices=AuditKind.choices)
     object = models.CharField(max_length=255)
     detail = models.TextField(blank=True, null=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-timestamp"]
+        ordering = ["-timestamp", "-id"]  # id: entries made within one clock tick
         verbose_name = "Wpis dziennika zdarzeń"
         verbose_name_plural = "Dziennik zdarzeń"
 

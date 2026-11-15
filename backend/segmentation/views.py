@@ -1,16 +1,15 @@
 import logging
 
 from celery import current_app
+from common.storage import BUCKET_MASKS, put_bytes
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from patients.models import Study
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
-
-from common.storage import BUCKET_MASKS, put_bytes
-from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices
 from users.permissions import require_permission
 

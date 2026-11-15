@@ -17,9 +17,7 @@ class MlflowClient:
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
         try:
-            response = requests.request(
-                method, f"{self.base_url}{path}", timeout=TIMEOUT, **kwargs
-            )
+            response = requests.request(method, f"{self.base_url}{path}", timeout=TIMEOUT, **kwargs)
             response.raise_for_status()
         except requests.RequestException as exc:
             raise MlflowUnavailable(f"MLflow request {path} failed: {exc}") from exc

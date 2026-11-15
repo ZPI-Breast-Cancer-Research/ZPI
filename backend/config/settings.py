@@ -1,4 +1,5 @@
 """Django settings – every deployment-specific value comes from the environment (.env)."""
+
 from pathlib import Path
 
 import environ

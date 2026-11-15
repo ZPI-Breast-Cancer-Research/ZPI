@@ -2,21 +2,16 @@ import io
 import zipfile
 
 import pytest
-
 from patients.views import (
+    _check_archive,
     _orthanc_study_id,
     _pick_uncertainty,
-    _check_archive,
-    _load_state,
 )
-from patients.models import Study
-from extraction.models import ExtractionResult
-from segmentation.models import SegmentationResult
-
 
 # -------------------------------------------------
 # _orthanc_study_id
 # -------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "response, expected",
@@ -37,6 +32,7 @@ def test_orthanc_study_id(response, expected):
 # -------------------------------------------------
 # _pick_uncertainty
 # -------------------------------------------------
+
 
 class DummyResult:
     def __init__(self, uncertainty):
@@ -78,6 +74,7 @@ def test_pick_uncertainty_without_results():
 # _check_archive
 # -------------------------------------------------
 
+
 def create_zip(files):
     buffer = io.BytesIO()
 
@@ -89,7 +86,6 @@ def create_zip(files):
 
 
 def create_dicom_bytes(study_uid):
-    import pydicom
     from pydicom.dataset import FileDataset, FileMetaDataset
     from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage
 
@@ -133,25 +129,27 @@ def test_check_archive_rejects_empty_zip():
 
 
 def test_check_archive_rejects_non_dicom_files():
-    archive = create_zip({
-        "document.txt": b"Hello world",
-    })
+    archive = create_zip(
+        {
+            "document.txt": b"Hello world",
+        }
+    )
 
     response = _check_archive(archive)
 
     assert response.status_code == 400
-    assert response.data["detail"] == (
-        "No valid DICOM metadata found in archive files."
-    )
+    assert response.data["detail"] == ("No valid DICOM metadata found in archive files.")
 
 
 def test_check_archive_accepts_one_study():
     dicom = create_dicom_bytes("1.2.3.4.5")
 
-    archive = create_zip({
-        "image1.dcm": dicom,
-        "image2.dcm": dicom,
-    })
+    archive = create_zip(
+        {
+            "image1.dcm": dicom,
+            "image2.dcm": dicom,
+        }
+    )
 
     response = _check_archive(archive)
 
@@ -162,10 +160,12 @@ def test_check_archive_rejects_multiple_studies():
     dicom1 = create_dicom_bytes("1.2.3.4.5")
     dicom2 = create_dicom_bytes("1.2.3.4.6")
 
-    archive = create_zip({
-        "image1.dcm": dicom1,
-        "image2.dcm": dicom2,
-    })
+    archive = create_zip(
+        {
+            "image1.dcm": dicom1,
+            "image2.dcm": dicom2,
+        }
+    )
 
     response = _check_archive(archive)
 

@@ -43,7 +43,7 @@ def prepare_dataset_dir(nnunet_raw: Path, overwrite: bool) -> Path:
     for images_dir, labels_dir in SPLIT_DIRS.values():
         (dataset_dir / images_dir).mkdir(parents=True)
         (dataset_dir / labels_dir).mkdir()
-    
+
     return dataset_dir
 
 

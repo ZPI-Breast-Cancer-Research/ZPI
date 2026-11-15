@@ -1,11 +1,11 @@
-import pytest
 from unittest import mock
-from django.urls import reverse
-from rest_framework import status
 
-from mlops.models import ModelVersion
-from segmentation.models import SegmentationResult
+import pytest
+from django.urls import reverse
 from extraction.models import StatusChoices
+from mlops.models import ModelVersion
+from rest_framework import status
+from segmentation.models import SegmentationResult
 
 
 @pytest.mark.django_db
@@ -153,7 +153,9 @@ def test_review_case_detail_returns_model_versions_not_database_ids(
     segmentation,
     extraction,
 ):
-    segmentation.model = ModelVersion.objects.create(module="seg", name="segmentation", version="7.1")
+    segmentation.model = ModelVersion.objects.create(
+        module="seg", name="segmentation", version="7.1"
+    )
     segmentation.save()
     extraction.model = ModelVersion.objects.create(module="ext", name="extraction", version="3.2")
     extraction.save()

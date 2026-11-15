@@ -1,10 +1,10 @@
 from unittest import mock
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
-
-from patients.models import Study
 from extraction.models import ExtractionResult
+from patients.models import Study
 
 
 @pytest.mark.django_db

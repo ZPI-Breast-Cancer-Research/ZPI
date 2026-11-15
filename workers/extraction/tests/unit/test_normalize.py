@@ -16,8 +16,8 @@ def test_header_before_report_start_is_cut():
 
 @pytest.mark.parametrize(
     "footer",
-    ["Wykonał/a: dr Test", "Wykonat/a: dr Test", "Opis: dr Test"],
-    ids=["wykonal", "ocr-typo-wykonat", "opis"],
+    ["Wykonał/a: dr Test", "Wykonat/a: dr Test", "Opis:"],
+    ids=["wykonal", "ocr-typo-wykonat", "empty-opis"],
 )
 def test_footer_is_cut(footer):
     # Arrange
@@ -110,6 +110,17 @@ def test_many_blank_lines_become_one():
 def test_words_and_numbers_are_never_changed():
     # Arrange: OCR errors (0 for O, l for ł) stay as they are.
     text = "Opis badania:\nzmiana 9-0cm, ma1a, zmiana lagodna 4,5 mm"
+
+    # Act
+    result = normalize_text(text)
+
+    # Assert
+    assert result == text
+
+
+def test_opis_with_text_after_it_does_not_end_the_report():
+    # Arrange: only an empty "Opis:" line is the footer; "Opis: ..." can be part of the report.
+    text = "Opis badania:\nZmiana 12 mm.\nOpis: zmiana bez cech złośliwości."
 
     # Act
     result = normalize_text(text)

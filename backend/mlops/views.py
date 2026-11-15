@@ -1,20 +1,22 @@
 from datetime import timedelta
 
+from audit.utils import record_audit
+from celery import current_app
 from django.conf import settings
 from django.db.models import Count, Q
 from django.db.models.functions import TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from extraction.models import ExtractionResult
+from extraction.models import StatusChoices as ExtStatus
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from celery import current_app
-
-from extraction.models import ExtractionResult, StatusChoices as ExtStatus
 from review.views import REPORT_FIELDS, _as_fields
-from segmentation.models import SegmentationResult, StatusChoices as SegStatus
+from segmentation.models import SegmentationResult
+from segmentation.models import StatusChoices as SegStatus
 from users.permissions import require_permission
-from audit.utils import record_audit
+
 from .models import ModelVersion, ModuleUsagePeriod
 
 VERIFIED = (SegStatus.APPROVED, SegStatus.CORRECTED)
@@ -36,6 +38,7 @@ FIELD_LABELS = {
 def _iso(value):
     return value.strftime("%Y-%m-%d") if value else None
 
+
 def _person(user):
     if not user:
         return None
@@ -44,6 +47,7 @@ def _person(user):
         "login": user.get_username(),
         "name": _full_name(user),
     }
+
 
 def _full_name(user):
     if not user:
@@ -98,7 +102,9 @@ def _next_retraining(db_versions):
     corrections = SegmentationResult.objects.filter(status=SegStatus.CORRECTED)
     newest = db_versions.first()
     if newest:
-        corrections = corrections.filter(accepted_at__gte=timezone.localtime(newest.created_at).date())
+        corrections = corrections.filter(
+            accepted_at__gte=timezone.localtime(newest.created_at).date()
+        )
 
     now = timezone.localtime()
     window = now.replace(hour=RETRAIN_HOUR, minute=0, second=0, microsecond=0)
@@ -122,17 +128,11 @@ def segmentation_overview(request):
         .order_by("-created_at")
     )
 
-    prod_model = db_versions.filter(
-        status=ModelVersion.StatusChoices.PRODUCTION
-    ).first()
+    prod_model = db_versions.filter(status=ModelVersion.StatusChoices.PRODUCTION).first()
 
-    candidate_model = db_versions.filter(
-        status=ModelVersion.StatusChoices.CANDIDATE
-    ).first()
+    candidate_model = db_versions.filter(status=ModelVersion.StatusChoices.CANDIDATE).first()
 
-    training_model = db_versions.filter(
-        status=ModelVersion.StatusChoices.TRAINING
-    ).first()
+    training_model = db_versions.filter(status=ModelVersion.StatusChoices.TRAINING).first()
 
     # the archived version that was in use last
     last_ended = (
@@ -151,28 +151,17 @@ def segmentation_overview(request):
     in_use = None
 
     if prod_model:
-        production_results = SegmentationResult.objects.filter(
-            model=prod_model
-        )
+        production_results = SegmentationResult.objects.filter(model=prod_model)
 
-        rejected_count = production_results.filter(
-            status=SegStatus.REJECTED
-        ).count()
+        rejected_count = production_results.filter(status=SegStatus.REJECTED).count()
 
         in_use = {
             "version": prod_model.version,
             "since": _iso(_in_use_since(prod_model)),
             "approvedBy": _person(prod_model.decided_by),
-            "studies": (
-                production_results
-                .values("study_id")
-                .distinct()
-                .count()
-            ),
+            "studies": (production_results.values("study_id").distinct().count()),
             "rejected": (
-                [{"reason": "rejected", "count": rejected_count}]
-                if rejected_count
-                else []
+                [{"reason": "rejected", "count": rejected_count}] if rejected_count else []
             ),
             # Nie mamy metryk Dice dla poszczególnych badań.
             "weakest": None,
@@ -230,17 +219,12 @@ def segmentation_overview(request):
     versions_data = []
 
     for model_version in db_versions:
-        model_results = SegmentationResult.objects.filter(
-            model=model_version
-        )
+        model_results = SegmentationResult.objects.filter(model=model_version)
 
         metrics = None
         measured = model_version.metrics or {}
 
-        if (
-            measured.get("dice") is not None
-            or measured.get("hd95") is not None
-        ):
+        if measured.get("dice") is not None or measured.get("hd95") is not None:
             metrics = {
                 "set": model_version.dataset or None,
                 "cases": model_version.metrics_cases,
@@ -252,17 +236,11 @@ def segmentation_overview(request):
             }
 
         # Liczymy zaakceptowane segmentacje dla danej wersji.
-        approved_count = model_results.filter(
-            status__in=VERIFIED
-        ).count()
+        approved_count = model_results.filter(status__in=VERIFIED).count()
 
         corrected_share = _corrected_share(model_results)
 
-        unchanged_share = (
-            round(1 - corrected_share, 2)
-            if corrected_share is not None
-            else None
-        )
+        unchanged_share = round(1 - corrected_share, 2) if corrected_share is not None else None
 
         periods = [
             {"from": _iso(period.started_at), "to": _iso(period.ended_at)}
@@ -280,35 +258,31 @@ def segmentation_overview(request):
                 "volumeMl": None,
             }
 
-        versions_data.append({
-            "version": model_version.version,
-            "status": map_version_status(model_version),
-            "trainedAt": _iso(model_version.trained_at),
-            "trainingCases": model_version.training_cases,
-            "metrics": metrics,
-            "periods": periods,
-            "agreement": agreement,
-            "proposedBy": _person(model_version.proposed_by),
-            "decidedBy": _person(model_version.decided_by),
-            "reason": model_version.reason or None,
-        })
+        versions_data.append(
+            {
+                "version": model_version.version,
+                "status": map_version_status(model_version),
+                "trainedAt": _iso(model_version.trained_at),
+                "trainingCases": model_version.training_cases,
+                "metrics": metrics,
+                "periods": periods,
+                "agreement": agreement,
+                "proposedBy": _person(model_version.proposed_by),
+                "decidedBy": _person(model_version.decided_by),
+                "reason": model_version.reason or None,
+            }
+        )
 
     overview = {
         "inUse": in_use,
-
-        "compareWith": (
-            previous_model.version
-            if previous_model
-            else None
-        ),
+        "compareWith": (previous_model.version if previous_model else None),
         "proposal": None,
-
         "training": training_data,
-
         "versions": versions_data,
     }
 
     return Response(overview, status=status.HTTP_200_OK)
+
 
 @api_view(["GET"])
 @require_permission(["viewModels"])
@@ -346,7 +320,6 @@ def extraction_overview(request):
         "accepted_report",
         "generated_report",
     ).iterator():
-
         accepted = _as_fields(extraction.accepted_report)
         generated = _as_fields(extraction.generated_report)
 
@@ -381,7 +354,6 @@ def extraction_overview(request):
         "fewShots": [],
         "since": _iso(_in_use_since(prod_ext)) if prod_ext else None,
         "examplePool": verified_count,
-
         "verifiedDescriptions": verified_count,
         "failedDescriptions": failed.count(),
         "correctedDescriptions": corrected.count(),
@@ -389,17 +361,14 @@ def extraction_overview(request):
             {
                 "field": FIELD_LABELS[key],
                 "f1": None,
-                "correctedShare": (
-                    round(changed[key] / totals[key], 2)
-                    if totals[key]
-                    else None
-                ),
+                "correctedShare": (round(changed[key] / totals[key], 2) if totals[key] else None),
             }
             for key in REPORT_FIELDS
         ],
     }
 
     return Response(overview, status=status.HTTP_200_OK)
+
 
 def _segmentation_version(version):
     """These endpoints act on segmentation; extraction can have the same version number."""
@@ -418,7 +387,7 @@ def _wrong_status(model, allowed):
         {
             "code": "wrong_status",
             "detail": f"Wersja {model.version} ma status „{model.get_status_display()}”, "
-                      "tej operacji nie można na niej wykonać.",
+            "tej operacji nie można na niej wykonać.",
         },
         status=status.HTTP_409_CONFLICT,
     )
@@ -438,7 +407,7 @@ def promote_model(request, version):
         request,
         kind="model_promoted",
         object=str(model_ver.version),
-        detail=f"Dice: {dice}" if dice else None
+        detail=f"Dice: {dice}" if dice else None,
     )
     return Response(version, status=status.HTTP_200_OK)
 
@@ -462,7 +431,7 @@ def reject_model(request, version):
         request,
         kind="model_rejected",
         object=str(model_ver.version),
-        detail=reason or "Odrzucono manualnie"
+        detail=reason or "Odrzucono manualnie",
     )
 
     return Response(version, status=status.HTTP_200_OK)
@@ -481,7 +450,7 @@ def rollback_model(request, version):
         request,
         kind="model_rolled_back",
         object=str(target_model.version),
-        detail="Przywrócono starszą wersję produkcyjną"
+        detail="Przywrócono starszą wersję produkcyjną",
     )
 
     return Response(version, status=status.HTTP_200_OK)
@@ -496,6 +465,6 @@ def start_training(request):
         request,
         kind="training_started",
         object="v-new",
-        detail="Uruchomiono nocny trening na zgromadzonych poprawkach"
+        detail="Uruchomiono nocny trening na zgromadzonych poprawkach",
     )
     return Response(status=200)

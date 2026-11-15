@@ -43,9 +43,7 @@ def build_volumes(number: int) -> dict[int, np.ndarray]:
     cy = rng.uniform(0.35, 0.65) * SIZE
     cz = rng.uniform(0.30, 0.70) * SLICES
     rx, ry, rz = rng.uniform(4, 8), rng.uniform(4, 8), rng.uniform(1.8, 3.2)
-    lesion = (
-        ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 + ((zz - cz) / rz) ** 2
-    ) <= 1.0
+    lesion = (((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 + ((zz - cz) / rz) ** 2) <= 1.0
 
     post = pre + np.where(lesion, 0.55, np.where(body, 0.05, 0.0))
     subtraction = np.clip(post - pre, 0.0, None)
@@ -57,8 +55,16 @@ def build_volumes(number: int) -> dict[int, np.ndarray]:
 
 
 def _instance_bytes(
-    *, patient_id, birth_date, study_uid, study_date,
-    series_uid, series_number, series_description, index, pixels,
+    *,
+    patient_id,
+    birth_date,
+    study_uid,
+    study_date,
+    series_uid,
+    series_number,
+    series_description,
+    index,
+    pixels,
 ) -> bytes:
     sop_uid = make_uid(series_uid, "instance", index)
 

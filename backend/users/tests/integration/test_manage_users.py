@@ -44,10 +44,7 @@ def test_manage_users_allowed_for_admin(admin_client, radiologist):
 def test_manage_users_returns_active_state(admin_client, radiologist):
     response = admin_client.get(reverse("manage-users"))
 
-    user_data = next(
-        item for item in response.data
-        if item["login"] == radiologist.username
-    )
+    user_data = next(item for item in response.data if item["login"] == radiologist.username)
 
     assert user_data["state"] == "active"
 
@@ -56,10 +53,7 @@ def test_manage_users_returns_active_state(admin_client, radiologist):
 def test_manage_users_returns_blocked_state(admin_client, blocked_user):
     response = admin_client.get(reverse("manage-users"))
 
-    user_data = next(
-        item for item in response.data
-        if item["login"] == blocked_user.username
-    )
+    user_data = next(item for item in response.data if item["login"] == blocked_user.username)
 
     assert user_data["state"] == "blocked"
 
@@ -71,10 +65,7 @@ def test_manage_users_returns_temporary_state(
 ):
     response = admin_client.get(reverse("manage-users"))
 
-    user_data = next(
-        item for item in response.data
-        if item["login"] == first_login_user.username
-    )
+    user_data = next(item for item in response.data if item["login"] == first_login_user.username)
 
     assert user_data["state"] == "temporary"
 
@@ -89,10 +80,7 @@ def test_manage_users_uses_default_email(admin_client, db):
 
     response = admin_client.get(reverse("manage-users"))
 
-    user_data = next(
-        item for item in response.data
-        if item["login"] == user.username
-    )
+    user_data = next(item for item in response.data if item["login"] == user.username)
 
     assert user_data["email"] == "noemail@szpital.pl"
 

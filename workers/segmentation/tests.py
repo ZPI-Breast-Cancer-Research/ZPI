@@ -131,7 +131,9 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     frame, item = marked[0]
     source_sop = item.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
     assert source_sop == pre_sops[source_slice]
-    assert [tuple(map(int, rc)) for rc in zip(*np.nonzero(frame))] == [(source_row, source_column)]
+    assert [tuple(map(int, rc)) for rc in zip(*np.nonzero(frame), strict=True)] == [
+        (source_row, source_column)
+    ]
 
 
 # --- segmentation.run and segmentation.correction_to_dicom_seg ----------------------------------

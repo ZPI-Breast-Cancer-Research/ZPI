@@ -6,8 +6,12 @@ from unittest import mock
 
 import requests
 from django.test import SimpleTestCase, override_settings
-
-from patients.orthanc_client import DOWNLOAD_TIMEOUT, UPLOAD_TIMEOUT, OrthancClient, OrthancUnavailable
+from patients.orthanc_client import (
+    DOWNLOAD_TIMEOUT,
+    UPLOAD_TIMEOUT,
+    OrthancClient,
+    OrthancUnavailable,
+)
 
 
 def _response(payload, status_code=200):

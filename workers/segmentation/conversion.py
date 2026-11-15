@@ -12,10 +12,10 @@ import numpy as np
 import pydicom
 from highdicom import AlgorithmIdentificationSequence
 from highdicom.seg import (
-    Segmentation,
     SegmentAlgorithmTypeValues,
-    SegmentDescription,
+    Segmentation,
     SegmentationTypeValues,
+    SegmentDescription,
 )
 from highdicom.sr.coding import CodedConcept
 from pydicom.errors import InvalidDicomError
@@ -344,8 +344,12 @@ def convert_study(study_dir: Path, case_id: str, out_dir: Path) -> ConversionRes
     )
     return ConversionResult(status, nifti, manifest)
 
+
 def reference_phase(study_dir: Path) -> Phase:
-    """The phase the model output is aligned to: `pre`, chosen by the same rules as convert_study."""
+    """The phase the model output is aligned to.
+
+    It is `pre`, chosen by the same rules as convert_study.
+    """
     phases: list[Phase] = []
     for item in read_series(study_dir):
         if not is_dynamic_candidate(item):

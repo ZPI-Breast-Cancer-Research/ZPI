@@ -1,19 +1,16 @@
-import pytest
 from unittest import mock
+
+import pytest
 from django.utils import timezone
-
 from review import views
-
 
 # =========================================================
 # _option
 # =========================================================
 
+
 def test_option_returns_mapped_value():
-    result = views._option(
-        {"okrągły": "Okrągły"},
-        "okrągły"
-    )
+    result = views._option({"okrągły": "Okrągły"}, "okrągły")
 
     assert result == "Okrągły"
 
@@ -34,11 +31,9 @@ def test_option_converts_value_to_string():
 # _size_value
 # =========================================================
 
+
 def test_size_value_returns_largest_dimension():
-    result = views._size_value({
-        "wartosci": [2, 5, 3],
-        "jednostka": "mm"
-    })
+    result = views._size_value({"wartosci": [2, 5, 3], "jednostka": "mm"})
 
     assert result == "5"
 
@@ -56,9 +51,7 @@ def test_size_value_returns_none_when_values_are_empty():
 
 
 def test_size_value_formats_float_without_unnecessary_zeros():
-    result = views._size_value({
-        "wartosci": [2.5, 4.0, 3.2]
-    })
+    result = views._size_value({"wartosci": [2.5, 4.0, 3.2]})
 
     assert result == "4"
 
@@ -67,39 +60,27 @@ def test_size_value_formats_float_without_unnecessary_zeros():
 # _size_text
 # =========================================================
 
+
 def test_size_text_returns_largest_dimension_with_unit():
-    result = views._size_text({
-        "wartosci": [2, 5, 3],
-        "jednostka": "mm"
-    })
+    result = views._size_text({"wartosci": [2, 5, 3], "jednostka": "mm"})
 
     assert result == "5 mm"
 
 
 def test_size_text_uses_default_unit():
-    result = views._size_text({
-        "wartosci": [4]
-    })
+    result = views._size_text({"wartosci": [4]})
 
     assert result == "4 mm"
 
 
 def test_size_text_includes_qualifier():
-    result = views._size_text({
-        "wartosci": [4, 6],
-        "jednostka": "mm",
-        "kwalifikator": "około"
-    })
+    result = views._size_text({"wartosci": [4, 6], "jednostka": "mm", "kwalifikator": "około"})
 
     assert result == "około 6 mm"
 
 
 def test_size_text_does_not_include_exact_qualifier():
-    result = views._size_text({
-        "wartosci": [4],
-        "jednostka": "mm",
-        "kwalifikator": "dokładny"
-    })
+    result = views._size_text({"wartosci": [4], "jednostka": "mm", "kwalifikator": "dokładny"})
 
     assert result == "4 mm"
 
@@ -116,6 +97,7 @@ def test_size_text_returns_none_for_empty_values():
 # _dicom_date
 # =========================================================
 
+
 def test_dicom_date_converts_valid_date():
     assert views._dicom_date("20261026") == "2026-10-26"
 
@@ -129,32 +111,21 @@ def test_dicom_date_returns_none_when_the_date_is_unknown(value):
 # _user_name
 # =========================================================
 
+
 def test_user_name_returns_first_and_last_name():
-    user = mock.Mock(
-        first_name="Jan",
-        last_name="Kowalski",
-        username="jkowalski"
-    )
+    user = mock.Mock(first_name="Jan", last_name="Kowalski", username="jkowalski")
 
     assert views._user_name(user) == "Jan Kowalski"
 
 
 def test_user_name_falls_back_to_username():
-    user = mock.Mock(
-        first_name="",
-        last_name="",
-        username="jkowalski"
-    )
+    user = mock.Mock(first_name="", last_name="", username="jkowalski")
 
     assert views._user_name(user) == "jkowalski"
 
 
 def test_user_name_strips_whitespace():
-    user = mock.Mock(
-        first_name=" Jan ",
-        last_name=" Kowalski ",
-        username="jkowalski"
-    )
+    user = mock.Mock(first_name=" Jan ", last_name=" Kowalski ", username="jkowalski")
 
     assert views._user_name(user) == "Jan   Kowalski"
 
@@ -166,6 +137,7 @@ def test_user_name_returns_empty_string_for_none():
 # =========================================================
 # _main_lesion
 # =========================================================
+
 
 def test_main_lesion_returns_highest_birads():
     report = {
@@ -186,9 +158,7 @@ def test_main_lesion_returns_first_lesion_when_birads_are_equal():
     first = {"birads": "4", "id": 1}
     second = {"birads": "4", "id": 2}
 
-    result = views._main_lesion({
-        "zmiany": [first, second]
-    })
+    result = views._main_lesion({"zmiany": [first, second]})
 
     assert result == first
 
@@ -205,9 +175,7 @@ def test_main_lesion_unknown_birads_has_lowest_priority():
     unknown = {"birads": "unknown"}
     known = {"birads": "2"}
 
-    result = views._main_lesion({
-        "zmiany": [unknown, known]
-    })
+    result = views._main_lesion({"zmiany": [unknown, known]})
 
     assert result == known
 
@@ -215,6 +183,7 @@ def test_main_lesion_unknown_birads_has_lowest_priority():
 # =========================================================
 # _as_fields
 # =========================================================
+
 
 def test_as_fields_converts_flat_report():
     report = {
@@ -287,29 +256,22 @@ def test_as_fields_returns_empty_dict_for_non_dictionary():
 # _fields_from_schema
 # =========================================================
 
+
 def test_fields_from_schema_extracts_main_lesion():
     report = {
         "zmiany": [
-            {
-                "birads": "3",
-                "obserwacje": []
-            },
+            {"birads": "3", "obserwacje": []},
             {
                 "birads": "4c",
                 "obserwacje": [
                     {
-                        "lokalizacje": [
-                            "kwadrant górny-zewnętrzny"
-                        ],
-                        "wymiary": {
-                            "wartosci": [10, 15, 12],
-                            "jednostka": "mm"
-                        },
+                        "lokalizacje": ["kwadrant górny-zewnętrzny"],
+                        "wymiary": {"wartosci": [10, 15, 12], "jednostka": "mm"},
                         "ksztalt": "owalny",
-                        "brzeg": "gładki"
+                        "brzeg": "gładki",
                     }
-                ]
-            }
+                ],
+            },
         ]
     }
 
@@ -325,12 +287,7 @@ def test_fields_from_schema_extracts_main_lesion():
 
 
 def test_fields_from_schema_uses_birads_from_conclusion():
-    report = {
-        "zmiany": [],
-        "wniosek": {
-            "birads": "3"
-        }
-    }
+    report = {"zmiany": [], "wniosek": {"birads": "3"}}
 
     result = views._fields_from_schema(report)
 
@@ -342,16 +299,7 @@ def test_fields_from_schema_uses_observation_with_dimensions():
         "zmiany": [
             {
                 "birads": "4",
-                "obserwacje": [
-                    {
-                        "ksztalt": "okrągły"
-                    },
-                    {
-                        "wymiary": {
-                            "wartosci": [5, 8]
-                        }
-                    }
-                ]
+                "obserwacje": [{"ksztalt": "okrągły"}, {"wymiary": {"wartosci": [5, 8]}}],
             }
         ]
     }
@@ -363,15 +311,7 @@ def test_fields_from_schema_uses_observation_with_dimensions():
 
 def test_fields_from_schema_uses_first_observation_when_no_dimensions():
     report = {
-        "zmiany": [
-            {
-                "birads": "4",
-                "obserwacje": [
-                    {"ksztalt": "owalny"},
-                    {"brzeg": "gładki"}
-                ]
-            }
-        ]
+        "zmiany": [{"birads": "4", "obserwacje": [{"ksztalt": "owalny"}, {"brzeg": "gładki"}]}]
     }
 
     result = views._fields_from_schema(report)
@@ -387,6 +327,7 @@ def test_fields_from_schema_returns_empty_dict_for_empty_report():
 # =========================================================
 # _proposals
 # =========================================================
+
 
 def test_proposals_wraps_values_in_value_dictionary():
     report = {
@@ -410,12 +351,15 @@ def test_proposals_returns_empty_dict_for_empty_report():
 # _apply_form
 # =========================================================
 
+
 def test_apply_form_stores_the_report_and_the_answers():
     extraction = mock.Mock()
     user = mock.Mock()
     checks = {"zmiany.0.birads": "confirmed"}
 
-    views._apply_form(extraction, {"report": {"zmiany": [{"birads": "4C"}]}, "fields": checks}, user)
+    views._apply_form(
+        extraction, {"report": {"zmiany": [{"birads": "4C"}]}, "fields": checks}, user
+    )
 
     assert extraction.accepted_report == {"zmiany": [{"birads": "4C"}]}
     assert extraction.field_checks == checks
