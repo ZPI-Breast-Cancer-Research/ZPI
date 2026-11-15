@@ -1,5 +1,5 @@
 import { mockDelay, MOCK_API } from "../mock";
-import { api, handleApiError } from "../api";
+import { api, request } from "../api";
 
 export interface QueueItem {
   studyId: string;
@@ -77,10 +77,6 @@ const MOCK: Dashboard = {
 
 export async function fetchDashboard(): Promise<Dashboard> {
   if (MOCK_API) return mockDelay(MOCK);
-  try {
-    const response = await api.get("/api/dashboard/");
-    return response.data;
-  } catch (error) {
-    handleApiError(error);
-  }
+  const { data } = await request(api.get<Dashboard>("/api/dashboard/"));
+  return data;
 }

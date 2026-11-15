@@ -1,5 +1,5 @@
 import { mockDelay, MOCK_API } from "../mock";
-import { api, handleApiError } from "../api";
+import { api, request } from "../api";
 
 export type AuditKind =
   | "mask_approved"
@@ -118,10 +118,6 @@ export async function fetchAudit(): Promise<AuditEntry[]> {
     return mockDelay([...entries].sort((a, b) => b.at.localeCompare(a.at)));
   }
 
-  try {
-    const { data } = await api.get<AuditEntry[]>("/api/logs/");
-    return data;
-  } catch (error) {
-    handleApiError(error);
-  }
+  const { data } = await request(api.get<AuditEntry[]>("/api/logs/"));
+  return data;
 }

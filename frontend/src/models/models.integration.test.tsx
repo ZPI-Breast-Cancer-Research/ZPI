@@ -93,9 +93,9 @@ describe("a proposed version", () => {
   });
 
   it("says why a decision didn't go through", async () => {
-    server.use(http.post(`/api/models/${proposal.version}/promote/`, () => HttpResponse.json({ detail: "Not found." }, { status: 404 })));
+    server.use(http.post(`/api/models/${proposal.version}/promote/`, () => HttpResponse.json({ detail: "Wersja jest już w użyciu." }, { status: 409 })));
     renderModels(admin, { withProposal: true });
     await userEvent.click(await screen.findByRole("button", { name: t("models.promote", { v: proposal.version }) }));
-    expect(await screen.findByRole("status")).toHaveTextContent(t("models.action.failed", { why: t("api.http", { status: 404 }) }));
+    expect(await screen.findByRole("status")).toHaveTextContent(t("models.action.failed", { why: "Wersja jest już w użyciu." }));
   });
 });

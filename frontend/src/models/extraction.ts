@@ -1,4 +1,4 @@
-import { api } from "../api";
+import { api, request } from "../api";
 import { mockDelay, mockScenario, MOCK_API } from "../mock";
 import type { Extraction, WireBiRads, WireLesion, WireObservation, WireSide } from "../review/extraction";
 import { record } from "../settings/audit";
@@ -242,11 +242,7 @@ export async function fetchExtraction(): Promise<ExtractionOverview> {
     mockState ??= mockOverview();
     return mockDelay(structuredClone(mockState));
   }
-
-  const { data } = await api.get<BackendExtractionOverview>(
-    "/api/models/extraction/"
-  );
-
+  const { data } = await request(api.get<BackendExtractionOverview>("/api/models/extraction/"));
   return fromBackend(data);
 }
 
@@ -368,13 +364,13 @@ export async function fetchFewShot(version: string): Promise<FewShotExample[]> {
     const inUse = SETS[mockState?.inUse?.fewShot ?? "v6"] ?? [];
     return mockDelay((SETS[version] ?? []).map((id) => ({ ...EXAMPLES[id], isNew: !inUse.includes(id) })));
   }
-  const { data } = await api.get<FewShotExample[]>(`/api/models/extraction/few-shot/${encodeURIComponent(version)}/`);
+  const { data } = await request(api.get<FewShotExample[]>(`/api/models/extraction/few-shot/${encodeURIComponent(version)}/`));
   return data;
 }
 
 export async function fetchExtractionGate(part: ExtractionPart, name: string): Promise<GateCheck[] | null> {
   if (MOCK_API) return mockDelay(part === "few_shot" && name === "v7" ? fewShotProposal(me()).gate : null);
-  const { data } = await api.get<GateCheck[] | null>(`/api/models/extraction/${part}/${encodeURIComponent(name)}/gate/`);
+  const { data } = await request(api.get<GateCheck[] | null>(`/api/models/extraction/${part}/${encodeURIComponent(name)}/gate/`));
   return data;
 }
 
@@ -419,7 +415,7 @@ export async function proposeExtraction(part: ExtractionPart, name: string, reas
     record("model_proposed", name, reason);
     return mockDelay(name, 400);
   }
-  await api.post("/api/models/extraction/proposals/", { part, name, reason });
+  await request(api.post("/api/models/extraction/proposals/", { part, name, reason }));
   record("model_proposed", name, reason);
   return name;
 }
@@ -432,7 +428,7 @@ export async function withdrawExtraction(part: ExtractionPart, name: string): Pr
       state.proposal = null;
     });
   } else {
-    await api.post(path(part, name, "withdraw"));
+    await request(api.post(path(part, name, "withdraw")));
   }
   record("proposal_withdrawn", name);
   return name;
@@ -443,7 +439,7 @@ export async function applyExtraction(part: ExtractionPart, name: string, reason
   if (MOCK_API) {
     updateMock((state) => putInUse(state, part, name, reason));
   } else {
-    await api.post(path(part, name, "promote"), { reason });
+    await request(api.post(path(part, name, "promote"), { reason }));
   }
   record("model_promoted", name, reason);
   return name;
@@ -458,7 +454,7 @@ export async function rejectExtraction(part: ExtractionPart, name: string, reaso
       state.proposal = null;
     });
   } else {
-    await api.post(path(part, name, "reject"), { reason });
+    await request(api.post(path(part, name, "reject"), { reason }));
   }
   record("model_rejected", name, reason);
   return name;
