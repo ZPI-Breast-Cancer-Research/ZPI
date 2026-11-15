@@ -75,30 +75,31 @@ function dicomDateToIso(value: string | null): string | null {
 
 const todayAt = (time: string) => `${toIsoDate(new Date())}T${time}`;
 
-const VERIFIED_AT: Record<string, string> = { s6: todayAt("09:12"), s7: todayAt("08:47"), s8: todayAt("10:40") };
-
-const MOCK_ROWS: StudyRow[] = (
-  [
-    ["processing", "missing", null],
-    ["queued", "extracting", null],
-    ["error", "ready", null],
-    ["to_review", "to_review", 0.58],
-    ["to_review", "missing", 0.51],
-    ["verified_unchanged", "to_review", 0.44],
-    ["verified_corrected", "verified_corrected", 0.4],
-    ["saving", "missing", 0.37],
-  ] as [ImageStatus, ReportStatus, number | null][]
-).map(([image, report, uncertainty], i) => ({
-  id: `s${i + 1}`,
-  number: String(i + 1).padStart(4, "0"),
-  patientId: `P-${String(101 + i * 7).padStart(4, "0")}`,
-  studyDate: `2026-10-${String(26 - i).padStart(2, "0")}`,
-  image,
-  report,
-  uncertainty,
-  verifiedAt: VERIFIED_AT[`s${i + 1}`] ?? null,
-  closed: false,
-}));
+function mockRows(): StudyRow[] {
+  const verifiedAt: Record<string, string> = { s6: todayAt("09:12"), s7: todayAt("08:47"), s8: todayAt("10:40") };
+  return (
+    [
+      ["processing", "missing", null],
+      ["queued", "extracting", null],
+      ["error", "ready", null],
+      ["to_review", "to_review", 0.58],
+      ["to_review", "missing", 0.51],
+      ["verified_unchanged", "to_review", 0.44],
+      ["verified_corrected", "verified_corrected", 0.4],
+      ["saving", "missing", 0.37],
+    ] as [ImageStatus, ReportStatus, number | null][]
+  ).map(([image, report, uncertainty], i) => ({
+    id: `s${i + 1}`,
+    number: String(i + 1).padStart(4, "0"),
+    patientId: `P-${String(101 + i * 7).padStart(4, "0")}`,
+    studyDate: `2026-10-${String(26 - i).padStart(2, "0")}`,
+    image,
+    report,
+    uncertainty,
+    verifiedAt: verifiedAt[`s${i + 1}`] ?? null,
+    closed: false,
+  }));
+}
 
 // mock rows follow what was approved on the review screen in this session
 function withReview(row: StudyRow): StudyRow {
@@ -138,7 +139,7 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
 };
 
 export async function listStudies(): Promise<StudyRow[]> {
-  if (MOCK_API) return mockDelay(MOCK_ROWS.map(withReview));
+  if (MOCK_API) return mockDelay(mockRows().map(withReview));
   const url = API_URL || window.location.origin;
   const { data } = await request(api.get<Study[]>("/api/studies"), url);
   // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON

@@ -271,7 +271,7 @@ function output(lesions: { strona: WireSide; birads: WireBiRads | null; obs: Wir
   return { modalnosci: ["usg"], piersi: { lewa: breast, prawa: breast }, zmiany, wezly: [], wniosek: { birads, tekst, zalecenie: null } };
 }
 
-const EXAMPLES: Record<string, Omit<FewShotExample, "isNew">> = {
+const examples = (): Record<string, Omit<FewShotExample, "isNew">> => ({
   "01": {
     id: "01",
     title: "USG, jedna zmiana",
@@ -355,14 +355,15 @@ const EXAMPLES: Record<string, Omit<FewShotExample, "isNew">> = {
       "zmiana w piersi prawej BI-RADS 4B.",
     ),
   },
-};
+});
 
 const SETS: Record<string, string[]> = { v5: ["03"], v6: ["01"], v7: ["01", "02", "03"] };
 
 export async function fetchFewShot(version: string): Promise<FewShotExample[]> {
   if (MOCK_API) {
     const inUse = SETS[mockState?.inUse?.fewShot ?? "v6"] ?? [];
-    return mockDelay((SETS[version] ?? []).map((id) => ({ ...EXAMPLES[id], isNew: !inUse.includes(id) })));
+    const all = examples();
+    return mockDelay((SETS[version] ?? []).map((id) => ({ ...all[id], isNew: !inUse.includes(id) })));
   }
   const { data } = await request(api.get<FewShotExample[]>(`/api/models/extraction/few-shot/${encodeURIComponent(version)}/`));
   return data;

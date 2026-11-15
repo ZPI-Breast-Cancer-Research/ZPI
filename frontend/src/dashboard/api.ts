@@ -42,8 +42,7 @@ export interface Dashboard {
   verifiedLastWeek: VerifiedDay[];
 }
 
-// fake data until the backend has a dashboard endpoint
-const MOCK: Dashboard = {
+const mockDashboard = (): Dashboard => ({
   toReview: 14,
   processing: 3,
   verifiedToday: 6,
@@ -73,10 +72,10 @@ const MOCK: Dashboard = {
     { date: "2026-10-25", unchanged: 4, corrected: 2 },
     { date: "2026-10-26", unchanged: 4, corrected: 2 },
   ],
-};
+});
 
 export async function fetchDashboard(): Promise<Dashboard> {
-  if (MOCK_API) return mockDelay(MOCK);
+  if (MOCK_API) return mockDelay(mockDashboard());
   const { data } = await request(api.get<Dashboard>("/api/dashboard/"));
   return data;
 }
