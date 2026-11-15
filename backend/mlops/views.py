@@ -6,8 +6,7 @@ from django.db.models.functions import TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from celery import current_app
 
@@ -16,7 +15,7 @@ from review.views import REPORT_FIELDS, _as_fields
 from segmentation.models import SegmentationResult, StatusChoices as SegStatus
 from users.permissions import require_permission
 from audit.utils import record_audit
-from .models import ModelVersion
+from .models import ModelVersion, ModuleUsagePeriod
 
 VERIFIED = (SegStatus.APPROVED, SegStatus.CORRECTED)
 # retraining starts when enough corrections have piled up; override in settings.py
@@ -52,6 +51,12 @@ def _full_name(user):
     return f"{user.first_name} {user.last_name}".strip() or user.username
 
 
+def _in_use_since(model):
+    """Start of the open usage period of a version, None when it is not in use."""
+    period = model.periods.filter(ended_at__isnull=True).order_by("-started_at").first()
+    return period.started_at if period else None
+
+
 def _corrected_share(queryset):
     """Share of CORRECTED among verified segmentations, None when nothing is verified yet."""
     agg = queryset.filter(status__in=VERIFIED).aggregate(
@@ -72,9 +77,12 @@ def _weekly_corrected(db_versions):
 
     # the week in which a version went to production, so the chart can mark it
     activations = {}
-    for m in db_versions.filter(activated_at__isnull=False, activated_at__date__gte=since):
-        day = timezone.localtime(m.activated_at).date()
-        activations[day - timedelta(days=day.weekday())] = str(m.version)
+    periods = ModuleUsagePeriod.objects.filter(
+        module_version__in=db_versions, started_at__date__gte=since
+    ).select_related("module_version")
+    for period in periods:
+        day = timezone.localtime(period.started_at).date()
+        activations[day - timedelta(days=day.weekday())] = str(period.module_version.version)
 
     result = []
     for row in rows:
@@ -105,11 +113,12 @@ def _next_retraining(db_versions):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@require_permission(["viewModels"])
 def segmentation_overview(request):
     db_versions = (
         ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.SEG)
-        .select_related("decided_by")
+        .select_related("decided_by", "proposed_by")
+        .prefetch_related("periods")
         .order_by("-created_at")
     )
 
@@ -125,14 +134,18 @@ def segmentation_overview(request):
         status=ModelVersion.StatusChoices.TRAINING
     ).first()
 
-    previous_model = (
-        db_versions.filter(
-            status=ModelVersion.StatusChoices.ARCHIVED,
-            deactivated_at__isnull=False,
+    # the archived version that was in use last
+    last_ended = (
+        ModuleUsagePeriod.objects.filter(
+            module_version__module=ModelVersion.ModuleChoices.SEG,
+            module_version__status=ModelVersion.StatusChoices.ARCHIVED,
+            ended_at__isnull=False,
         )
-        .order_by("-deactivated_at")
+        .select_related("module_version")
+        .order_by("-ended_at")
         .first()
     )
+    previous_model = last_ended.module_version if last_ended else None
 
     # Dane aktualnej wersji produkcyjnej.
     in_use = None
@@ -148,7 +161,7 @@ def segmentation_overview(request):
 
         in_use = {
             "version": prod_model.version,
-            "since": _iso(prod_model.activated_at),
+            "since": _iso(_in_use_since(prod_model)),
             "approvedBy": _person(prod_model.decided_by),
             "studies": (
                 production_results
@@ -209,9 +222,7 @@ def segmentation_overview(request):
             return "training"
 
         if model.status == ModelVersion.StatusChoices.CANDIDATE:
-            if model.decision == ModelVersion.DecisionChoices.PENDING:
-                return "proposed"
-            return "new"
+            return "proposed"
 
         return "new"
 
@@ -224,19 +235,20 @@ def segmentation_overview(request):
         )
 
         metrics = None
+        measured = model_version.metrics or {}
 
         if (
-            model_version.dice is not None
-            or model_version.hd95 is not None
+            measured.get("dice") is not None
+            or measured.get("hd95") is not None
         ):
             metrics = {
-                "set": None,
-                "cases": None,
-                "dice": model_version.dice,
-                "iou": None,
-                "hd95": model_version.hd95,
-                "diceSmall": None,
-                "volumeErrorPct": None,
+                "set": model_version.dataset or None,
+                "cases": model_version.metrics_cases,
+                "dice": measured.get("dice"),
+                "iou": measured.get("iou"),
+                "hd95": measured.get("hd95"),
+                "diceSmall": measured.get("dice_small"),
+                "volumeErrorPct": measured.get("volume_error_pct"),
             }
 
         # Liczymy zaakceptowane segmentacje dla danej wersji.
@@ -252,17 +264,14 @@ def segmentation_overview(request):
             else None
         )
 
-        periods = []
-
-        if model_version.activated_at:
-            periods.append({
-                "from": _iso(model_version.activated_at),
-                "to": _iso(model_version.deactivated_at),
-            })
+        periods = [
+            {"from": _iso(period.started_at), "to": _iso(period.ended_at)}
+            for period in model_version.periods.all()
+        ]
 
         agreement = None
 
-        if model_version.activated_at:
+        if periods:
             agreement = {
                 "approved": approved_count,
                 "unchanged": unchanged_share,
@@ -274,14 +283,14 @@ def segmentation_overview(request):
         versions_data.append({
             "version": model_version.version,
             "status": map_version_status(model_version),
-            "trainedAt": None,
-            "trainingCases": None,
+            "trainedAt": _iso(model_version.trained_at),
+            "trainingCases": model_version.training_cases,
             "metrics": metrics,
             "periods": periods,
             "agreement": agreement,
-            "proposedBy": None,
+            "proposedBy": _person(model_version.proposed_by),
             "decidedBy": _person(model_version.decided_by),
-            "reason": None,
+            "reason": model_version.reason or None,
         })
 
     overview = {
@@ -302,14 +311,14 @@ def segmentation_overview(request):
     return Response(overview, status=status.HTTP_200_OK)
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@require_permission(["viewModels"])
 def extraction_overview(request):
     prod_ext = (
         ModelVersion.objects.filter(
             module=ModelVersion.ModuleChoices.EXT,
             status=ModelVersion.StatusChoices.PRODUCTION,
         )
-        .order_by("-activated_at", "-created_at")
+        .order_by("-created_at")
         .first()
     )
     extractions = ExtractionResult.objects.all()
@@ -351,27 +360,26 @@ def extraction_overview(request):
                 changed[key] += 1
 
     verified_count = verified.count()
-    ext_versions = ModelVersion.objects.filter(
-    module=ModelVersion.ModuleChoices.EXT,
-    ).order_by("-created_at")
+    ext_versions = (
+        ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.EXT)
+        .prefetch_related("periods")
+        .order_by("-created_at")
+    )
     models_data = [
-    {
-        "version": model.version,
-        "status": model.status,
-        "createdAt": _iso(model.created_at),
-        "activatedAt": _iso(model.activated_at),
-    }
-    for model in ext_versions
+        {
+            "version": model.version,
+            "status": model.status,
+            "createdAt": _iso(model.created_at),
+            # start of the last period the version was in use
+            "activatedAt": _iso(max((p.started_at for p in model.periods.all()), default=None)),
+        }
+        for model in ext_versions
     ]
     overview = {
         "version": prod_ext.version if prod_ext else None,
         "models": models_data,
         "fewShots": [],
-        "since": (
-            _iso(prod_ext.activated_at)
-            if prod_ext and prod_ext.activated_at
-            else None
-        ),
+        "since": _iso(_in_use_since(prod_ext)) if prod_ext else None,
         "examplePool": verified_count,
 
         "verifiedDescriptions": verified_count,
@@ -398,27 +406,39 @@ def _segmentation_version(version):
     return get_object_or_404(ModelVersion, module=ModelVersion.ModuleChoices.SEG, version=version)
 
 
+# a version that waits for a decision: a draft or a proposal
+UNDECIDED = (ModelVersion.StatusChoices.NEW, ModelVersion.StatusChoices.CANDIDATE)
+
+
+def _wrong_status(model, allowed):
+    """409 when the version is not in a status the action applies to, otherwise None."""
+    if model.status in allowed:
+        return None
+    return Response(
+        {
+            "code": "wrong_status",
+            "detail": f"Wersja {model.version} ma status „{model.get_status_display()}”, "
+                      "tej operacji nie można na niej wykonać.",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 @api_view(["POST"])
 @require_permission(["manageModels"])
 def promote_model(request, version):
     model_ver = _segmentation_version(version)
+    refused = _wrong_status(model_ver, UNDECIDED)
+    if refused:
+        return refused
+    model_ver.put_in_use(request.user, reason=request.data.get("reason", ""))
 
-    ModelVersion.objects.filter(module=model_ver.module, status=ModelVersion.StatusChoices.PRODUCTION).update(
-        status=ModelVersion.StatusChoices.ARCHIVED,
-        deactivated_at=timezone.now()
-    )
-
-    model_ver.status = ModelVersion.StatusChoices.PRODUCTION
-    model_ver.decision = ModelVersion.DecisionChoices.PROMOTED
-    model_ver.activated_at = timezone.now()
-    model_ver.decided_by = request.user
-    model_ver.save()
-
+    dice = model_ver.metrics.get("dice")
     record_audit(
         request,
         kind="model_promoted",
         object=str(model_ver.version),
-        detail=f"Dice: {model_ver.dice}" if model_ver.dice else None
+        detail=f"Dice: {dice}" if dice else None
     )
     return Response(version, status=status.HTTP_200_OK)
 
@@ -427,11 +447,15 @@ def promote_model(request, version):
 @require_permission(["manageModels"])
 def reject_model(request, version):
     model_ver = _segmentation_version(version)
+    # the version in use is replaced by promoting another one, never rejected
+    refused = _wrong_status(model_ver, UNDECIDED)
+    if refused:
+        return refused
     reason = request.data.get("reason", "")
 
     model_ver.status = ModelVersion.StatusChoices.REJECTED
-    model_ver.decision = ModelVersion.DecisionChoices.REJECTED
     model_ver.decided_by = request.user
+    model_ver.reason = reason
     model_ver.save()
 
     record_audit(
@@ -448,17 +472,10 @@ def reject_model(request, version):
 @require_permission(["manageModels"])
 def rollback_model(request, version):
     target_model = _segmentation_version(version)
-
-    ModelVersion.objects.filter(module=target_model.module, status=ModelVersion.StatusChoices.PRODUCTION).update(
-        status=ModelVersion.StatusChoices.ARCHIVED,
-        deactivated_at=timezone.now()
-    )
-
-    target_model.status = ModelVersion.StatusChoices.PRODUCTION
-    target_model.decision = ModelVersion.DecisionChoices.PROMOTED
-    target_model.activated_at = timezone.now()
-    target_model.decided_by = request.user
-    target_model.save()
+    refused = _wrong_status(target_model, (ModelVersion.StatusChoices.ARCHIVED,))
+    if refused:
+        return refused
+    target_model.put_in_use(request.user, reason=request.data.get("reason", ""))
 
     record_audit(
         request,

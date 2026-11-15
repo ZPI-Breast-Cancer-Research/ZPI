@@ -413,12 +413,12 @@ def test_proposals_returns_empty_dict_for_empty_report():
 def test_apply_form_stores_the_report_and_the_answers():
     extraction = mock.Mock()
     user = mock.Mock()
-    lesions = {"0": {"birads": {"value": "4C", "state": "confirmed"}}}
+    checks = {"zmiany.0.birads": "confirmed"}
 
-    views._apply_form(extraction, {"report": {"zmiany": [{"birads": "4C"}]}, "lesions": lesions}, user)
+    views._apply_form(extraction, {"report": {"zmiany": [{"birads": "4C"}]}, "fields": checks}, user)
 
     assert extraction.accepted_report == {"zmiany": [{"birads": "4C"}]}
-    assert extraction.lesion_answers == lesions
+    assert extraction.field_checks == checks
     assert extraction.status == views.StatusChoices.APPROVED
     assert extraction.accepted_by == user
     assert extraction.accepted_at == timezone.now().date()
@@ -427,12 +427,9 @@ def test_apply_form_stores_the_report_and_the_answers():
 
 def test_apply_form_sets_corrected_status_when_a_field_was_corrected():
     extraction = mock.Mock()
-    lesions = {
-        "0": {"birads": {"value": "4C", "state": "confirmed"}},
-        "1": {"size": {"value": "9", "state": "corrected"}},
-    }
+    checks = {"zmiany.0.birads": "confirmed", "zmiany.1.obserwacje.0.wymiary": "corrected"}
 
-    views._apply_form(extraction, {"report": {"zmiany": []}, "lesions": lesions}, mock.Mock())
+    views._apply_form(extraction, {"report": {"zmiany": []}, "fields": checks}, mock.Mock())
 
     assert extraction.status == views.StatusChoices.CORRECTED
 

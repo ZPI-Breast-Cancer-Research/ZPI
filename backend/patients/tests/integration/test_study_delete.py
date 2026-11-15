@@ -7,6 +7,7 @@ import pytest
 from django.urls import reverse
 
 from audit.models import AuditLog
+from common.errors import ObjectNotFound, StorageError
 from extraction.models import ExtractionResult, StatusChoices
 from patients.models import Study
 from patients.orthanc_client import OrthancUnavailable
@@ -125,7 +126,7 @@ def test_when_orthanc_fails_the_rows_stay_so_it_can_be_repeated(
 def test_when_storage_fails_the_rows_stay_so_it_can_be_repeated(
     authenticated_client, study, orthanc, storage
 ):
-    storage.prefix.side_effect = RuntimeError("minio down")
+    storage.prefix.side_effect = StorageError("minio down")
 
     response = _delete(authenticated_client, study)
 

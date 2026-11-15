@@ -11,7 +11,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from extraction.models import ExtractionResult, StatusChoices as ExtractionStatus
+from extraction.models import ExtractionResult, SourceChoices, StatusChoices as ExtractionStatus
 from mlops.models import ModelVersion
 from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices as SegmentationStatus
@@ -804,7 +804,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-0.9.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.ARCHIVED,
-                "decision": ModelVersion.DecisionChoices.REPLACED,
                 "created_days_ago": 85,
                 "activated_days_ago": 85,
                 "deactivated_days_ago": 48,
@@ -818,7 +817,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.0.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.ARCHIVED,
-                "decision": ModelVersion.DecisionChoices.REPLACED,
                 "created_days_ago": 52,
                 "activated_days_ago": 48,
                 "deactivated_days_ago": 18,
@@ -832,7 +830,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.1.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.PRODUCTION,
-                "decision": ModelVersion.DecisionChoices.PROMOTED,
                 "created_days_ago": 23,
                 "activated_days_ago": 18,
                 "deactivated_days_ago": None,
@@ -846,7 +843,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.2.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.CANDIDATE,
-                "decision": ModelVersion.DecisionChoices.PENDING,
                 "created_days_ago": 3,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -860,7 +856,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.3.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.TRAINING,
-                "decision": ModelVersion.DecisionChoices.PENDING,
                 "created_days_ago": 1,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -874,7 +869,7 @@ class Command(BaseCommand):
                 "version": "demo-seg-0.8.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.REJECTED,
-                "decision": ModelVersion.DecisionChoices.REJECTED_GATE,
+                "reason": "Odrzucona przez bramkę jakości",
                 "created_days_ago": 12,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -888,7 +883,6 @@ class Command(BaseCommand):
                 "version": "demo-ext-0.9.0",
                 "name": "Breast MRI Report Extraction",
                 "status": ModelVersion.StatusChoices.ARCHIVED,
-                "decision": ModelVersion.DecisionChoices.REPLACED,
                 "created_days_ago": 70,
                 "activated_days_ago": 70,
                 "deactivated_days_ago": 30,
@@ -902,7 +896,6 @@ class Command(BaseCommand):
                 "version": "demo-ext-1.0.0",
                 "name": "Breast MRI Report Extraction",
                 "status": ModelVersion.StatusChoices.PRODUCTION,
-                "decision": ModelVersion.DecisionChoices.PROMOTED,
                 "created_days_ago": 35,
                 "activated_days_ago": 30,
                 "deactivated_days_ago": None,
@@ -916,7 +909,6 @@ class Command(BaseCommand):
                 "version": "demo-ext-1.1.0",
                 "name": "Breast MRI Report Extraction",
                 "status": ModelVersion.StatusChoices.CANDIDATE,
-                "decision": ModelVersion.DecisionChoices.PENDING,
                 "created_days_ago": 2,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -941,30 +933,29 @@ class Command(BaseCommand):
 
             model.name = spec["name"]
             model.status = spec["status"]
-            model.decision = spec["decision"]
-
-            model.activated_at = (
-                now - timedelta(days=spec["activated_days_ago"])
-                if spec["activated_days_ago"] is not None
-                else None
-            )
-
-            model.deactivated_at = (
-                now - timedelta(days=spec["deactivated_days_ago"])
-                if spec["deactivated_days_ago"] is not None
-                else None
-            )
-
+            model.reason = spec.get("reason", "")
             model.decided_by = spec["decided_by"]
             model.mlflow_run_id = (
                 f"demo-{module}-{version.replace('.', '-')}"
             )
-
-            model.dice = spec["dice"]
-            model.hd95 = spec["hd95"]
-            model.f1 = spec["f1"]
+            model.metrics = {
+                key: spec[key] for key in ("dice", "hd95", "f1") if spec[key] is not None
+            }
 
             model.save()
+
+            # one usage period per version, replaced on every run of the seeder
+            model.periods.all().delete()
+            if spec["activated_days_ago"] is not None:
+                model.periods.create(
+                    started_at=now - timedelta(days=spec["activated_days_ago"]),
+                    ended_at=(
+                        now - timedelta(days=spec["deactivated_days_ago"])
+                        if spec["deactivated_days_ago"] is not None
+                        else None
+                    ),
+                    decided_by=spec["decided_by"],
+                )
 
             ModelVersion.objects.filter(pk=model.pk).update(
                 created_at=now - timedelta(
@@ -1145,6 +1136,7 @@ class Command(BaseCommand):
 
             # report_path wskazuje bezpośrednio na oryginalny plik w MinIO.
             extraction.report_path = report_path
+            extraction.source = SourceChoices.of_file(report_path)
 
             # Raport AI
             extraction.generated_report = generated_report
@@ -1230,6 +1222,7 @@ class Command(BaseCommand):
             )
 
             report.status = state
+            report.source = SourceChoices.of_file(path)
             report.uncertainty = None
 
             report.generated_report = None

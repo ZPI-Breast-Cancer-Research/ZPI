@@ -103,3 +103,24 @@ def test_dashboard_lists_failed_extraction_as_processing_error(
     assert {"kind": "processing_error", "subject": number, "href": "/badania"} in response.data[
         "attention"
     ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "name, source", [("opis.txt", "text"), ("skan.JPG", "scan"), ("skan.png", "scan")]
+)
+@mock.patch("patients.views.current_app.send_task")
+@mock.patch("patients.views.put_bytes")
+def test_uploaded_report_knows_its_source_and_who_ordered_it(
+    put_bytes, send_task, authenticated_client, user, name, source
+):
+    # Act
+    response = authenticated_client.post(
+        reverse("study-import"), {"report": report(name), "source": "manual"}, format="multipart"
+    )
+
+    # Assert: the source comes from the file, not from the request
+    assert response.status_code in (200, 201)
+    stored = ExtractionResult.objects.get()
+    assert stored.source == source
+    assert stored.requested_by == user

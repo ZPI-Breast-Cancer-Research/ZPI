@@ -6,6 +6,7 @@ import pytest
 from django.urls import reverse
 
 from audit.models import AuditLog
+from common.errors import ObjectNotFound, StorageError
 from extraction.models import ExtractionResult, StatusChoices
 from segmentation.models import SegmentationResult
 
@@ -47,7 +48,7 @@ def test_report_scan_is_404_when_storage_has_no_file(authenticated_client, study
         study=study, status=StatusChoices.COMPLETED, report_path="reports/a/opis.jpg"
     )
 
-    with mock.patch("review.views.get_bytes", side_effect=Exception("NoSuchKey")):
+    with mock.patch("review.views.get_bytes", side_effect=ObjectNotFound("NoSuchKey")):
         response = authenticated_client.get(_url("review-report-scan", study))
 
     assert response.status_code == 404

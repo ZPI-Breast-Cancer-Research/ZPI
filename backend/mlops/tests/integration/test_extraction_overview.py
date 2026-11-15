@@ -160,3 +160,14 @@ def test_extraction_overview_returns_zero_when_field_unchanged(
     )
 
     assert birads["correctedShare"] == 0.0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "role, expected",
+    [("admin", 200), ("researcher", 200), ("radiologist", 403)],
+)
+def test_extraction_overview_needs_the_view_models_permission(client_as, role, expected):
+    response = client_as(role).get(reverse("extraction-overview"))
+
+    assert response.status_code == expected
