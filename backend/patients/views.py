@@ -2,32 +2,32 @@ import io
 import logging
 import zipfile
 import zlib
-from uuid import uuid4
 from datetime import timedelta
+from uuid import uuid4
 
-from django.db.models import Count, Q
-from django.utils import timezone
 import pydicom
-from pydicom.errors import InvalidDicomError
+from audit.utils import record_audit
 from celery import current_app
+from common.errors import StorageError
+from common.storage import BUCKET_MASKS, BUCKET_REPORTS, delete_object, delete_prefix, put_bytes
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from extraction.models import ExtractionResult, SourceChoices
+from extraction.models import StatusChoices as ExtractionStatus
+from pydicom.errors import InvalidDicomError
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
-from common.errors import StorageError
-from common.storage import BUCKET_MASKS, BUCKET_REPORTS, delete_object, delete_prefix, put_bytes
-from extraction.models import ExtractionResult, SourceChoices
-from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
-from audit.utils import record_audit
-from .models import Study
+
 from .errors import OrthancUnavailable
+from .models import Study
 from .orthanc_client import OrthancClient
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,7 @@ REPORT_SUFFIXES = (".txt", ".jpg", ".jpeg", ".png")
 
 
 # ---------------------------------------------------------------- helpers
+
 
 def _orthanc_studies() -> list[dict]:
     studies = cache.get(STUDIES_CACHE_KEY)
@@ -69,7 +70,8 @@ def _load_state(orthanc_studies: list[dict]):
         for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
     segmentations = {
-        s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
+        s.study_id: s
+        for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
     return db_studies, extractions, segmentations
 
@@ -90,23 +92,30 @@ def _pick_uncertainty(segmentation, extraction):
 def _check_archive(archive_bytes: bytes) -> Response | None:
     """Returns an error response, or None when the archive holds exactly one DICOM study."""
     if not zipfile.is_zipfile(io.BytesIO(archive_bytes)):
-        return Response({"detail": "Not correct ZIP file archive."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Not correct ZIP file archive."}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     try:
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
             names = [
                 n
                 for n in zf.namelist()
-                if not n.startswith("__MACOSX") and not n.endswith(".DS_Store") and not n.endswith("/")
+                if not n.startswith("__MACOSX")
+                and not n.endswith(".DS_Store")
+                and not n.endswith("/")
             ]
             if not names:
-                return Response({"detail": "No files in archive."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "No files in archive."}, status=status.HTTP_400_BAD_REQUEST
+                )
 
             study_uids: set[str] = set()
             for name in names:
                 try:
+                    # no specific_tags: on a member of an uncompressed (stored) ZIP it reads nothing
                     with zf.open(name) as dicom_file:
-                        ds = pydicom.dcmread(dicom_file, stop_before_pixels=True, specific_tags=["StudyInstanceUID"])
+                        ds = pydicom.dcmread(dicom_file, stop_before_pixels=True)
                     if hasattr(ds, "StudyInstanceUID"):
                         study_uids.add(str(ds.StudyInstanceUID))
                 except (InvalidDicomError, EOFError, ValueError):
@@ -134,14 +143,16 @@ def _check_archive(archive_bytes: bytes) -> Response | None:
         return Response({"detail": "ZIP archive is damaged."}, status=status.HTTP_400_BAD_REQUEST)
     return None
 
+
 def _verified_stats():
     """Verified cases for today and for each of the last 7 days (one query)."""
     today = timezone.localdate()
     week_start = today - timedelta(days=6)
 
     rows = (
-        SegmentationResult.objects
-        .filter(accepted_at__range=(week_start, today), status__in=["APPROVED", "CORRECTED"])
+        SegmentationResult.objects.filter(
+            accepted_at__range=(week_start, today), status__in=["APPROVED", "CORRECTED"]
+        )
         .order_by()
         .values("accepted_at")
         .annotate(
@@ -155,11 +166,13 @@ def _verified_stats():
     for i in range(7):
         day = week_start + timedelta(days=i)
         row = by_day.get(day)
-        last_week.append({
-            "date": day.isoformat(),
-            "unchanged": row["unchanged"] if row else 0,
-            "corrected": row["corrected"] if row else 0,
-        })
+        last_week.append(
+            {
+                "date": day.isoformat(),
+                "unchanged": row["unchanged"] if row else 0,
+                "corrected": row["corrected"] if row else 0,
+            }
+        )
 
     today_row = by_day.get(today)
     verified_today = (today_row["unchanged"] + today_row["corrected"]) if today_row else 0
@@ -202,12 +215,15 @@ def _store_report(report_file, study, user) -> ExtractionResult:
     )
     extraction_id = extraction.id
     transaction.on_commit(
-        lambda: current_app.send_task("extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]})
+        lambda: current_app.send_task(
+            "extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]}
+        )
     )
     return extraction
 
 
 # ---------------------------------------------------------------- views
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -223,7 +239,8 @@ def study_list(request):
     for o_study in orthanc_studies:
         orthanc_id = o_study.get("orthanc_id")
         db_study = db_studies.get(orthanc_id)
-        if not db_study: continue
+        if not db_study:
+            continue
         extraction = extractions.get(db_study.id) if db_study else None
         segmentation = segmentations.get(db_study.id) if db_study else None
 
@@ -254,7 +271,9 @@ def study_import(request):
     report_file = request.FILES.get("report")
 
     if not archive_file and not report_file:
-        return Response({"detail": "No files were provided for import."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "No files were provided for import."}, status=status.HTTP_400_BAD_REQUEST
+        )
     # before the archive goes to Orthanc, so a bad report leaves nothing behind
     if report_file and (error := _check_report_file(report_file)):
         return error
@@ -311,7 +330,9 @@ def study_import(request):
         request,
         kind="study_imported",
         object=study_num_str,
-        detail=f"Zaimportowano badanie z Orthanc ID: {orthanc_study_id}" if orthanc_study_id else "Zaimportowano sam raport"
+        detail=f"Zaimportowano badanie z Orthanc ID: {orthanc_study_id}"
+        if orthanc_study_id
+        else "Zaimportowano sam raport",
     )
 
     return Response(
@@ -338,14 +359,16 @@ def attach_report_to_study(request, orthanc_id):
 
     with transaction.atomic():
         _store_report(report_file, study, request.user)
-    
+
     record_audit(
         request,
         kind="attach_report",
         object=str(orthanc_id),
-        detail=f"Dołączono nowy plik raportu: {report_file.name}"
+        detail=f"Dołączono nowy plik raportu: {report_file.name}",
     )
-    return Response({"detail": "Report successfully attached to the study."}, status=status.HTTP_200_OK)
+    return Response(
+        {"detail": "Report successfully attached to the study."}, status=status.HTTP_200_OK
+    )
 
 
 @api_view(["POST"])
@@ -357,21 +380,24 @@ def attach_existing_report(request, orthanc_id):
     if not report_id:
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-
     updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(
         study=study, assigned_at=timezone.now()
     )
     if not updated:
-        return Response({"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND)
-    
+        return Response(
+            {"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND
+        )
+
     record_audit(
-            request,
-            kind="attach_report",
-            object=str(orthanc_id),
-            detail=f"Dołączono nowy plik raportu: {report_id}"
+        request,
+        kind="attach_report",
+        object=str(orthanc_id),
+        detail=f"Dołączono nowy plik raportu: {report_id}",
     )
 
-    return Response({"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK)
+    return Response(
+        {"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK
+    )
 
 
 @api_view(["GET"])
@@ -417,12 +443,13 @@ def dashboard_view(request):
     failed_studies = []
     for o_study in orthanc_studies:
         db_study = db_studies.get(o_study.get("orthanc_id"))
-        if not db_study: continue
+        if not db_study:
+            continue
         extraction = extractions.get(db_study.id) if db_study else None
         segmentation = segmentations.get(db_study.id) if db_study else None
 
         missing_reports_count += 1 if not extraction else 0
-        
+
         seg_status = segmentation.status if segmentation else None
         ext_status = extraction.status if extraction else None
 
@@ -440,10 +467,14 @@ def dashboard_view(request):
                     {
                         "studyNumber": study_number,
                         "stage": "segmentation" if seg_status == "PROCESSING" else "extraction",
-                        "state": "running" if "PROCESSING" in (seg_status, ext_status) else "queued",
+                        "state": "running"
+                        if "PROCESSING" in (seg_status, ext_status)
+                        else "queued",
                     }
                 )
-        elif (seg_status == "COMPLETED" and segmentation) or (ext_status == "COMPLETED" and extraction):
+        elif (seg_status == "COMPLETED" and segmentation) or (
+            ext_status == "COMPLETED" and extraction
+        ):
             to_review_count += 1
             queue_items.append(
                 {
@@ -455,14 +486,18 @@ def dashboard_view(request):
                 }
             )
 
-
     attention_items = [
         {"kind": "processing_error", "subject": number, "href": "/badania"}
         for number in failed_studies
     ]
     if missing_reports_count > 0:
         attention_items.append(
-            {"kind": "missing_report", "subject": "", "count": missing_reports_count, "href": "/badania"}
+            {
+                "kind": "missing_report",
+                "subject": "",
+                "count": missing_reports_count,
+                "href": "/badania",
+            }
         )
     verified_today, verified_last_week = _verified_stats()
     return Response(
@@ -495,7 +530,10 @@ def study_delete(request, orthanc_id):
         or ExtractionResult.objects.filter(study=study, status__in=verified).exists()
     ):
         return Response(
-            {"code": "verified", "detail": "Badanie jest zweryfikowane; najpierw cofnij weryfikację."},
+            {
+                "code": "verified",
+                "detail": "Badanie jest zweryfikowane; najpierw cofnij weryfikację.",
+            },
             status=status.HTTP_409_CONFLICT,
         )
 
@@ -503,7 +541,9 @@ def study_delete(request, orthanc_id):
     try:
         OrthancClient().delete_study(study.orthanc_path)
         delete_prefix(BUCKET_MASKS, f"{study.id}/")  # model mask, probabilities, corrected masks
-        for key in study.extractions.exclude(report_path__isnull=True).values_list("report_path", flat=True):
+        for key in study.extractions.exclude(report_path__isnull=True).values_list(
+            "report_path", flat=True
+        ):
             delete_object(BUCKET_REPORTS, key)
     except OrthancUnavailable as exc:  # includes OrthancUnauthorized
         return _orthanc_error_response(exc)

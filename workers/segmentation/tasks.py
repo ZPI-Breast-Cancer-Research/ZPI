@@ -8,8 +8,8 @@ import numpy as np
 from common.storage import BUCKET_MASKS, download_file, upload_file
 from config.celery import app
 from mlops.models import ModelVersion
-from patients.models import Study
 from patients.errors import OrthancUnauthorized, OrthancUnavailable, StudyNotFound
+from patients.models import Study
 from patients.orthanc_client import OrthancClient
 from segmentation.models import SegmentationResult, StatusChoices
 

@@ -1,10 +1,9 @@
 """Only the admin reads the audit log (the Settings page is theirs)."""
 
 import pytest
+from audit.models import AuditLog
 from django.urls import reverse
 from rest_framework.test import APIClient
-
-from audit.models import AuditLog
 from users.models import User
 
 

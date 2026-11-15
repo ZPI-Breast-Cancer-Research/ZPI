@@ -1,29 +1,35 @@
-from django.utils import timezone
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from django.shortcuts import get_object_or_404
-from django.db import transaction
-from django.http import HttpResponse
-from django.urls import reverse
 import logging
 import mimetypes
 
 from audit.utils import record_audit
 from common.errors import ObjectNotFound
 from common.storage import BUCKET_REPORTS, get_bytes
-from patients.models import Study
-from patients.errors import OrthancUnauthorized, OrthancUnavailable
-from patients.orthanc_client import OrthancClient
+from django.db import transaction
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.urls import reverse
+from django.utils import timezone
 from extraction.models import ExtractionResult, StatusChoices
+from patients.errors import OrthancUnauthorized, OrthancUnavailable
+from patients.models import Study
+from patients.orthanc_client import OrthancClient
+from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
 
 logger = logging.getLogger(__name__)
 
 VERIFIED = (StatusChoices.APPROVED, StatusChoices.CORRECTED)
-REPORT_FIELDS = ["birads", "location", "size", "shape", "margin", "curve"]  # = FieldKey on the frontend
+REPORT_FIELDS = [
+    "birads",
+    "location",
+    "size",
+    "shape",
+    "margin",
+    "curve",
+]  # = FieldKey on the frontend
 BIRADS_ORDER = ["0", "1", "2", "3", "4", "4a", "4b", "4c", "5", "6"]
 
 # report wording -> option keys of the frontend form (frontend/src/review/report.ts)
@@ -72,6 +78,7 @@ def _size_value(wymiary) -> str | None:
         return None
     return f"{max(wymiary['wartosci']):g}"
 
+
 def _dicom_date(value):
     """DICOM YYYYMMDD -> ISO date, or None when the date is unknown."""
     return f"{value[:4]}-{value[4:6]}-{value[6:8]}" if value and len(value) == 8 else None
@@ -88,14 +95,14 @@ def _uncertainty(segmentation, extraction) -> float | None:
         if result is not None and result.uncertainty is not None:
             return float(result.uncertainty)
     return None
- 
- 
+
+
 def _user_name(user):
     if not user:
         return ""
     return f"{user.first_name} {user.last_name}".strip() or user.username
- 
- 
+
+
 def _seg_ref(study_uid, series_uid, sop_uid):
     """Where the viewer finds a DICOM SEG over DICOMweb, or None when there is none."""
     if not (study_uid and series_uid and sop_uid):
@@ -120,16 +127,20 @@ def _approved_seg(segmentation, study_uid):
 
 
 def _main_lesion(report: dict):
-    """The lesion with the highest BI-RADS (first one on ties). TODO: pick the one that matches the mask."""
+    """The lesion with the highest BI-RADS (first one on ties).
+
+    TODO: pick the one that matches the mask.
+    """
     lesions = report.get("zmiany") or []
     if not lesions:
         return None
- 
+
     def rank(lesion):
         birads = str(lesion.get("birads") or "").lower()
         return BIRADS_ORDER.index(birads) if birads in BIRADS_ORDER else -1
- 
+
     return max(lesions, key=rank)
+
 
 def _mask_measurements(segmentation) -> dict | None:
     """Measurements the worker stored for the model mask. A corrected mask has none yet (#25)."""
@@ -156,38 +167,41 @@ def _report_size_mm(report) -> float | None:
 def _proposals(report) -> dict:
     """{"birads": "4C"} -> {"birads": {"value": "4C"}} (kształt, którego oczekuje front)."""
     return {key: {"value": value} for key, value in _as_fields(report).items()}
- 
+
+
 def _size_text(wymiary) -> str | None:
     if not wymiary or not wymiary.get("wartosci"):
         return None
     text = f"{max(wymiary['wartosci']):g} {wymiary.get('jednostka', 'mm')}"
     qualifier = wymiary.get("kwalifikator")
     return text if qualifier in (None, "dokładny") else f"{qualifier} {text}"
- 
- 
+
+
 def _fields_from_schema(report: dict) -> dict:
     """EkstrakcjaBadania JSON -> {birads, location, size, shape, margin} of the main lesion."""
     lesion = _main_lesion(report)
     fields = {}
- 
+
     birads = (lesion or {}).get("birads") or (report.get("wniosek") or {}).get("birads")
     if birads:
         fields["birads"] = str(birads).upper()  # "4c" -> "4C", like in the UI
- 
+
     observations = (lesion or {}).get("obserwacje") or []
-    obs = next((o for o in observations if o.get("wymiary")), observations[0] if observations else None)
+    obs = next(
+        (o for o in observations if o.get("wymiary")), observations[0] if observations else None
+    )
     if obs:
         if obs.get("lokalizacje"):
             fields["location"] = _ui_value("location", obs["lokalizacje"][0])
-        if (size := _size_value(obs.get("wymiary"))):
+        if size := _size_value(obs.get("wymiary")):
             fields["size"] = size
         if obs.get("ksztalt"):
             fields["shape"] = _ui_value("shape", obs["ksztalt"])
         if obs.get("brzeg"):
             fields["margin"] = _ui_value("margin", obs["brzeg"])
     return fields
- 
- 
+
+
 def _as_fields(report) -> dict:
     """Accepts both shapes: the flat form saved by the doctor and the LLM schema."""
     if not isinstance(report, dict):
@@ -202,8 +216,8 @@ def _as_fields(report) -> dict:
                 out[key] = str(value).upper() if key == "birads" else _ui_value(key, value)
         return out
     return _fields_from_schema(report)
- 
- 
+
+
 def _report_rows(extraction):
     """[{field, value, corrected}]: accepted values, 'corrected' when they differ from the LLM's."""
     if extraction is None or not extraction.accepted_report:
@@ -215,6 +229,7 @@ def _report_rows(extraction):
         for key in REPORT_FIELDS
         if key in accepted
     ]
+
 
 def _report_payload(extraction, study_id):
     """What the review screens show as the report (frontend/src/review/extraction.ts CaseReport).
@@ -311,7 +326,10 @@ def _mask_detail(mask_choice) -> str:
 
 def _approve_mask(segmentation, new_status, user) -> bool:
     """Approve the model mask if it waits for review; True when it changed."""
-    if not segmentation or segmentation.status not in [StatusChoices.COMPLETED, StatusChoices.REJECTED]:
+    if not segmentation or segmentation.status not in [
+        StatusChoices.COMPLETED,
+        StatusChoices.REJECTED,
+    ]:
         return False
     segmentation.status = new_status
     segmentation.accepted_by = user
@@ -334,7 +352,10 @@ def _reopen(result) -> bool:
 @api_view(["GET"])
 @require_permission("review")
 def report_scan(request, study_id):
-    """The uploaded original of the active report (image or .txt), for the preview next to the form."""
+    """The uploaded original of the active report (image or .txt).
+
+    Shown as a preview next to the form.
+    """
     study = get_object_or_404(Study, orthanc_path=study_id)
     extraction = study.extractions.active()
     if not extraction or not extraction.report_path:
@@ -354,13 +375,11 @@ def report_scan(request, study_id):
 def review_queue(request):
     """Studies waiting for review: at least one automatic step is COMPLETED, least certain first."""
     # prefilter in the database: only studies that have something COMPLETED
-    seg_done = SegmentationResult.objects.filter(
-        status=StatusChoices.COMPLETED
-    ).values("study_id")
-    ext_done = ExtractionResult.objects.filter(
-        status=StatusChoices.COMPLETED
-    ).values("study_id")
-    all_ids = set([item["study_id"] for item in seg_done]).union([item["study_id"] for item in ext_done])
+    seg_done = SegmentationResult.objects.filter(status=StatusChoices.COMPLETED).values("study_id")
+    ext_done = ExtractionResult.objects.filter(status=StatusChoices.COMPLETED).values("study_id")
+    all_ids = set([item["study_id"] for item in seg_done]).union(
+        [item["study_id"] for item in ext_done]
+    )
     studies = list(Study.objects.filter(id__in=all_ids))
 
     if not studies:
@@ -369,7 +388,8 @@ def review_queue(request):
     # newest segmentation and active report per study, two queries for all of them
     study_ids = [s.id for s in studies]
     segmentations = {
-        s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
+        s.study_id: s
+        for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
     }
     extractions = {
         e.study_id: e
@@ -393,16 +413,19 @@ def review_queue(request):
         if StatusChoices.COMPLETED not in (seg_status, ext_status):
             continue
 
-        queue_data.append({
-            "studyId": study.orthanc_path,
-            "studyNumber": str(study.id).zfill(4),
-            "studyDate": _dicom_date(orthanc_map.get(study.orthanc_path, {}).get("study_date")),
-            "uncertainty": _uncertainty(segmentation, extraction),
-        })
+        queue_data.append(
+            {
+                "studyId": study.orthanc_path,
+                "studyNumber": str(study.id).zfill(4),
+                "studyDate": _dicom_date(orthanc_map.get(study.orthanc_path, {}).get("study_date")),
+                "uncertainty": _uncertainty(segmentation, extraction),
+            }
+        )
 
     # least certain first; unknown uncertainty counts as least certain, so it is not overlooked
     queue_data.sort(key=lambda x: (x["uncertainty"] is not None, -(x["uncertainty"] or 0)))
     return Response(queue_data, status=status.HTTP_200_OK)
+
 
 @api_view(["GET"])
 @require_permission(["review"])
@@ -424,15 +447,13 @@ def review_case_detail(request, study_id):
     except (OrthancUnauthorized, OrthancUnavailable):
         o_study = {}
 
-
-
     mask_approved_val = None
     if segmentation:
         if segmentation.status == StatusChoices.APPROVED:
             mask_approved_val = "confirmed"
         elif segmentation.status == StatusChoices.CORRECTED:
             mask_approved_val = "corrected"
-    
+
     measured = _mask_measurements(segmentation)
     proposals = {}
     if extraction and extraction.status not in (StatusChoices.PENDING, StatusChoices.PROCESSING):
@@ -473,18 +494,36 @@ def approve_case(request, study_id):
     new_status = StatusChoices.APPROVED if mask_choice == "confirmed" else StatusChoices.CORRECTED
 
     with transaction.atomic():
-        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        segmentation = (
+            SegmentationResult.objects.select_for_update()
+            .filter(study=study)
+            .order_by("-id")
+            .first()
+        )
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
 
         approved_mask = _approve_mask(segmentation, new_status, request.user)
-        approved_form = bool(extraction) and extraction.status in [StatusChoices.COMPLETED, StatusChoices.REJECTED]
+        approved_form = bool(extraction) and extraction.status in [
+            StatusChoices.COMPLETED,
+            StatusChoices.REJECTED,
+        ]
         if approved_form:
             _apply_form(extraction, payload, request.user)
 
     if approved_mask:
-        record_audit(request, kind="mask_approved", object=_audit_object(study), detail=_mask_detail(mask_choice))
+        record_audit(
+            request,
+            kind="mask_approved",
+            object=_audit_object(study),
+            detail=_mask_detail(mask_choice),
+        )
     if approved_form:
-        record_audit(request, kind="form_approved", object=_audit_object(study), detail="zatwierdzono komplet")
+        record_audit(
+            request,
+            kind="form_approved",
+            object=_audit_object(study),
+            detail="zatwierdzono komplet",
+        )
     return Response(status=status.HTTP_200_OK)
 
 
@@ -497,11 +536,21 @@ def approve_mask(request, study_id):
     new_status = StatusChoices.APPROVED if mask_choice == "confirmed" else StatusChoices.CORRECTED
 
     with transaction.atomic():
-        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        segmentation = (
+            SegmentationResult.objects.select_for_update()
+            .filter(study=study)
+            .order_by("-id")
+            .first()
+        )
         approved_mask = _approve_mask(segmentation, new_status, request.user)
 
     if approved_mask:
-        record_audit(request, kind="mask_approved", object=_audit_object(study), detail=_mask_detail(mask_choice))
+        record_audit(
+            request,
+            kind="mask_approved",
+            object=_audit_object(study),
+            detail=_mask_detail(mask_choice),
+        )
     return Response(status=status.HTTP_200_OK)
 
 
@@ -509,17 +558,26 @@ def approve_mask(request, study_id):
 @require_permission(["review"])
 def reopen_case(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
-    
+
     with transaction.atomic():
-        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        segmentation = (
+            SegmentationResult.objects.select_for_update()
+            .filter(study=study)
+            .order_by("-id")
+            .first()
+        )
         reopened_mask = _reopen(segmentation)
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         reopened_form = _reopen(extraction)
 
     if reopened_mask:
-        record_audit(request, kind="mask_unapproved", object=_audit_object(study), detail="reopened case")
+        record_audit(
+            request, kind="mask_unapproved", object=_audit_object(study), detail="reopened case"
+        )
     if reopened_form:
-        record_audit(request, kind="form_unapproved", object=_audit_object(study), detail="reopened case")
+        record_audit(
+            request, kind="form_unapproved", object=_audit_object(study), detail="reopened case"
+        )
     return Response(status=status.HTTP_200_OK)
 
 
@@ -527,9 +585,14 @@ def reopen_case(request, study_id):
 @require_permission(["review"])
 def unapprove_mask(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
-    
+
     with transaction.atomic():
-        segmentation = SegmentationResult.objects.select_for_update().filter(study=study).order_by("-id").first()
+        segmentation = (
+            SegmentationResult.objects.select_for_update()
+            .filter(study=study)
+            .order_by("-id")
+            .first()
+        )
         unapproved = _reopen(segmentation)
 
     if unapproved:
@@ -542,7 +605,7 @@ def unapprove_mask(request, study_id):
 def approve_form(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
     submitted = request.data
-    
+
     with transaction.atomic():
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         # sent again after a later change
@@ -565,7 +628,7 @@ def approve_form(request, study_id):
 @require_permission(["review"])
 def unapprove_form(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
-    
+
     with transaction.atomic():
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         unapproved = _reopen(extraction)
@@ -574,15 +637,16 @@ def unapprove_form(request, study_id):
         record_audit(request, kind="form_unapproved", object=_audit_object(study))
     return Response(status=status.HTTP_200_OK)
 
+
 @api_view(["GET"])
 @require_permission("review")
 def review_overview(request, study_id):
     """Summary of a verified case; study_id is the Orthanc id, like in review_queue."""
     study = get_object_or_404(Study, orthanc_path=study_id)
- 
+
     segmentation = study.segmentations.select_related("accepted_by").order_by("-id").first()
     extraction = study.extractions.select_related("accepted_by").active()
- 
+
     if segmentation is None or segmentation.status not in VERIFIED:
         return Response(
             {"code": "not_verified", "detail": "Badanie nie zostało jeszcze zweryfikowane."},
@@ -590,55 +654,72 @@ def review_overview(request, study_id):
         )
     try:
         o_data = next(
-            (s for s in OrthancClient().list_studies() if s.get("orthanc_id") == study.orthanc_path), {}
+            (
+                s
+                for s in OrthancClient().list_studies()
+                if s.get("orthanc_id") == study.orthanc_path
+            ),
+            {},
         )
     except OrthancUnavailable:  # includes OrthancUnauthorized
         o_data = {}
 
     corrected = segmentation.status == StatusChoices.CORRECTED
     saving = corrected and not segmentation.accepted_path
- 
+
     measured = _mask_measurements(segmentation)
     by_field = {row["field"]: row["value"] for row in _report_rows(extraction) or []}
- 
+
     seg_version = _model_version(segmentation)
     ext_version = _model_version(extraction)
     accepted_at = segmentation.accepted_at.isoformat() if segmentation.accepted_at else ""
- 
-    return Response({
-        "studyId": study.orthanc_path,
-        "studyNumber": str(study.id).zfill(4),
-        "patientId": o_data.get("patient_id") or "—",
-        "age": None, 
-        "studyDate": _dicom_date(o_data.get("study_date")),
-        "description": o_data.get("description") or "",
-        "status": "saving" if saving else "verified",
-        "studyUid": o_data.get("study_instance_uid"),
-        "masks": {
-            "approved": _approved_seg(segmentation, o_data.get("study_instance_uid")),
-            "model": _model_seg(segmentation, o_data.get("study_instance_uid")),
-        },
-        "mask": {
-            "corrected": corrected,
-            "version": segmentation.model_id,
-            "date": accepted_at,
-            "by": _user_name(segmentation.accepted_by),
-        },
-        "measurements": {
-            "volume": (measured or {}).get("volume_ml"),
-            "dimensions": (measured or {}).get("dimensions_mm"),
-            "intensity": None,
-        },
-        "report": _overview_report(extraction, study.orthanc_path),
-        "comparison": [
-            {"feature": "largestSize", "fromMask": _largest_mm(measured), "fromReport": by_field.get("size"), "match": None},
-            {"feature": "quadrant", "fromMask": None, "fromReport": by_field.get("location"), "match": None},
-        ],
-        "verification": {
-            "by": _user_name(segmentation.accepted_by),
-            "date": accepted_at,
-            "editingSeconds": None,  # no such field in the models yet
-            "segmentationVersion": seg_version,
-            "extractionVersion": ext_version,
-        },
-    })
+
+    return Response(
+        {
+            "studyId": study.orthanc_path,
+            "studyNumber": str(study.id).zfill(4),
+            "patientId": o_data.get("patient_id") or "—",
+            "age": None,
+            "studyDate": _dicom_date(o_data.get("study_date")),
+            "description": o_data.get("description") or "",
+            "status": "saving" if saving else "verified",
+            "studyUid": o_data.get("study_instance_uid"),
+            "masks": {
+                "approved": _approved_seg(segmentation, o_data.get("study_instance_uid")),
+                "model": _model_seg(segmentation, o_data.get("study_instance_uid")),
+            },
+            "mask": {
+                "corrected": corrected,
+                "version": segmentation.model_id,
+                "date": accepted_at,
+                "by": _user_name(segmentation.accepted_by),
+            },
+            "measurements": {
+                "volume": (measured or {}).get("volume_ml"),
+                "dimensions": (measured or {}).get("dimensions_mm"),
+                "intensity": None,
+            },
+            "report": _overview_report(extraction, study.orthanc_path),
+            "comparison": [
+                {
+                    "feature": "largestSize",
+                    "fromMask": _largest_mm(measured),
+                    "fromReport": by_field.get("size"),
+                    "match": None,
+                },
+                {
+                    "feature": "quadrant",
+                    "fromMask": None,
+                    "fromReport": by_field.get("location"),
+                    "match": None,
+                },
+            ],
+            "verification": {
+                "by": _user_name(segmentation.accepted_by),
+                "date": accepted_at,
+                "editingSeconds": None,  # no such field in the models yet
+                "segmentationVersion": seg_version,
+                "extractionVersion": ext_version,
+            },
+        }
+    )

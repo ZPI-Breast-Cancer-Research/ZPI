@@ -1,9 +1,8 @@
 from unittest import mock
+
 import pytest
 from django.urls import reverse
 from django.utils import timezone
-
-from patients.models import Study
 from extraction.models import ExtractionResult
 
 
@@ -62,6 +61,7 @@ def test_attach_existing_report_does_not_change_other_report(
 
     extraction_result.refresh_from_db()
     assert extraction_result.study == study
+
 
 @pytest.mark.django_db
 @mock.patch("patients.views._orthanc_studies")

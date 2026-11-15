@@ -1,11 +1,11 @@
-import pytest
 from unittest import mock
+
+import pytest
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework import status
-
 from extraction.models import ExtractionResult, StatusChoices
 from mlops.models import ModelVersion
+from rest_framework import status
 from segmentation.models import SegmentationResult
 
 

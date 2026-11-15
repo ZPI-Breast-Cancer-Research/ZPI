@@ -1,5 +1,4 @@
 import pytest
-
 from extraction.models import ExtractionResult, SourceChoices, StatusChoices
 
 

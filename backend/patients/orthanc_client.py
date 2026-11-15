@@ -4,6 +4,7 @@ Orthanc may be down or not deployed at all – every call uses short timeouts an
 any network/HTTP/JSON failure is raised as ``OrthancUnavailable`` (or its subclass
 ``OrthancUnauthorized`` when Orthanc rejects the credentials).
 """
+
 import io
 import zipfile
 from pathlib import Path
@@ -46,9 +47,7 @@ class OrthancClient:
         # Basic auth only when both credentials are set.
         self.auth = (user, password) if user and password else None
 
-    def _request(
-        self, path: str, params: dict | None = None, timeout=TIMEOUT
-    ) -> requests.Response:
+    def _request(self, path: str, params: dict | None = None, timeout=TIMEOUT) -> requests.Response:
         """GET from Orthanc; failures raise OrthancUnavailable or OrthancUnauthorized."""
         try:
             response = requests.get(
@@ -144,7 +143,10 @@ class OrthancClient:
         }
 
     def delete_study(self, orthanc_id: str) -> None:
-        """Remove a study with all its series and instances; a study Orthanc no longer has is fine."""
+        """Remove a study with all its series and instances.
+
+        A study Orthanc no longer has is fine.
+        """
         url = f"{self.base_url}/studies/{orthanc_id}"
         try:
             response = requests.delete(url, auth=self.auth, timeout=TIMEOUT)
@@ -187,4 +189,3 @@ class OrthancClient:
             return response.json()
         except (requests.RequestException, ValueError) as exc:
             raise OrthancUnavailable(f"Orthanc upload response invalid: {exc}") from exc
-

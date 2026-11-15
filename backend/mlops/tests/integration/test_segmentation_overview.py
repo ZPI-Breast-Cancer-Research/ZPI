@@ -1,9 +1,8 @@
 import pytest
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework import status
-
 from mlops.models import ModelVersion
+from rest_framework import status
 from segmentation.models import SegmentationResult, StatusChoices
 
 
@@ -54,8 +53,7 @@ def test_segmentation_overview_returns_production_model(
     assert data["inUse"]["weakest"] is None
 
     assert any(
-        version["version"] == production_model.version
-        and version["status"] == "in_use"
+        version["version"] == production_model.version and version["status"] == "in_use"
         for version in data["versions"]
     )
 
@@ -70,9 +68,7 @@ def test_segmentation_overview_returns_candidate_model(
     data = response.json()
 
     candidate = next(
-        version
-        for version in data["versions"]
-        if version["version"] == candidate_model.version
+        version for version in data["versions"] if version["version"] == candidate_model.version
     )
 
     assert candidate["status"] in ["proposed", "new"]
@@ -88,9 +84,7 @@ def test_segmentation_overview_returns_candidate_metrics(
     data = response.json()
 
     candidate = next(
-        version
-        for version in data["versions"]
-        if version["version"] == candidate_model.version
+        version for version in data["versions"] if version["version"] == candidate_model.version
     )
 
     assert candidate["metrics"] is not None
@@ -113,9 +107,7 @@ def test_segmentation_overview_candidate_without_metrics(
     data = response.json()
 
     version = next(
-        version
-        for version in data["versions"]
-        if version["version"] == candidate.version
+        version for version in data["versions"] if version["version"] == candidate.version
     )
 
     assert version["metrics"] is None
@@ -147,9 +139,7 @@ def test_segmentation_overview_calculates_agreement(
     data = response.json()
 
     production = next(
-        version
-        for version in data["versions"]
-        if version["version"] == production_model.version
+        version for version in data["versions"] if version["version"] == production_model.version
     )
 
     # Jedna z dwóch zaakceptowanych segmentacji została poprawiona.
@@ -195,11 +185,7 @@ def test_segmentation_overview_returns_rejected_model(
 
     data = response.json()
 
-    rejected = next(
-        version
-        for version in data["versions"]
-        if version["version"] == model.version
-    )
+    rejected = next(version for version in data["versions"] if version["version"] == model.version)
 
     assert rejected["status"] == "rejected"
 
@@ -226,8 +212,13 @@ def test_segmentation_overview_returns_previous_model(
 
 @pytest.mark.django_db
 def test_segmentation_overview_tells_a_proposed_version_from_a_new_one(authenticated_client):
-    for version, state in (("draft", ModelVersion.StatusChoices.NEW), ("waiting", ModelVersion.StatusChoices.CANDIDATE)):
-        ModelVersion.objects.create(module="seg", name="segmentation", version=version, status=state)
+    for version, state in (
+        ("draft", ModelVersion.StatusChoices.NEW),
+        ("waiting", ModelVersion.StatusChoices.CANDIDATE),
+    ):
+        ModelVersion.objects.create(
+            module="seg", name="segmentation", version=version, status=state
+        )
 
     data = authenticated_client.get(reverse("segmentation-overview")).json()
 

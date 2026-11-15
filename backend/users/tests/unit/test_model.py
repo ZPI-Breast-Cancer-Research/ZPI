@@ -2,6 +2,7 @@
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 
 User = get_user_model()
 
@@ -55,7 +56,7 @@ def test_user_pwz_can_be_empty():
 
 @pytest.mark.django_db
 def test_user_pwz_must_be_unique(radiologist):
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):
         User.objects.create_user(
             username="anotheruser",
             password="Password123!",

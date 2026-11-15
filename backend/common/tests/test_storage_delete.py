@@ -12,7 +12,9 @@ def _client(pages):
 
 
 def test_delete_prefix_deletes_all_pages():
-    client = _client([{"Contents": [{"Key": "7/a"}, {"Key": "7/b"}]}, {"Contents": [{"Key": "7/c"}]}])
+    client = _client(
+        [{"Contents": [{"Key": "7/a"}, {"Key": "7/b"}]}, {"Contents": [{"Key": "7/c"}]}]
+    )
 
     with mock.patch.object(storage, "s3_client", return_value=client):
         count = storage.delete_prefix("masks", "7/")

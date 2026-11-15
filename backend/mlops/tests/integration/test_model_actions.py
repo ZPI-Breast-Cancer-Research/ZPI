@@ -2,23 +2,14 @@ from unittest import mock
 
 import pytest
 from django.urls import reverse
-from rest_framework import status
-
 from mlops.models import ModelVersion
+from rest_framework import status
 
 
 @pytest.mark.django_db
-def test_promote_model(
-    authenticated_client,
-    user,
-    production_model,
-    candidate_model
-):
+def test_promote_model(authenticated_client, user, production_model, candidate_model):
     response = authenticated_client.post(
-        reverse(
-            "promote-model",
-            kwargs={"version": candidate_model.version}
-        )
+        reverse("promote-model", kwargs={"version": candidate_model.version})
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -37,12 +28,9 @@ def test_promote_model(
 @pytest.mark.django_db
 def test_reject_model(authenticated_client, user, candidate_model):
     response = authenticated_client.post(
-        reverse(
-            "reject-model",
-            kwargs={"version": candidate_model.version}
-        ),
+        reverse("reject-model", kwargs={"version": candidate_model.version}),
         {"reason": "Bad model"},
-        format="json"
+        format="json",
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -58,10 +46,7 @@ def test_reject_model(authenticated_client, user, candidate_model):
 @pytest.mark.django_db
 def test_reject_model_without_reason(authenticated_client, candidate_model):
     response = authenticated_client.post(
-        reverse(
-            "reject-model",
-            kwargs={"version": candidate_model.version}
-        )
+        reverse("reject-model", kwargs={"version": candidate_model.version})
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -72,23 +57,16 @@ def test_reject_model_without_reason(authenticated_client, candidate_model):
 
 
 @pytest.mark.django_db
-def test_rollback_model(
-    authenticated_client,
-    user,
-    production_model
-):
+def test_rollback_model(authenticated_client, user, production_model):
     old_model = ModelVersion.objects.create(
         module="seg",
         name="segmentation",
         version="old-archived",
-        status=ModelVersion.StatusChoices.ARCHIVED
+        status=ModelVersion.StatusChoices.ARCHIVED,
     )
 
     response = authenticated_client.post(
-        reverse(
-            "rollback-model",
-            kwargs={"version": old_model.version}
-        )
+        reverse("rollback-model", kwargs={"version": old_model.version})
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -106,10 +84,7 @@ def test_rollback_model(
 @pytest.mark.django_db
 def test_promote_nonexistent_model_returns_404(authenticated_client):
     response = authenticated_client.post(
-        reverse(
-            "promote-model",
-            kwargs={"version": "does-not-exist"}
-        )
+        reverse("promote-model", kwargs={"version": "does-not-exist"})
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -118,10 +93,7 @@ def test_promote_nonexistent_model_returns_404(authenticated_client):
 @pytest.mark.django_db
 def test_reject_nonexistent_model_returns_404(authenticated_client):
     response = authenticated_client.post(
-        reverse(
-            "reject-model",
-            kwargs={"version": "does-not-exist"}
-        )
+        reverse("reject-model", kwargs={"version": "does-not-exist"})
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -130,10 +102,7 @@ def test_reject_nonexistent_model_returns_404(authenticated_client):
 @pytest.mark.django_db
 def test_rollback_nonexistent_model_returns_404(authenticated_client):
     response = authenticated_client.post(
-        reverse(
-            "rollback-model",
-            kwargs={"version": "does-not-exist"}
-        )
+        reverse("rollback-model", kwargs={"version": "does-not-exist"})
     )
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -143,21 +112,12 @@ def test_rollback_nonexistent_model_returns_404(authenticated_client):
 def test_start_training_sends_celery_task(authenticated_client):
     from mlops import views
 
-    with mock.patch.object(
-        views.current_app,
-        "send_task"
-    ) as send_task:
-
-        response = authenticated_client.post(
-            reverse("start-training")
-        )
+    with mock.patch.object(views.current_app, "send_task") as send_task:
+        response = authenticated_client.post(reverse("start-training"))
 
     assert response.status_code == status.HTTP_200_OK
 
-    send_task.assert_called_once_with(
-        "training.run",
-        kwargs={"training_run_id": 1}
-    )
+    send_task.assert_called_once_with("training.run", kwargs={"training_run_id": 1})
 
 
 @pytest.mark.django_db
@@ -174,8 +134,12 @@ def test_model_action_ignores_extraction_version_with_the_same_number(
     action,
     before,
 ):
-    segmentation = ModelVersion.objects.create(module="seg", name="segmentation", version="2.0", status=before)
-    extraction = ModelVersion.objects.create(module="ext", name="extraction", version="2.0", status=before)
+    segmentation = ModelVersion.objects.create(
+        module="seg", name="segmentation", version="2.0", status=before
+    )
+    extraction = ModelVersion.objects.create(
+        module="ext", name="extraction", version="2.0", status=before
+    )
 
     response = authenticated_client.post(reverse(action, kwargs={"version": "2.0"}))
 
@@ -196,9 +160,7 @@ def test_model_action_returns_404_for_a_version_only_extraction_has(authenticate
         version="ext-only",
     )
 
-    response = authenticated_client.post(
-        reverse("promote-model", kwargs={"version": "ext-only"})
-    )
+    response = authenticated_client.post(reverse("promote-model", kwargs={"version": "ext-only"}))
 
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -207,9 +169,7 @@ def test_model_action_returns_404_for_a_version_only_extraction_has(authenticate
 @pytest.mark.parametrize("action", ["promote-model", "reject-model", "rollback-model"])
 @pytest.mark.parametrize("role", ["researcher", "radiologist"])
 def test_only_admin_decides_about_a_model(client_as, candidate_model, action, role):
-    response = client_as(role).post(
-        reverse(action, kwargs={"version": candidate_model.version})
-    )
+    response = client_as(role).post(reverse(action, kwargs={"version": candidate_model.version}))
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -267,7 +227,9 @@ ALLOWED = {
     "reject-model": {"new", "candidate"},
     "rollback-model": {"archived"},
 }
-REFUSED = [(action, state) for action, allowed in ALLOWED.items() for state in sorted(ALL - allowed)]
+REFUSED = [
+    (action, state) for action, allowed in ALLOWED.items() for state in sorted(ALL - allowed)
+]
 
 
 @pytest.mark.django_db
@@ -277,7 +239,9 @@ def test_model_action_is_refused_in_a_status_it_does_not_apply_to(
     action,
     state,
 ):
-    model = ModelVersion.objects.create(module="seg", name="segmentation", version="1", status=state)
+    model = ModelVersion.objects.create(
+        module="seg", name="segmentation", version="1", status=state
+    )
 
     response = authenticated_client.post(reverse(action, kwargs={"version": "1"}))
 
@@ -309,7 +273,9 @@ def test_version_in_use_cannot_be_rejected_and_keeps_its_period(authenticated_cl
 @pytest.mark.parametrize("state", ["new", "candidate"])
 def test_draft_and_proposal_can_be_promoted_and_rejected(authenticated_client, state):
     for version, action in (("a", "promote-model"), ("b", "reject-model")):
-        ModelVersion.objects.create(module="seg", name="segmentation", version=version, status=state)
+        ModelVersion.objects.create(
+            module="seg", name="segmentation", version=version, status=state
+        )
 
         response = authenticated_client.post(reverse(action, kwargs={"version": version}))
 

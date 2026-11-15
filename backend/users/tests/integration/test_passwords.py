@@ -2,7 +2,6 @@
 
 import pytest
 from django.urls import reverse
-
 from users.views import generate_temporary_password
 
 
@@ -93,11 +92,7 @@ def test_generate_temporary_password_has_default_length():
 def test_generate_temporary_password_uses_only_allowed_characters():
     password = generate_temporary_password()
 
-    allowed_characters = (
-        "abcdefghjkmnpqrstuvwxyz"
-        "ABCDEFGHJKLMNPQRSTUVWXYZ"
-        "23456789"
-    )
+    allowed_characters = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
     assert all(character in allowed_characters for character in password)
 
@@ -116,9 +111,6 @@ def test_generate_temporary_password_returns_string():
 
 
 def test_generate_temporary_password_generates_different_values():
-    passwords = {
-        generate_temporary_password()
-        for _ in range(30)
-    }
+    passwords = {generate_temporary_password() for _ in range(30)}
 
     assert len(passwords) > 1
