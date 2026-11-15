@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { errorText } from "../api";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { promote, propose, reject, rollback, startTraining, stopTraining, withdraw } from "./api";
 
 type Change = { version: string; reason?: string | null };
@@ -10,7 +11,7 @@ type Change = { version: string; reason?: string | null };
 export function useModelActions() {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["models"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.models });
   const onError = (error: unknown) => toast(t("models.action.failed", { why: errorText(error) }));
   return {
     promote: useMutation({

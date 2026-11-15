@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Panel from "../components/layout/Panel";
 import { formatDate, toIsoDate } from "../format";
 import { plural, t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { fetchAudit, GROUP_OF, TARGET_OF, type AuditEntry, type AuditGroup } from "./audit";
 
 const GROUPS: AuditGroup[] = ["review", "models", "accounts", "logins"];
@@ -43,7 +44,7 @@ function exportCsv(rows: AuditEntry[]) {
 
 // who changed what and when (Q5); entries can't be edited or removed from here
 export default function AuditLog() {
-  const { data = [] } = useQuery({ queryKey: ["audit"], queryFn: fetchAudit });
+  const { data = [] } = useQuery({ queryKey: queryKeys.audit, queryFn: fetchAudit });
   const [person, setPerson] = useState("");
   const [group, setGroup] = useState<AuditGroup | "">("");
   const [object, setObject] = useState("");

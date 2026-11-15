@@ -8,6 +8,7 @@ import { setFirstPassword, signIn, AuthError, type User } from "../auth/api";
 import { useAuth } from "../auth/AuthProvider";
 import "../auth/login.css";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 
 const MIN_PASSWORD = 12;
 
@@ -159,7 +160,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [firstLogin, setFirstLogin] = useState<string | null>(null);
-  const { data: pacs = "unknown" } = useQuery({ queryKey: ["pacs-status"], queryFn: fetchPacsStatus });
+  const { data: pacs = "unknown" } = useQuery({ queryKey: queryKeys.pacsStatus, queryFn: fetchPacsStatus });
 
   const state = location.state as { from?: string; expired?: boolean } | null;
   const from = state?.from ?? "/pulpit";

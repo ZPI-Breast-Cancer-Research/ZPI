@@ -5,6 +5,7 @@ import { errorText } from "../api";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { attachReport, type StudyRow, type UnassignedReport } from "./api";
 import DropZone from "./DropZone";
 import { FileTag } from "./ImportReview";
@@ -34,7 +35,7 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
     mutationFn: () => attachReport(study.id, file ?? existing!),
     onSuccess: () => {
       toast(t("studies.attach.done"));
-      queryClient.invalidateQueries({ queryKey: ["studies"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.studies });
       onClose();
     },
     onError: (error) => toast(t("studies.attach.failed", { why: errorText(error) })),

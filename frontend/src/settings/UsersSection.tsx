@@ -8,6 +8,7 @@ import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { formatDate } from "../format";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { createUser, fetchUsers, resetPassword, setBlocked, updateUser, type UserDraft, type UserRow, type UserState } from "./api";
 
 const ROLES: Role[] = ["radiologist", "researcher", "admin"];
@@ -66,8 +67,8 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
   const wrong = problems(draft);
   const set = (change: Partial<UserDraft>) => setDraft({ ...draft, ...change });
   const refresh = () => {
-    client.invalidateQueries({ queryKey: ["users"] });
-    client.invalidateQueries({ queryKey: ["audit"] });
+    client.invalidateQueries({ queryKey: queryKeys.users });
+    client.invalidateQueries({ queryKey: queryKeys.audit });
   };
   // the only admin keeps the role, or nobody could manage accounts
   const roleLocked = self && lastAdmin;
@@ -192,7 +193,7 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
 // accounts are blocked, never deleted: their history stays in the audit log
 export default function UsersSection() {
   const me = useAuth().user?.login;
-  const { data } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
+  const { data } = useQuery({ queryKey: queryKeys.users, queryFn: fetchUsers });
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [issued, setIssued] = useState<{ login: string; password: string } | null>(null);
   const admins = data?.filter((user) => user.role === "admin" && user.state !== "blocked").length ?? 0;

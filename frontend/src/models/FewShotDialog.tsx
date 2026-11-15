@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { lesionGroup, observationGroups, rowLines, visibleRows } from "../review/rows";
 import ReportText from "../review/ReportText";
 import { fetchFewShot, type FewShotExample } from "./extraction";
@@ -49,7 +50,7 @@ function Answer({ example, json }: { example: FewShotExample; json: boolean }) {
 
 export default function FewShotDialog({ version, onClose }: { version: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const examples = useQuery({ queryKey: ["models", "few-shot", version], queryFn: () => fetchFewShot(version) });
+  const examples = useQuery({ queryKey: queryKeys.fewShot(version), queryFn: () => fetchFewShot(version) });
   const [picked, setPicked] = useState(0);
   const [json, setJson] = useState(false);
   const example = examples.data?.[picked];

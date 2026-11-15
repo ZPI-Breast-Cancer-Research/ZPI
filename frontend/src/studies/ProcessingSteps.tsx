@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import Panel from "../components/layout/Panel";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { getProcessingSteps, type StepState, type StudyRow } from "./api";
 
 const STATE_CLASS: Record<StepState, string> = {
@@ -21,7 +22,7 @@ interface Props {
 
 export default function ProcessingSteps({ study, onDelete, deleting = false }: Props) {
   const { data } = useQuery({
-    queryKey: ["processing-steps", study?.id],
+    queryKey: queryKeys.processingSteps(study?.id),
     queryFn: () => getProcessingSteps(study!),
     enabled: study !== null,
   });

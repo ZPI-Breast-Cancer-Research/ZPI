@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { errorText } from "../api";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import type { GateCheck } from "./api";
 import GateList from "./GateList";
 
@@ -21,7 +22,7 @@ interface Props {
 export default function ChangeDialog({ title, proposing, submitLabel, gate, pending, error, onSubmit, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
-  const checks = useQuery({ queryKey: ["models", "gate", ...gate.key], queryFn: gate.load });
+  const checks = useQuery({ queryKey: queryKeys.gate(gate.key), queryFn: gate.load });
 
   useEffect(() => {
     dialog.current?.showModal();

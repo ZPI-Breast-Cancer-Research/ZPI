@@ -12,9 +12,10 @@ import VerifiedChart from "../dashboard/VerifiedChart";
 import { fetchDashboard } from "../dashboard/api";
 import "../dashboard/dashboard.css";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 
 export default function DashboardPage() {
-  const { data, error, isPending, refetch } = useQuery({ queryKey: ["dashboard"], queryFn: fetchDashboard });
+  const { data, error, isPending, refetch } = useQuery({ queryKey: queryKeys.dashboard, queryFn: fetchDashboard });
   const can = useCan();
   const reviews = can("review");
 

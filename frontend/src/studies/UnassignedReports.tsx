@@ -6,6 +6,7 @@ import { useToast } from "../components/Toast";
 import { useAuth, useCan } from "../auth/AuthProvider";
 import { formatDate } from "../format";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { attachReport, deleteReport, processReport, type StudyRow, type UnassignedReport } from "./api";
 import ReportCard from "./ReportCard";
 
@@ -38,8 +39,8 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     onSuccess: () => {
       toast(t("studies.attach.done"));
       setOpenId(null);
-      queryClient.invalidateQueries({ queryKey: ["studies"] });
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.studies });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
     },
     onError: (error) => toast(t("studies.attach.failed", { why: errorText(error) })),
   });
@@ -49,7 +50,7 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     onSuccess: (_, report) => {
       toast(t("studies.unassigned.delete.done", { name: report.fileName }));
       setOpenId(null);
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
     },
     onError: (error: Error) => toast(error.message || t("api.unknown")),
   });
@@ -57,7 +58,7 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     mutationFn: (report: UnassignedReport) => processReport(report.id),
     onSuccess: () => {
       toast(t("studies.unassigned.process.done"));
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
     },
     onError: (error: Error) => toast(error.message || t("api.unknown")),
   });
