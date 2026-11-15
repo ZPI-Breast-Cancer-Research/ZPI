@@ -340,15 +340,32 @@ infra/orthanc/load-test-study.sh Breast_MRI_002   # another patient
 
 Duke has no subtraction series and no report, so those parts can't be tried on it.
 
-### Tests
+### Tests and checks
+
+Every pull request runs CI (`.github/workflows/ci.yml`): ruff, backend and extraction worker tests
+against Postgres, and the frontend lint and build. A PR can be merged only when the `ci-ok` check passes.
+To run the same checks locally before opening a PR:
 
 ```bash
-docker compose run --rm backend python manage.py test
+uv run ruff check . && uv run ruff format --check .   # lint; `ruff format .` fixes the formatting
+docker compose up -d postgres
+docker compose run --rm backend pytest                 # backend
+uv run pytest workers/extraction -p no:django         # extraction worker (CI also runs its DB tests)
+cd frontend && npm run lint && npm run build           # frontend
 ```
+
+Segmentation and training worker tests need torch/nnU-Net and are not run in CI.
 
 ## Git workflow
 
 `master` is protected: all changes go through a pull request with at least 1 approval. No direct pushes, no force pushes.
+A PR can be merged only when:
+
+- the `ci-ok` check passes (see [Tests and checks](#tests-and-checks)),
+- the branch is up to date with `master` (merge or rebase `master` into it if GitHub says it is behind),
+- all review conversations are resolved.
+
+A new push dismisses earlier approvals, so the reviewer approves the final version.
 
 One branch per task, created from an up-to-date `master` and deleted after merge. Branch names follow `<area>/<short-description>`:
 
