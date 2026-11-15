@@ -100,7 +100,7 @@ let entries: AuditEntry[] = (
   ] as const
 ).map(([days, time, who, kind, object, detail], i) => ({ id: `e${i}`, at: ago(days, time), ...who, kind, object, detail }));
 
-// TODO: the backend writes the log and knows who did it from the session; here the browser fakes both
+// mock log only, the real one is written by the backend
 export function record(kind: AuditKind, object: string, detail: string | null = null) {
   let who = { login: "?", name: "?" };
   try {

@@ -78,7 +78,6 @@ export async function createUser(draft: UserDraft): Promise<{ password: string }
     return mockDelay({ password: temporaryPassword() }, 300);
   }
   const { data } = await request(api.post<{ password: string }>("/api/users/", draft));
-  record("account_created", draft.login, `${t("settings.role").toLowerCase()}: ${t(`role.${draft.role}`)}`);
   return data;
 }
 

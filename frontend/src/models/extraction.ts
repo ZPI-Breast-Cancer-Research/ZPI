@@ -416,7 +416,6 @@ export async function proposeExtraction(part: ExtractionPart, name: string, reas
     return mockDelay(name, 400);
   }
   await request(api.post("/api/models/extraction/proposals/", { part, name, reason }));
-  record("model_proposed", name, reason);
   return name;
 }
 
@@ -427,10 +426,10 @@ export async function withdrawExtraction(part: ExtractionPart, name: string): Pr
       if (v) Object.assign(v, v.periods.length ? { status: "retired" } : { status: "new", proposedBy: null, reason: null });
       state.proposal = null;
     });
+    record("proposal_withdrawn", name);
   } else {
     await request(api.post(path(part, name, "withdraw")));
   }
-  record("proposal_withdrawn", name);
   return name;
 }
 
@@ -438,10 +437,10 @@ export async function withdrawExtraction(part: ExtractionPart, name: string): Pr
 export async function applyExtraction(part: ExtractionPart, name: string, reason: string | null = null): Promise<string> {
   if (MOCK_API) {
     updateMock((state) => putInUse(state, part, name, reason));
+    record("model_promoted", name, reason);
   } else {
     await request(api.post(path(part, name, "promote"), { reason }));
   }
-  record("model_promoted", name, reason);
   return name;
 }
 
@@ -453,9 +452,9 @@ export async function rejectExtraction(part: ExtractionPart, name: string, reaso
       if (v) Object.assign(v, { status: v.periods.length ? "retired" : "rejected", decidedBy: { login, name: who }, reason });
       state.proposal = null;
     });
+    record("model_rejected", name, reason);
   } else {
     await request(api.post(path(part, name, "reject"), { reason }));
   }
-  record("model_rejected", name, reason);
   return name;
 }

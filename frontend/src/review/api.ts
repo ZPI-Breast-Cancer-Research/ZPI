@@ -121,8 +121,6 @@ export async function approveCase(studyId: string, payload: ApprovalPayload): Pr
     return mockDelay(undefined, 400);
   }
   await request(api.post(`/api/review/cases/${studyId}/approve/`, payload));
-  record("mask_approved", `#${studyId}`);
-  record("form_approved", `#${studyId}`);
 }
 
 // the mask on its own; the case stays in the queue for its form
@@ -133,7 +131,6 @@ export async function approveMask(studyId: string, payload: Pick<ApprovalPayload
     return mockDelay(undefined, 300);
   }
   await request(api.post(`/api/review/cases/${studyId}/approve-mask/`, payload));
-  record("mask_approved", `#${studyId}`);
 }
 
 // back in the queue when its mask approval is taken back
@@ -152,7 +149,6 @@ export async function unapproveMask(studyId: string): Promise<void> {
     return mockDelay(undefined, 200);
   }
   await request(api.post(`/api/review/cases/${studyId}/unapprove-mask/`));
-  record("mask_unapproved", `#${studyId}`);
 }
 
 // called when every field is confirmed or corrected; the form needs no button of its own
@@ -163,7 +159,6 @@ export async function approveForm(studyId: string, payload: FormPayload): Promis
     return mockDelay(undefined, 200);
   }
   await request(api.post(`/api/review/cases/${studyId}/approve-form/`, payload));
-  record("form_approved", `#${studyId}`);
 }
 
 export async function unapproveForm(studyId: string): Promise<void> {
@@ -173,5 +168,4 @@ export async function unapproveForm(studyId: string): Promise<void> {
     return mockDelay(undefined, 200);
   }
   await request(api.post(`/api/review/cases/${studyId}/unapprove-form/`));
-  record("form_unapproved", `#${studyId}`);
 }

@@ -370,7 +370,6 @@ export async function promote(version: string, reason: string | null = null): Pr
     return mockDelay(version, 400);
   }
   const { data } = await request(api.post<string>(`/api/models/${version}/promote/`, { reason }));
-  record("model_promoted", version, reason);
   return data;
 }
 
@@ -387,7 +386,6 @@ export async function reject(version: string, reason: string): Promise<string> {
     return mockDelay(version, 400);
   }
   const { data } = await request(api.post<string>(`/api/models/${version}/reject/`, { reason }));
-  record("model_rejected", version, reason);
   return data;
 }
 
@@ -398,7 +396,6 @@ export async function rollback(version: string, reason: string | null = null): P
     return mockDelay(version, 400);
   }
   const { data } = await request(api.post<string>(`/api/models/${version}/rollback/`, { reason }));
-  record("model_rolled_back", version, reason);
   return data;
 }
 
@@ -426,7 +423,6 @@ export async function propose(version: string, reason: string, restore: boolean)
     return mockDelay(version, 400);
   }
   const { data } = await request(api.post<string>("/api/models/segmentation/proposals/", { version, reason, restore }));
-  record("model_proposed", version, reason);
   return data;
 }
 
@@ -441,7 +437,6 @@ export async function withdraw(version: string): Promise<string> {
     return mockDelay(version, 400);
   }
   const { data } = await request(api.post<string>(`/api/models/${version}/withdraw/`));
-  record("proposal_withdrawn", version);
   return data;
 }
 
@@ -451,7 +446,6 @@ export async function startTraining(): Promise<void> {
     return mockDelay(undefined, 400);
   }
   await request(api.post("/api/models/training/start/"));
-  record("training_started", "");
 }
 export async function stopTraining(): Promise<void> {
   if (MOCK_API) {
@@ -463,5 +457,4 @@ export async function stopTraining(): Promise<void> {
     return mockDelay(undefined, 400);
   }
   await request(api.post("/api/models/training/stop/"));
-  record("training_stopped", "");
 }
