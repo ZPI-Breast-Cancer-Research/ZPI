@@ -15,6 +15,7 @@ const IMAGE: Record<string, ImageStatus> = {
   APPROVED: "verified_unchanged",
   CORRECTED: "verified_corrected",
   REJECTED: "error",
+  FAILED: "error",
 };
 const REPORT: Record<string, ReportStatus> = {
   PENDING: "extracting",
@@ -39,6 +40,11 @@ describe("listStudies", () => {
     expect(rows.map((row) => [row.image, row.report])).toEqual(studies.map((study) => [IMAGE[study.segmentation_status], REPORT[study.extraction_status]]));
   });
 
+  it("shows a failed segmentation as an error", async () => {
+    server.use(http.get("/api/studies", () => HttpResponse.json([{ ...studies[0], segmentation_status: "FAILED" }])));
+    expect(await listStudies()).toMatchObject([{ image: "error" }]);
+  });
+
   it("turns the DICOM date into ISO and keeps what the backend doesn't send empty", async () => {
     server.use(http.get("/api/studies", () => HttpResponse.json([{ ...studies[0], study_date: "20260926" }, { ...studies[1], study_date: "", patient_id: null }])));
     const [first, second] = await listStudies();
@@ -60,19 +66,17 @@ describe("listStudies", () => {
 });
 
 describe("listUnassignedReports", () => {
-  it("reads the reports waiting for a study, before the worker has read them", async () => {
+  it("reads the reports waiting for a study and how far reading them got", async () => {
     server.use(http.get("/api/reports/unassigned/", () => HttpResponse.json(unassigned)));
-    expect(await listUnassignedReports()).toEqual(
-      unassigned.map((report) => ({
-        id: report.id,
-        fileName: report.fileName,
-        kind: report.kind,
-        addedAt: report.addedAt,
-        originalUrl: null,
-        report: null,
-        status: report.status,
-        error: report.error,
-      })),
-    );
+    const [reading, read] = unassigned;
+    expect(await listUnassignedReports()).toEqual([
+      { id: reading.id, fileName: reading.fileName, kind: reading.kind, addedAt: reading.addedAt, originalUrl: null, report: null, reading: "reading", error: null },
+      { id: read.id, fileName: read.fileName, kind: read.kind, addedAt: read.addedAt, originalUrl: null, report: null, reading: "read", error: null },
+    ]);
+  });
+
+  it("keeps why reading a report failed", async () => {
+    server.use(http.get("/api/reports/unassigned/", () => HttpResponse.json([{ ...unassigned[0], status: "FAILED", error: "OCR: no text found" }])));
+    expect(await listUnassignedReports()).toMatchObject([{ reading: "failed", error: "OCR: no text found" }]);
   });
 });

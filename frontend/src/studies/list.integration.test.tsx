@@ -48,4 +48,14 @@ describe("StudiesPage", () => {
     expect(await screen.findByText(t("studies.error.orthancUnavailable"))).toBeInTheDocument();
     expect(screen.getByRole("button", { name: t("state.retry") })).toBeInTheDocument();
   });
+
+  it("says how far reading each report without a study got", async () => {
+    server.use(
+      http.get("/api/studies", () => HttpResponse.json(studies)),
+      http.get("/api/reports/unassigned/", () => HttpResponse.json([unassigned[0], { ...unassigned[1], status: "FAILED", error: "OCR: no text found" }])),
+    );
+    renderScreen(<StudiesPage />, { route: "/badania?dzis=0", user: radiologist });
+    expect(await screen.findByText(new RegExp(t("studies.card.reading")))).toBeInTheDocument();
+    expect(screen.getByText(t("studies.card.failed"))).toBeInTheDocument();
+  });
 });

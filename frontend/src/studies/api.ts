@@ -56,11 +56,12 @@ export interface UnassignedReport {
   originalUrl: string | null;
   // null until the extraction worker has read it
   report: CaseReport | null;
-  // backend status: UPLOADED (nothing ordered yet), PENDING, PROCESSING, COMPLETED, FAILED…
-  status: string;
-  // why the processing failed
-  error: string;
+  reading: ReadingState | null;
+  // why reading failed, never the report's text
+  error: string | null;
 }
+
+export type ReadingState = "uploaded" | "reading" | "read" | "failed";
 
 export type StepState = "done" | "running" | "waiting" | "waiting_report" | "error";
 
@@ -125,6 +126,15 @@ const IMAGE_FROM_BACKEND: Record<string, ImageStatus> = {
   queued: "queued",
 };
 
+const READING_FROM_BACKEND: Record<string, ReadingState> = {
+  UPLOADED: "uploaded",
+  PENDING: "reading",
+  PROCESSING: "reading",
+  COMPLETED: "read",
+  REJECTED: "read",
+  FAILED: "failed",
+};
+
 const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   PENDING: "extracting",
   PROCESSING: "extracting",
@@ -160,14 +170,14 @@ export async function listStudies(): Promise<StudyRow[]> {
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
   if (MOCK_API) {
     return mockDelay([
-      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", originalUrl: null, report: null, status: "UPLOADED", error: "" },
-      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null, status: "FAILED", error: "OCR" },
+      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", originalUrl: null, report: null, reading: "reading", error: null },
+      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null, reading: "failed", error: "OCR: no text found" },
     ]);
   }
   const { data } = await request(
-    api.get<{ id: string; fileName: string; kind: UnassignedReport["kind"]; addedAt: string | null; originalUrl?: string | null; report?: unknown; status?: string; error?: string }[]>(
-      "/api/reports/unassigned/",
-    ),
+    api.get<
+      { id: string; fileName: string; kind: UnassignedReport["kind"]; addedAt: string | null; status?: string; error?: string; originalUrl?: string | null; report?: unknown }[]
+    >("/api/reports/unassigned/"),
   );
   return data.map((report) => ({
     id: report.id,
@@ -176,8 +186,8 @@ export async function listUnassignedReports(): Promise<UnassignedReport[]> {
     addedAt: report.addedAt ?? "",
     originalUrl: report.originalUrl ?? null,
     report: isCaseReport(report.report) ? report.report : null,
-    status: report.status ?? "",
-    error: report.error ?? "",
+    reading: READING_FROM_BACKEND[report.status ?? ""] ?? null,
+    error: report.error || null,
   }));
 }
 

@@ -26,8 +26,8 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
   const { user } = useAuth();
   // the first run is for anyone here; again: a researcher or an admin, a radiologist after a failure
   const processLabel = (report: UnassignedReport) => {
-    if (report.status === "UPLOADED") return t("studies.unassigned.process");
-    const again = report.status === "FAILED" || (["COMPLETED", "REJECTED"].includes(report.status) && (user?.role === "researcher" || user?.role === "admin"));
+    if (report.reading === "uploaded") return t("studies.unassigned.process");
+    const again = report.reading === "failed" || (report.reading === "read" && (user?.role === "researcher" || user?.role === "admin"));
     return again ? t("studies.unassigned.processAgain") : null;
   };
 
@@ -99,7 +99,6 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
                 {processLabel(report)}
               </button>
             )}
-            {report.status === "FAILED" && report.error && <p className="note">{report.error}</p>}
             {canDelete && (
               <button type="button" className="btn btn--small" disabled={remove.isPending} onClick={() => askDelete(report)}>
                 {t("studies.unassigned.delete")}

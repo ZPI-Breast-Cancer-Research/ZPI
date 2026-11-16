@@ -258,6 +258,10 @@
   font-size: var(--text-sm);
 }
 
+.report-card__failed {
+  color: var(--color-warning);
+}
+
 .report-card__open {
   flex: none;
   width: 30px;
