@@ -20,10 +20,15 @@ describe("fetchQueue", () => {
 });
 
 describe("fetchCase", () => {
-  it("waits for the report while the worker hasn't read it", async () => {
+  it("reads the report the backend sends", async () => {
     server.use(http.get(`/api/review/cases/${studyId}/`, () => HttpResponse.json(reviewCase)));
     const data = await fetchCase(studyId);
-    expect(data).toMatchObject({ studyNumber: reviewCase.studyNumber, report: null, reportPending: true, segmentation: null, maskApproved: null });
+    expect(data).toMatchObject({ studyNumber: reviewCase.studyNumber, report: reviewCase.report, reportPending: false });
+  });
+
+  it("waits for the report while the worker hasn't read it", async () => {
+    server.use(http.get(`/api/review/cases/${studyId}/`, () => HttpResponse.json({ ...reviewCase, report: "pending" })));
+    expect(await fetchCase(studyId)).toMatchObject({ report: null, reportPending: true });
   });
 
   it("keeps a report in the worker's shape", async () => {

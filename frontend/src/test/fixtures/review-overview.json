@@ -1,9 +1,9 @@
 {
   "studyId": "02796c9a-d5d200e5-162ebc43-3323cade-135f2ad3",
-  "studyNumber": "0007",
+  "studyNumber": "0028",
   "patientId": "DEMO-P0007",
   "age": null,
-  "studyDate": "2026-09-29",
+  "studyDate": "2026-10-05",
   "description": "MR piersi z kontrastem",
   "status": "verified",
   "studyUid": "2.25.281860263362268985033081360762037800928",
@@ -13,8 +13,8 @@
   },
   "mask": {
     "corrected": true,
-    "version": 3,
-    "date": "2026-10-11",
+    "version": 12,
+    "date": "2026-10-17",
     "by": "Anna Nowak"
   },
   "measurements": {
@@ -39,9 +39,9 @@
   ],
   "verification": {
     "by": "Anna Nowak",
-    "date": "2026-10-11",
+    "date": "2026-10-17",
     "editingSeconds": null,
-    "segmentationVersion": "3",
-    "extractionVersion": "8"
+    "segmentationVersion": "demo-seg-1.1.0",
+    "extractionVersion": "demo-ext-1.0.0"
   }
 }

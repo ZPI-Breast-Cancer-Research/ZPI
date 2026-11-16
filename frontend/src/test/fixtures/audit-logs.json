@@ -11,8 +11,8 @@
   {
     "id": "e6",
     "at": "2026-11-13T05:36:56",
-    "login": "demo.radiologist",
-    "name": "Anna Nowak",
+    "login": "?",
+    "name": "—",
     "kind": "form_approved",
     "object": "#0013",
     "detail": "Form updated"
@@ -20,8 +20,8 @@
   {
     "id": "e5",
     "at": "2026-11-13T05:36:19",
-    "login": "demo.radiologist",
-    "name": "Anna Nowak",
+    "login": "?",
+    "name": "—",
     "kind": "mask_approved",
     "object": "#0013",
     "detail": "no changes"
@@ -29,8 +29,8 @@
   {
     "id": "e4",
     "at": "2026-11-13T05:36:18",
-    "login": "demo.radiologist",
-    "name": "Anna Nowak",
+    "login": "?",
+    "name": "—",
     "kind": "form_approved",
     "object": "#0013",
     "detail": "Form approved"
@@ -38,8 +38,8 @@
   {
     "id": "e3",
     "at": "2026-11-13T05:36:11",
-    "login": "demo.radiologist",
-    "name": "Anna Nowak",
+    "login": "?",
+    "name": "—",
     "kind": "form_unapproved",
     "object": "#0013",
     "detail": null

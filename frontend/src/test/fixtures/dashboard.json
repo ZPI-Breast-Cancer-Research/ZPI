@@ -1,111 +1,103 @@
 {
-  "toReview": 9,
-  "processing": 5,
+  "toReview": 10,
+  "processing": 4,
   "verifiedToday": 0,
   "queue": [
     {
-      "studyId": "19",
-      "studyNumber": "0019",
+      "studyId": "34",
+      "studyNumber": "0034",
+      "patientId": "DEMO-P0013",
+      "studyDate": "2026-10-23",
+      "uncertainty": 0.52
+    },
+    {
+      "studyId": "40",
+      "studyNumber": "0040",
       "patientId": "DEMO-P0019",
-      "studyDate": "2026-11-04",
+      "studyDate": "2026-11-10",
       "uncertainty": 0.76
     },
     {
-      "studyId": "14",
-      "studyNumber": "0014",
+      "studyId": "35",
+      "studyNumber": "0035",
       "patientId": "DEMO-P0014",
-      "studyDate": "2026-10-10",
+      "studyDate": "2026-10-16",
       "uncertainty": 0.71
     },
     {
-      "studyId": "3",
-      "studyNumber": "0003",
+      "studyId": "24",
+      "studyNumber": "0024",
       "patientId": "DEMO-P0003",
-      "studyDate": "2026-10-27",
+      "studyDate": "2026-11-02",
       "uncertainty": 0.42
     },
     {
-      "studyId": "15",
-      "studyNumber": "0015",
+      "studyId": "36",
+      "studyNumber": "0036",
       "patientId": "DEMO-P0015",
-      "studyDate": "2026-10-03",
+      "studyDate": "2026-10-09",
       "uncertainty": 0.9
     },
     {
-      "studyId": "20",
-      "studyNumber": "0020",
+      "studyId": "41",
+      "studyNumber": "0041",
       "patientId": "DEMO-P0020",
-      "studyDate": "2026-10-28",
+      "studyDate": "2026-11-03",
       "uncertainty": 0.05
     },
     {
-      "studyId": "4",
-      "studyNumber": "0004",
+      "studyId": "25",
+      "studyNumber": "0025",
       "patientId": "DEMO-P0004",
-      "studyDate": "2026-10-20",
+      "studyDate": "2026-10-26",
       "uncertainty": 0.61
     },
     {
-      "studyId": "5",
-      "studyNumber": "0005",
+      "studyId": "26",
+      "studyNumber": "0026",
       "patientId": "DEMO-P0005",
-      "studyDate": "2026-10-13",
+      "studyDate": "2026-10-19",
       "uncertainty": 0.8
     },
     {
-      "studyId": "10",
-      "studyNumber": "0010",
+      "studyId": "31",
+      "studyNumber": "0031",
       "patientId": "DEMO-P0010",
-      "studyDate": "2026-11-07",
+      "studyDate": "2026-11-13",
       "uncertainty": 0.85
     },
     {
-      "studyId": "9",
-      "studyNumber": "0009",
+      "studyId": "30",
+      "studyNumber": "0030",
       "patientId": "DEMO-P0009",
-      "studyDate": "2026-09-15",
+      "studyDate": "2026-09-21",
       "uncertainty": 0.66
     }
   ],
   "attention": [],
   "inProgress": [
     {
-      "studyNumber": "0021",
+      "studyNumber": "0022",
       "stage": "extraction",
       "state": "queued"
     },
     {
-      "studyNumber": "0001",
+      "studyNumber": "0032",
       "stage": "extraction",
       "state": "queued"
     },
     {
-      "studyNumber": "0011",
-      "stage": "extraction",
-      "state": "queued"
-    },
-    {
-      "studyNumber": "0002",
+      "studyNumber": "0023",
       "stage": "segmentation",
       "state": "running"
     },
     {
-      "studyNumber": "0012",
+      "studyNumber": "0033",
       "stage": "segmentation",
       "state": "running"
     }
   ],
   "verifiedLastWeek": [
-    {
-      "date": "2026-11-08",
-      "unchanged": 0,
-      "corrected": 0
-    },
-    {
-      "date": "2026-11-09",
-      "unchanged": 0,
-      "corrected": 0
-    },
     {
       "date": "2026-11-10",
       "unchanged": 0,
@@ -123,11 +115,21 @@
     },
     {
       "date": "2026-11-13",
-      "unchanged": 1,
+      "unchanged": 0,
       "corrected": 0
     },
     {
       "date": "2026-11-14",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-15",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-16",
       "unchanged": 0,
       "corrected": 0
     }

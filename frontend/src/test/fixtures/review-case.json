@@ -1,16 +1,166 @@
 {
   "studyId": "26564f74-bb5d39af-dc72a279-17cda776-b2177883",
-  "studyNumber": "0015",
+  "studyNumber": "0036",
   "patientId": "DEMO-P0015",
   "age": null,
-  "studyDate": "2026-10-03",
+  "studyDate": "2026-10-09",
   "description": "MR piersi z kontrastem",
   "uncertainty": 0.9,
-  "segmentationVersion": "2",
-  "extractionVersion": "8",
+  "segmentationVersion": "demo-seg-1.0.0",
+  "extractionVersion": "demo-ext-1.0.0",
   "studyUid": "2.25.190623026198283903021199658259517825685",
   "mask": null,
-  "report": "pending",
+  "report": {
+    "originalUrl": "/api/review/cases/26564f74-bb5d39af-dc72a279-17cda776-b2177883/report-scan/",
+    "result": {
+      "data": {
+        "wezly": [
+          {
+            "cytat": "W dole pachowym widoczny pojedynczy węzeł chłonny o zachowanej wnęce tłuszczowej.",
+            "uwagi": "zachowana wnęka tłuszczowa, niepogrubiała kora",
+            "liczba": "pojedynczy",
+            "strona": "lewa",
+            "okolica": "dół pachowy",
+            "wymiary": {
+              "wartosci": [
+                8,
+                4
+              ],
+              "jednostka": "mm",
+              "kwalifikator": "dokładny"
+            },
+            "modalnosc": "usg",
+            "patologiczne": false
+          }
+        ],
+        "piersi": {
+          "lewa": {
+            "skora": {
+              "stan": "prawidłowa",
+              "naciek": false
+            },
+            "budowa": "gruczołowa",
+            "obrzek": false,
+            "zwapnienia": false,
+            "mikrozwapnienia": false,
+            "zmiany_ogniskowe": true
+          },
+          "prawa": {
+            "skora": {
+              "stan": "prawidłowa",
+              "naciek": false
+            },
+            "budowa": "tłuszczowa",
+            "obrzek": false,
+            "zwapnienia": true,
+            "mikrozwapnienia": false,
+            "zmiany_ogniskowe": false
+          }
+        },
+        "zmiany": [
+          {
+            "id": 1,
+            "birads": "2",
+            "strona": "lewa",
+            "obserwacje": [
+              {
+                "typ": "zmiana guzowata",
+                "brzeg": "mikropłatowaty",
+                "cytat": "W lokalizacji kwadrant dolny-zewnętrzny, na godzinie 5, widoczna zmiana guzowata o wymiarach 12 × 9 × 8 mm, kształcie nieregularny i brzegu mikropłatowaty.",
+                "godzina": "5",
+                "ksztalt": "nieregularny",
+                "wymiary": {
+                  "wartosci": [
+                    12,
+                    9,
+                    8
+                  ],
+                  "jednostka": "mm",
+                  "kwalifikator": "do"
+                },
+                "glebokosc": null,
+                "modalnosc": "mammografia",
+                "lokalizacje": [
+                  "kwadrant dolny-zewnętrzny"
+                ],
+                "jednorodnosc": null,
+                "naciek_skory": false,
+                "echogenicznosc": null,
+                "odleglosc_od_brodawki": {
+                  "wartosc": 4,
+                  "jednostka": "cm"
+                }
+              },
+              {
+                "typ": "ognisko hipoechogeniczne",
+                "brzeg": "mikropłatowaty",
+                "cytat": "W lokalizacji kwadrant dolny-zewnętrzny, na godzinie 5, widoczna ognisko hipoechogeniczne o wymiarach 15 × 11 × 9 mm, kształcie nieregularny i brzegu mikropłatowaty.",
+                "godzina": "5",
+                "ksztalt": "nieregularny",
+                "wymiary": {
+                  "wartosci": [
+                    15,
+                    11,
+                    9
+                  ],
+                  "jednostka": "mm",
+                  "kwalifikator": "do"
+                },
+                "glebokosc": {
+                  "wartosc": 11,
+                  "jednostka": "mm"
+                },
+                "modalnosc": "usg",
+                "lokalizacje": [
+                  "kwadrant dolny-zewnętrzny"
+                ],
+                "jednorodnosc": "jednorodna",
+                "naciek_skory": false,
+                "echogenicznosc": "złożona",
+                "odleglosc_od_brodawki": {
+                  "wartosc": 4,
+                  "jednostka": "cm"
+                }
+              }
+            ],
+            "polaczenie_obserwacji": {
+              "pewne": true,
+              "powod": "Obserwacje dotyczą tej samej strony, lokalizacji i położenia zegarowego; zmiana w USG koreluje ze zmianą opisaną w mammografii."
+            }
+          }
+        ],
+        "wniosek": {
+          "tekst": "Stwierdzono 1 zmian ogniskowych. Najwyższa kategoria BI-RADS 2.",
+          "birads": "2",
+          "zalecenie": "Kontrola obrazowa za 6 miesięcy."
+        },
+        "modalnosci": [
+          "mammografia",
+          "usg"
+        ]
+      },
+      "text": "W lokalizacji kwadrant dolny-zewnętrzny, na godzinie 5, widoczna zmiana guzowata o wymiarach 12 × 9 × 8 mm, kształcie nieregularny i brzegu mikropłatowaty.\nW lokalizacji kwadrant dolny-zewnętrzny, na godzinie 5, widoczna ognisko hipoechogeniczne o wymiarach 15 × 11 × 9 mm, kształcie nieregularny i brzegu mikropłatowaty.\nW dole pachowym widoczny pojedynczy węzeł chłonny o zachowanej wnęce tłuszczowej.\nStwierdzono 1 zmian ogniskowych. Najwyższa kategoria BI-RADS 2.",
+      "error": null,
+      "source": "opis_00015.txt",
+      "status": "ok",
+      "attempts": 1,
+      "warnings": [],
+      "created_at": "2026-11-16T22:42:51.789860+00:00",
+      "provenance": {
+        "llm_model": "demo",
+        "ocr_engine": null,
+        "llm_provider": "demo",
+        "page_rotations": [],
+        "prompt_version": "demo",
+        "schema_version": "3",
+        "ocr_engine_version": null,
+        "ocr_mean_confidence": null,
+        "orientation_detector": null
+      },
+      "llm_seconds": null,
+      "ocr_seconds": null
+    }
+  },
   "proposals": {
     "birads": {
       "value": "2"
