@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { errorText } from "../api";
 import { t } from "../i18n";
 import { queryKeys } from "../queryKeys";
 import { lesionGroup, observationGroups, rowLines, visibleRows } from "../review/rows";
@@ -70,7 +71,9 @@ export default function FewShotDialog({ version, onClose }: { version: string; o
       </div>
       {examples.isPending ? (
         <p className="models__pad models__empty">{t("models.loading")}</p>
-      ) : !examples.data?.length ? (
+      ) : examples.isError ? (
+        <p className="models__pad models__error">{t("models.examples.loadFailed", { why: errorText(examples.error) })}</p>
+      ) : !examples.data.length ? (
         <p className="models__pad models__empty">{t("models.examples.none")}</p>
       ) : (
         <div className="examples__cols">

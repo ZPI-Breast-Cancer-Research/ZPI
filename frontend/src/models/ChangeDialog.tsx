@@ -44,7 +44,13 @@ export default function ChangeDialog({ title, proposing, submitLabel, gate, pend
       >
         <div className="model-dialog__head">{title}</div>
         <div className="model-dialog__body">
-          {checks.isPending ? <p className="models__empty">{t("models.loading")}</p> : <GateList gate={checks.data ?? null} />}
+          {checks.isPending ? (
+            <p className="models__empty">{t("models.loading")}</p>
+          ) : checks.isError ? (
+            <p className="models__error">{t("models.gate.loadFailed", { why: errorText(checks.error) })}</p>
+          ) : (
+            <GateList gate={checks.data} />
+          )}
           <label className="models__label" htmlFor="change-reason">
             {t(proposing ? "models.dialog.reason" : "models.dialog.adminReason")}
           </label>
