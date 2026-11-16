@@ -777,6 +777,7 @@ export const pl = {
   "audit.filter.person": "Osoba",
   "audit.filter.group": "Rodzaj zdarzenia",
   "audit.filter.object": "Obiekt",
+  "audit.filter.objectPlaceholder": "#0012, v4, radiolog2",
   "audit.filter.from": "Od",
   "audit.filter.to": "Do",
   "audit.filter.all": "Wszystkie",

@@ -111,7 +111,7 @@ export default function AuditLog() {
         </label>
         <label className="field">
           <span>{t("audit.filter.object")}</span>
-          <input className="input" value={object} placeholder="#0012, v4, radiolog2" onChange={(e) => setObject(e.target.value)} />
+          <input className="input" value={object} placeholder={t("audit.filter.objectPlaceholder")} onChange={(e) => setObject(e.target.value)} />
         </label>
         <label className="field">
           <span>{t("audit.filter.from")}</span>
