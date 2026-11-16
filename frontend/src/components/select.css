@@ -31,8 +31,20 @@
   transform: rotate(45deg) translateY(-2px);
 }
 
-.field-select__button:hover {
+.field-select__button:hover:not(:disabled) {
   border-color: var(--color-ink-muted);
+}
+
+.field-select__button:disabled {
+  color: var(--color-ink-muted);
+  cursor: default;
+}
+
+/* next to inputs in a form, as tall as they are */
+.field-select--form .field-select__button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: var(--text-base);
 }
 
 .field-select__button:focus-visible,

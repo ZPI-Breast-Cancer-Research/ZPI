@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import Panel from "../components/layout/Panel";
+import Select from "../components/Select";
 import { formatDate, toIsoDate } from "../format";
 import { plural, t } from "../i18n";
 import { queryKeys } from "../queryKeys";
@@ -87,28 +88,36 @@ export default function AuditLog() {
       }
     >
       <div className="audit__filters">
-        <label className="field">
+        <div className="field">
           <span>{t("audit.filter.person")}</span>
-          <select className="select" value={person} onChange={(e) => setPerson(e.target.value)}>
-            <option value="">{t("audit.filter.all")}</option>
-            {people.map(([login, name]) => (
-              <option key={login} value={login}>
-                {name === "—" ? login : `${name} (${login})`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
+          <Select
+            id="audit-person"
+            className="field-select--form"
+            placeholder={t("audit.filter.all")}
+            ariaLabel={t("audit.filter.person")}
+            value={person}
+            options={["", ...people.map(([login]) => login)]}
+            label={(login) => {
+              if (!login) return t("audit.filter.all");
+              const name = people.find(([l]) => l === login)?.[1];
+              return !name || name === "—" ? login : `${name} (${login})`;
+            }}
+            onChange={setPerson}
+          />
+        </div>
+        <div className="field">
           <span>{t("audit.filter.group")}</span>
-          <select className="select" value={group} onChange={(e) => setGroup(e.target.value as AuditGroup | "")}>
-            <option value="">{t("audit.filter.all")}</option>
-            {GROUPS.map((name) => (
-              <option key={name} value={name}>
-                {t(`audit.group.${name}`)}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Select
+            id="audit-group"
+            className="field-select--form"
+            placeholder={t("audit.filter.all")}
+            ariaLabel={t("audit.filter.group")}
+            value={group}
+            options={["", ...GROUPS]}
+            label={(name) => (name ? t(`audit.group.${name as AuditGroup}`) : t("audit.filter.all"))}
+            onChange={(name) => setGroup(name as AuditGroup | "")}
+          />
+        </div>
         <label className="field">
           <span>{t("audit.filter.object")}</span>
           <input className="input" value={object} placeholder={t("audit.filter.objectPlaceholder")} onChange={(e) => setObject(e.target.value)} />

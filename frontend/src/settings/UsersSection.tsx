@@ -5,6 +5,7 @@ import { ApiError, errorText } from "../api";
 import type { Role } from "../auth/api";
 import { useAuth } from "../auth/AuthProvider";
 import Panel from "../components/layout/Panel";
+import Select from "../components/Select";
 import { useToast } from "../components/Toast";
 import { formatDate } from "../format";
 import { t } from "../i18n";
@@ -138,17 +139,20 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
           <span>{t("settings.email")}</span>
           <input className="input" type="email" value={draft.email} onChange={(e) => set({ email: e.target.value })} />
         </label>
-        <label className="field">
+        <div className="field">
           <span>{t("settings.role")}</span>
-          <select className="select" value={draft.role} disabled={roleLocked} onChange={(e) => set({ role: e.target.value as Role })}>
-            {ROLES.map((role) => (
-              <option key={role} value={role}>
-                {t(`role.${role}`)}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="user-role"
+            className="field-select--form"
+            ariaLabel={t("settings.role")}
+            value={draft.role}
+            options={ROLES}
+            label={(role) => t(`role.${role as Role}`)}
+            disabled={roleLocked}
+            onChange={(role) => set({ role: role as Role })}
+          />
           {roleLocked && <span className="field__help">{t("users.lastAdmin")}</span>}
-        </label>
+        </div>
         {draft.role === "radiologist" && (
           <label className={field(wrong.pwz)}>
             <span>{t("settings.pwz")}</span>

@@ -68,6 +68,21 @@ describe("adding a study", () => {
   });
 });
 
+describe("a report outside the study folders", () => {
+  it("is assigned to a study from the list", async () => {
+    backend();
+    renderScreen(<StudiesPage />, { route: "/badania", user: radiologist });
+    await screen.findByRole("table");
+    pickFolder([picked("badania/P0042/IM0001"), picked("badania/opis_luzem.txt")]);
+
+    await userEvent.click(await screen.findByRole("button", { name: t("studies.import.assignTo") }));
+    await userEvent.click(screen.getByRole("option", { name: "badania/P0042" }));
+
+    expect(screen.queryByRole("button", { name: t("studies.import.assignTo") })).not.toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /P0042/ })).toHaveTextContent("opis_luzem.txt");
+  });
+});
+
 describe("attaching a report", () => {
   it("pairs a study without a report with one already uploaded", async () => {
     const study = { ...studies[0], extraction_status: "missing" };

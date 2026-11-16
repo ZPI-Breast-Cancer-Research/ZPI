@@ -113,11 +113,6 @@
   margin-bottom: 4px;
 }
 
-.users__fields .select:disabled {
-  color: var(--color-ink-muted);
-  cursor: not-allowed;
-}
-
 .users__row {
   display: flex;
   align-items: center;

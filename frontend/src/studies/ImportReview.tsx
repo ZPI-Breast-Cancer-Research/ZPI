@@ -1,4 +1,5 @@
 import Panel from "../components/layout/Panel";
+import Select from "../components/Select";
 import { EmptyState } from "../components/State";
 import WarningIcon from "../components/WarningIcon";
 import { t } from "../i18n";
@@ -64,21 +65,15 @@ export function UnpairedReports({ reports, studies, onAssign }: UnpairedProps) {
             <WarningIcon />
             <FileTag file={report} />
             {free.length > 0 && (
-              <select
-                className="select pick__select"
-                aria-label={t("studies.import.assignTo")}
-                defaultValue=""
-                onChange={(event) => event.target.value && onAssign(report, event.target.value)}
-              >
-                <option value="" disabled>
-                  {t("studies.import.assignTo")}
-                </option>
-                {free.map((study) => (
-                  <option key={study.folder} value={study.folder}>
-                    {study.folder}
-                  </option>
-                ))}
-              </select>
+              <Select
+                id={`assign-${report.name}`}
+                className="pick__select"
+                ariaLabel={t("studies.import.assignTo")}
+                placeholder={t("studies.import.assignTo")}
+                value=""
+                options={free.map((study) => study.folder)}
+                onChange={(folder) => onAssign(report, folder)}
+              />
             )}
           </div>
         ))}
