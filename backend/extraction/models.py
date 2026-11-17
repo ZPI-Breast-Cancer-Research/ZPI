@@ -13,6 +13,11 @@ class StatusChoices(models.TextChoices):
     FAILED = "FAILED", "Błąd"
 
 
+class FailedStepChoices(models.TextChoices):
+    OCR = "ocr", "OCR"
+    LLM = "llm", "LLM"
+
+
 class SourceChoices(models.TextChoices):
     SCAN = "scan", "Skan"  # image, read by OCR
     TEXT = "text", "Tekst"  # text file, no OCR
@@ -54,12 +59,21 @@ class ExtractionResult(models.Model):
         blank=True,
         related_name="extractions",
     )
+    # the extraction version (module ext); empty for a manual form
     model = models.ForeignKey(
         "mlops.ModelVersion",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="extraction_results",
+    )
+    # the OCR version (module ocr); empty for text and manual reports
+    ocr_model = models.ForeignKey(
+        "mlops.ModelVersion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ocr_results",
     )
     # UPLOADED until someone orders the processing or the report is assigned to a study
     status = models.CharField(
@@ -89,27 +103,29 @@ class ExtractionResult(models.Model):
         help_text="The doctor's check of each field on screen, by its path in the report",
     )
 
-    # Written by the extraction worker (workers/extraction/tasks.py). generated_report, error,
-    # warnings and provenance hold no report text; result does (the OCR text and the quotes).
-    result = models.JSONField(
-        blank=True,
-        null=True,
-        help_text=(
-            "Full ExtractionResult of the worker (workers/extraction/schema.py): data, OCR text, "
-            "warnings, provenance; what the frontend shows as the report"
-        ),
+    # Written by the extraction worker (workers/extraction/tasks.py). Only ocr_text holds the
+    # report text; error and warnings never do.
+    failed_step = models.CharField(
+        max_length=3, choices=FailedStepChoices.choices, blank=True, default=""
     )
     error = models.TextField(
         blank=True, default="", help_text="Why the extraction failed (status FAILED)"
     )
+    # the OCR step
+    ocr_text = models.TextField(
+        blank=True, default="", help_text="The normalised report text that was sent to the LLM"
+    )
+    ocr_confidence = models.FloatField(blank=True, null=True)
+    ocr_seconds = models.FloatField(blank=True, null=True)
+    ocr_engine_version = models.CharField(max_length=50, blank=True, default="")
+    page_rotations = models.JSONField(default=list, blank=True)
+    # the LLM step
     warnings = models.JSONField(
         default=list, blank=True, help_text="Fields that do not follow from the report text"
     )
-    provenance = models.JSONField(
-        blank=True,
-        null=True,
-        help_text="LLM model, prompt, schema and OCR that produced the result",
-    )
+    llm_seconds = models.FloatField(blank=True, null=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    schema_version = models.CharField(max_length=10, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     # When the report was assigned to its study (at upload or later); picks the active report.
     assigned_at = models.DateTimeField(blank=True, null=True)
