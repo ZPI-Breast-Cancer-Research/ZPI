@@ -254,11 +254,10 @@ The Django user (`username`, `password`, `first_name`, `last_name`, `email`, `is
 
 | Target | Today |
 | :--- | :--- |
-| table `reports` | table `extraction_results` |
-| `reports.source`, status `UPLOADED`, `requested_by_id`, `failed_step` | missing |
-| OCR and LLM columns of `reports` (`ocr_*`, `page_rotations`, `llm_seconds`, `attempts`, `schema_version`) | inside the JSON columns `result` and `provenance` |
-| no `lesion_answers` | column exists, always empty |
-| `segmentation_results.study_id` unique; `FAILED`, `error`, `created_at`, `updated_at` | plain foreign key; missing |
-| table `module_version` with modules `seg`, `ocr`, `ext` | table `mlops_modelversion` with `seg`, `ext` |
-| proposal, configuration, `dataset`, `metrics`, `metrics_cases` columns | `dice`, `hd95`, `f1`, `decision` |
-| table `module_usage_period` | `activated_at`, `deactivated_at` |
+| `reports.failed_step` | missing |
+| OCR and LLM columns of `reports` (`ocr_model_id`, `ocr_*`, `page_rotations`, `llm_seconds`, `attempts`, `schema_version`) | inside the JSON columns `result` and `provenance` |
+| `module_version` configuration: `ocr_engine`, `ocr_settings`, `llm_model`, `prompt_version`, `structured_output`, `few_shot_examples` | missing; the worker reads them from files and environment variables |
+| `seg` keys of `metrics`: `dice`, `iou`, `dice_small`, `volume_error_pct` | the comment in `mlops/models.py` also lists `hd95` |
+| Uploading a report computes nothing (status `UPLOADED`) | the upload schedules the extraction right away |
+| `source = manual` reports | the value exists, nothing creates such a row yet |
+| A verified mask or report form is never replaced; a closed study accepts no new report or run | only deleting a verified study is refused |

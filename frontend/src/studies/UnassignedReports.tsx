@@ -2,9 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useToast } from "../components/Toast";
+import { useCan } from "../auth/AuthProvider";
 import { formatDate } from "../format";
 import { t } from "../i18n";
-import { attachReport, type StudyRow, type UnassignedReport } from "./api";
+import { attachReport, deleteReport, type StudyRow, type UnassignedReport } from "./api";
 import ReportCard from "./ReportCard";
 
 interface Props {
@@ -19,6 +20,7 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
   const toast = useToast();
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
+  const canDelete = useCan()("addStudies");
 
   const waiting = studies.filter((s) => s.report === "missing");
   const candidates = selected?.report === "missing" ? [selected, ...waiting.filter((s) => s.id !== selected.id)] : waiting;
@@ -32,6 +34,19 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
       queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
     },
   });
+
+  const remove = useMutation({
+    mutationFn: (report: UnassignedReport) => deleteReport(report.id),
+    onSuccess: (_, report) => {
+      toast(t("studies.unassigned.delete.done", { name: report.fileName }));
+      setOpenId(null);
+      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+    },
+    onError: (error: Error) => toast(error.message || t("api.unknown")),
+  });
+  const askDelete = (report: UnassignedReport) => {
+    if (window.confirm(t("studies.unassigned.delete.confirm", { name: report.fileName }))) remove.mutate(report);
+  };
 
   if (!reports.length) return <p className="note">{t("studies.unassigned.none")}</p>;
 
@@ -60,6 +75,11 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
               ))
             ) : (
               <p className="note">{t("studies.assign.noStudies")}</p>
+            )}
+            {canDelete && (
+              <button type="button" className="btn btn--small" disabled={remove.isPending} onClick={() => askDelete(report)}>
+                {t("studies.unassigned.delete")}
+              </button>
             )}
           </div>
         </ReportCard>

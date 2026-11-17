@@ -46,9 +46,10 @@ class ExtractionResult(models.Model):
     radiologist. One row per report; the table is ``reports``.
     """
 
+    # A report outlives its study: deleting the study leaves it unassigned (docs/database.md).
     study = models.ForeignKey(
         "patients.Study",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="extractions",

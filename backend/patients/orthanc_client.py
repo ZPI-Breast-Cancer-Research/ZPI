@@ -147,7 +147,30 @@ class OrthancClient:
 
         A study Orthanc no longer has is fine.
         """
-        url = f"{self.base_url}/studies/{orthanc_id}"
+        self._delete(f"/studies/{orthanc_id}")
+
+    def delete_series(self, series_instance_uid: str) -> None:
+        """Remove a series (e.g. an outdated DICOM SEG) by its SeriesInstanceUID.
+
+        A series Orthanc does not have is fine.
+        """
+        url = f"{self.base_url}/tools/lookup"
+        try:
+            response = requests.post(url, data=series_instance_uid, auth=self.auth, timeout=TIMEOUT)
+            if response.status_code == 401:
+                raise OrthancUnauthorized(f"Orthanc rejected credentials for {url} (HTTP 401)")
+            response.raise_for_status()
+            found = response.json()
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc lookup of a series failed: {exc}") from exc
+        except ValueError as exc:
+            raise OrthancUnavailable(f"Orthanc lookup returned invalid JSON: {exc}") from exc
+        for item in found:
+            if item.get("Type") == "Series":
+                self._delete(f"/series/{item['ID']}")
+
+    def _delete(self, path: str) -> None:
+        url = f"{self.base_url}{path}"
         try:
             response = requests.delete(url, auth=self.auth, timeout=TIMEOUT)
         except requests.RequestException as exc:

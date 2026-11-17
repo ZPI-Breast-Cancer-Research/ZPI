@@ -2,6 +2,7 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 from mlops.models import ModelVersion
+from patients.models import Study
 from rest_framework import status
 from segmentation.models import SegmentationResult, StatusChoices
 
@@ -129,7 +130,7 @@ def test_segmentation_overview_calculates_agreement(
     )
 
     SegmentationResult.objects.create(
-        study=study,
+        study=Study.objects.create(orthanc_path="agreement-second"),
         model=production_model,
         status=StatusChoices.CORRECTED,
     )

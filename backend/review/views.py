@@ -644,7 +644,9 @@ def review_overview(request, study_id):
     """Summary of a verified case; study_id is the Orthanc id, like in review_queue."""
     study = get_object_or_404(Study, orthanc_path=study_id)
 
-    segmentation = study.segmentations.select_related("accepted_by").order_by("-id").first()
+    segmentation = (
+        SegmentationResult.objects.select_related("accepted_by").filter(study=study).first()
+    )
     extraction = study.extractions.select_related("accepted_by").active()
 
     if segmentation is None or segmentation.status not in VERIFIED:

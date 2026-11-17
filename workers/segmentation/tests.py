@@ -148,6 +148,7 @@ class FakeOrthanc:
 
     def __init__(self):
         self.uploaded = []
+        self.deleted_series = []
 
     def download_study(self, orthanc_id, destination):
         from pydicom.uid import generate_uid
@@ -165,6 +166,9 @@ class FakeOrthanc:
             raise OrthancUnavailable("Orthanc upload response invalid: 400")
         self.uploaded.append(pydicom.dcmread(path))
         return {"Status": "Success"}
+
+    def delete_series(self, series_instance_uid):
+        self.deleted_series.append(series_instance_uid)
 
 
 class FakeModel:
@@ -208,6 +212,7 @@ def pipeline(monkeypatch):
     monkeypatch.setattr(
         tasks, "upload_file", lambda path, bucket, key: stored.update({key: path.read_bytes()})
     )
+    monkeypatch.setattr(tasks, "delete_object", lambda bucket, key: stored.pop(key, None))
     monkeypatch.setattr(tasks, "_model", lambda: FakeModel())
     return tasks, orthanc, stored
 
@@ -219,6 +224,12 @@ def study(db):
     return Study.objects.create(orthanc_path="orthanc-study-1")
 
 
+def _result(study):
+    from segmentation.models import SegmentationResult
+
+    return SegmentationResult.objects.get(study=study)
+
+
 def test_run_stores_the_model_mask_as_dicom_seg(pipeline, study):
     # Arrange
     tasks, orthanc, _ = pipeline
@@ -227,7 +238,7 @@ def test_run_stores_the_model_mask_as_dicom_seg(pipeline, study):
     tasks.run(str(study.id))
 
     # Assert
-    result = study.segmentations.get()
+    result = _result(study)
     assert result.status == "COMPLETED"
     [seg] = orthanc.uploaded
     assert seg.Modality == "SEG"
@@ -254,7 +265,7 @@ def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
     tasks.run(str(study.id))
 
     # Assert
-    result = study.segmentations.get()
+    result = _result(study)
     assert result.status == "COMPLETED"
     assert orthanc.uploaded == []
     assert result.model_seg_series_uid == result.model_seg_sop_uid == ""
@@ -262,7 +273,7 @@ def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
     assert result.measurements == {"volume_ml": 0.0, "dimensions_mm": None}
 
 
-def test_run_rejects_the_result_when_orthanc_refuses_the_seg(pipeline, study):
+def test_run_marks_the_result_failed_when_orthanc_refuses_the_seg(pipeline, study):
     # Arrange
     from patients.orthanc_client import OrthancUnavailable
 
@@ -274,10 +285,82 @@ def test_run_rejects_the_result_when_orthanc_refuses_the_seg(pipeline, study):
         tasks.run(str(study.id))
 
     # Assert
-    result = study.segmentations.get()
-    assert result.status == "REJECTED"
+    result = _result(study)
+    assert result.status == "FAILED"
+    assert "400" in result.error
     assert result.model_seg_series_uid == ""
     assert f"{study.id}/study_{study.id}.nii.gz" in stored
+
+
+def test_a_second_run_reuses_the_row_and_replaces_the_previous_seg(pipeline, study):
+    # Arrange
+    from segmentation.models import SegmentationResult
+
+    tasks, orthanc, _ = pipeline
+    tasks.run(str(study.id))
+    first = _result(study)
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    second = _result(study)
+    assert SegmentationResult.objects.filter(study=study).count() == 1
+    assert second.pk == first.pk
+    assert second.status == "COMPLETED"
+    assert orthanc.deleted_series == [first.model_seg_series_uid]
+    assert second.model_seg_series_uid == orthanc.uploaded[-1].SeriesInstanceUID
+
+
+@pytest.mark.parametrize("verified", ["APPROVED", "CORRECTED"])
+def test_a_verified_mask_is_never_replaced(pipeline, study, verified):
+    # Arrange
+    from segmentation.models import SegmentationResult
+
+    tasks, orthanc, stored = pipeline
+    SegmentationResult.objects.create(
+        study=study, status=verified, generated_path="1/mask.nii.gz", model_seg_series_uid="1.2"
+    )
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    result = _result(study)
+    assert (result.status, result.generated_path) == (verified, "1/mask.nii.gz")
+    assert orthanc.uploaded == orthanc.deleted_series == []
+    assert stored == {}
+
+
+def test_a_deleted_study_is_skipped(pipeline, study):
+    tasks, orthanc, stored = pipeline
+    study_id = study.id
+    study.delete()
+
+    tasks.run(str(study_id))
+
+    assert orthanc.uploaded == []
+    assert stored == {}
+
+
+def test_a_study_deleted_during_the_run_gets_nothing_stored(pipeline, study, monkeypatch):
+    # Arrange
+    tasks, orthanc, stored = pipeline
+    predict = FakeModel.predict
+
+    def predict_then_delete(self, *args):
+        prediction = predict(self, *args)
+        study.delete()
+        return prediction
+
+    monkeypatch.setattr(FakeModel, "predict", predict_then_delete)
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    assert orthanc.uploaded == []
+    assert stored == {}
 
 
 def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatch):
@@ -286,7 +369,7 @@ def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatc
 
     tasks, orthanc, stored = pipeline
     tasks.run(str(study.id))
-    result = study.segmentations.get()
+    result = _result(study)
     model_seg = orthanc.uploaded.pop()
     mask_bytes = stored[result.generated_path]
     monkeypatch.setattr(

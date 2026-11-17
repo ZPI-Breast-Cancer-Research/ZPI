@@ -6,6 +6,7 @@ import pytest
 from django.utils import timezone
 from mlops import views
 from mlops.models import ModelVersion
+from patients.models import Study
 from segmentation.models import SegmentationResult, StatusChoices
 
 
@@ -41,16 +42,19 @@ def test_corrected_share_returns_none_when_no_verified_results(study):
 
 
 @pytest.mark.django_db
-def test_corrected_share_calculates_correct_percentage(study):
-    SegmentationResult.objects.create(study=study, status=StatusChoices.APPROVED)
+def test_corrected_share_calculates_correct_percentage():
+    # one mask per study
+    statuses = [
+        StatusChoices.APPROVED,
+        StatusChoices.CORRECTED,
+        StatusChoices.CORRECTED,
+        StatusChoices.PENDING,
+    ]
+    for number, status in enumerate(statuses):
+        study = Study.objects.create(orthanc_path=f"share-{number}")
+        SegmentationResult.objects.create(study=study, status=status)
 
-    SegmentationResult.objects.create(study=study, status=StatusChoices.CORRECTED)
-
-    SegmentationResult.objects.create(study=study, status=StatusChoices.CORRECTED)
-
-    SegmentationResult.objects.create(study=study, status=StatusChoices.PENDING)
-
-    queryset = SegmentationResult.objects.filter(study=study)
+    queryset = SegmentationResult.objects.filter(study__orthanc_path__startswith="share-")
 
     assert views._corrected_share(queryset) == 0.67
 
