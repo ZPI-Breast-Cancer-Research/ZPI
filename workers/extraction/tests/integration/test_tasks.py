@@ -1,4 +1,5 @@
-"""The Celery task ``extraction.run`` with the backend database: statuses, saved result, model.
+"""The Celery task ``extraction.run`` with the backend database: statuses, the result in the
+report columns, the versions in use.
 
 MinIO and the LLM are replaced (``download_file`` writes a synthetic report, ``FakeLLM`` answers);
 the database is the real one from the Django test settings.
@@ -11,7 +12,7 @@ if not settings.configured:  # e.g. pytest -p no:django: the rest of the suite r
     pytest.skip("needs Django settings and a database", allow_module_level=True)
 
 from extraction.models import ExtractionResult as ExtractionRow  # noqa: E402
-from extraction.models import StatusChoices  # noqa: E402
+from extraction.models import SourceChoices, StatusChoices  # noqa: E402
 from mlops.models import ModelVersion  # noqa: E402
 
 from workers.extraction import tasks  # noqa: E402
@@ -46,7 +47,7 @@ def storage(monkeypatch):
 
 def use_llm(monkeypatch, *answers):
     llm = FakeLLM(answers)
-    monkeypatch.setattr(tasks, "_extractor", lambda: Extractor(llm))
+    monkeypatch.setattr(tasks, "_extractor", lambda ocr: Extractor(llm))
     return llm
 
 
@@ -76,12 +77,11 @@ def test_successful_extraction_is_saved_as_completed(monkeypatch, storage):
     assert row.generated_report == extraction().model_dump(mode="json")
     assert row.model == model
     assert row.warnings == []
-    assert row.provenance["llm_model"] == "fake-model"
-    assert row.error == ""
+    assert row.error == row.failed_step == ""
 
 
-def test_full_result_with_the_ocr_text_is_saved_for_the_frontend(monkeypatch, storage):
-    # Arrange: the frontend (review/extraction.ts) reads the whole ExtractionResult, text included
+def test_the_result_goes_to_the_columns_of_its_step(monkeypatch, storage):
+    # Arrange: review/views.py builds what the frontend reads from these columns
     use_llm(monkeypatch, answer_json())
     row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
@@ -90,10 +90,72 @@ def test_full_result_with_the_ocr_text_is_saved_for_the_frontend(monkeypatch, st
 
     # Assert
     row.refresh_from_db()
-    assert row.result == returned
-    assert row.result["status"] == "ok"
-    assert row.result["text"]
-    assert row.result["data"] == row.generated_report
+    assert row.ocr_text == returned["text"] != ""
+    assert row.generated_report == returned["data"]
+    assert row.attempts == returned["attempts"] == 1
+    assert row.llm_seconds == returned["llm_seconds"]
+    assert row.schema_version == returned["provenance"]["schema_version"]
+    # a text report: no OCR step
+    assert row.ocr_seconds is None
+    assert row.page_rotations == []
+
+
+def test_a_scan_points_at_the_ocr_version_in_use_and_a_text_does_not(monkeypatch, storage):
+    # Arrange: the first OCR version comes from the migration (mlops 0005)
+    use_llm(monkeypatch, answer_json(), answer_json())
+    ocr, _ = ModelVersion.objects.get_or_create(
+        module="ocr",
+        status=ModelVersion.StatusChoices.PRODUCTION,
+        defaults={"name": "ocr", "version": "1", "ocr_engine": "paddle"},
+    )
+    scan = ExtractionRow.objects.create(
+        report_path=KEY, source=SourceChoices.SCAN, status=StatusChoices.PENDING
+    )
+    text = ExtractionRow.objects.create(
+        report_path=KEY, source=SourceChoices.TEXT, status=StatusChoices.PENDING
+    )
+    seen = []
+    monkeypatch.setattr(
+        tasks,
+        "_extractor",
+        lambda version: seen.append(version) or Extractor(FakeLLM([answer_json()])),
+    )
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=scan.id)
+    tasks.run(keys=[KEY], extraction_id=text.id)
+
+    # Assert
+    scan.refresh_from_db()
+    text.refresh_from_db()
+    assert scan.ocr_model == ocr
+    assert text.ocr_model is None
+    assert seen == [ocr, ocr]  # the extractor is set up from the OCR version in use
+
+
+def test_the_extractor_reads_pages_the_way_the_ocr_version_says(monkeypatch):
+    # Arrange
+    created = {}
+
+    def from_settings(settings, *, ocr_options=None, log=None):
+        created.update(engine=settings.ocr_engine, lang=settings.ocr_lang, options=ocr_options)
+        return "extractor"
+
+    monkeypatch.setattr(tasks.Extractor, "from_settings", from_settings)
+    tasks._cached_extractor.cache_clear()
+    version = ModelVersion(
+        module="ocr",
+        ocr_engine="paddle",
+        ocr_settings={"lang": "en", "orientation": "none", "unwarp": True},
+    )
+
+    # Act
+    extractor = tasks._extractor(version)
+
+    # Assert
+    assert extractor == "extractor"
+    assert created == {"engine": "paddle", "lang": "en", "options": {"unwarp": True}}
+    tasks._cached_extractor.cache_clear()
 
 
 def test_generated_report_is_what_the_review_form_reads(monkeypatch, storage):
@@ -124,10 +186,9 @@ def test_llm_error_is_saved_as_failed_with_the_reason(monkeypatch, storage):
     assert row.status == StatusChoices.FAILED
     assert row.error == "LLM: Cannot connect to http://localhost:1234/v1"
     assert row.generated_report is None
-    # the frontend shows a failed extraction from the result, with the text OCR read
-    assert row.result["status"] == "error"
-    assert row.result["error"] == row.error
-    assert row.result["text"]
+    assert row.failed_step == "llm"
+    # the text OCR read stays, so the failure can be looked at
+    assert row.ocr_text
 
 
 def test_download_error_is_saved_as_failed(monkeypatch):
@@ -146,7 +207,8 @@ def test_download_error_is_saved_as_failed(monkeypatch):
     assert row.status == StatusChoices.FAILED
     assert row.error == "OSError: MinIO unreachable"
     assert returned["status"] == "error"
-    assert row.result is None
+    # failed before OCR: no step, no text
+    assert (row.failed_step, row.ocr_text) == ("", "")
 
 
 def test_retry_clears_the_previous_result(monkeypatch):
@@ -156,7 +218,11 @@ def test_retry_clears_the_previous_result(monkeypatch):
 
     monkeypatch.setattr(tasks, "download_file", download_file)
     row = ExtractionRow.objects.create(
-        report_path=KEY, status=StatusChoices.FAILED, result={"status": "error", "text": "old"}
+        report_path=KEY,
+        status=StatusChoices.FAILED,
+        failed_step="llm",
+        ocr_text="old",
+        attempts=2,
     )
 
     # Act
@@ -165,7 +231,7 @@ def test_retry_clears_the_previous_result(monkeypatch):
     # Assert
     row.refresh_from_db()
     assert row.status == StatusChoices.FAILED
-    assert row.result is None
+    assert (row.ocr_text, row.attempts, row.failed_step) == ("", 0, "")
 
 
 def test_without_production_model_extraction_runs_and_model_stays_empty(monkeypatch, storage):
@@ -265,7 +331,7 @@ def test_status_moves_to_processing_before_extraction(monkeypatch, storage):
             seen["status"] = ExtractionRow.objects.get(id=row.id).status
             return super().complete(messages, **kwargs)
 
-    monkeypatch.setattr(tasks, "_extractor", lambda: Extractor(Watching([answer_json()])))
+    monkeypatch.setattr(tasks, "_extractor", lambda ocr: Extractor(Watching([answer_json()])))
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -286,8 +352,7 @@ def test_uncertainty_is_saved_in_the_column_the_review_queue_sorts_by(monkeypatc
     # Assert
     row.refresh_from_db()
     assert 0 < row.uncertainty < 1
-    assert row.uncertainty == row.result["uncertainty"]
-    assert row.result["uncertainty_components"]["warnings"] > 0
+    assert row.warnings
 
 
 def test_correct_extraction_of_a_text_report_has_zero_uncertainty(monkeypatch, storage):
@@ -344,7 +409,7 @@ def test_retry_clears_the_previous_uncertainty_while_it_runs(monkeypatch, storag
             seen["uncertainty"] = ExtractionRow.objects.get(id=row.id).uncertainty
             return super().complete(messages, **kwargs)
 
-    monkeypatch.setattr(tasks, "_extractor", lambda: Extractor(Watching([answer_json()])))
+    monkeypatch.setattr(tasks, "_extractor", lambda ocr: Extractor(Watching([answer_json()])))
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
