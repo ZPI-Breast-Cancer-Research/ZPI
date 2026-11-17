@@ -149,7 +149,7 @@ export const pl = {
   "studies.action.details": "Szczegóły",
   "studies.action.attach": "Dołącz",
   "studies.action.delete": "Usuń badanie",
-  "studies.delete.confirm": "Usunąć badanie #{number}? Obrazy, maski i pliki opisu zostaną skasowane bez możliwości odzyskania.",
+  "studies.delete.confirm": "Usunąć badanie #{number}? Obrazy i maski zostaną skasowane bez możliwości odzyskania. Opisy zostaną w „Opisy bez badania”.",
   "studies.delete.done": "Usunięto badanie #{number}.",
 
   "studies.add": "Dodaj badania",
@@ -160,6 +160,9 @@ export const pl = {
   "studies.drop.hint": "Opis w tym samym folderze co seria zostanie dołączony do badania automatycznie.",
   "studies.unassigned": "Opisy bez badania",
   "studies.unassigned.assign": "Przypisz",
+  "studies.unassigned.delete": "Usuń opis",
+  "studies.unassigned.delete.confirm": "Usunąć opis {name}? Plik i wynik ekstrakcji zostaną skasowane bez możliwości odzyskania.",
+  "studies.unassigned.delete.done": "Usunięto opis {name}.",
   "studies.unassigned.none": "Wszystkie opisy są przypisane.",
 
   "studies.steps": "Przetwarzanie",

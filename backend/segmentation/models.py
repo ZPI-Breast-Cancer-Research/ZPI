@@ -8,11 +8,17 @@ class StatusChoices(models.TextChoices):
     APPROVED = "APPROVED", "Zatwierdzony"
     CORRECTED = "CORRECTED", "Poprawiony"
     REJECTED = "REJECTED", "Odrzucony"
+    FAILED = "FAILED", "Błąd"  # the worker could not segment the study, see ``error``
 
 
 class SegmentationResult(models.Model):
-    study = models.ForeignKey(
-        "patients.Study", on_delete=models.CASCADE, related_name="segmentations"
+    """The mask of a study; a study has at most one (docs/database.md).
+
+    A new run reuses the row and replaces a result that is not verified.
+    """
+
+    study = models.OneToOneField(
+        "patients.Study", on_delete=models.CASCADE, related_name="segmentation"
     )
     model = models.ForeignKey(
         "mlops.ModelVersion",
@@ -23,6 +29,7 @@ class SegmentationResult(models.Model):
     status = models.CharField(
         max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING
     )
+    error = models.TextField(blank=True, default="", help_text="Why the segmentation failed")
     uncertainty = models.FloatField(blank=True, null=True)
     generated_path = models.CharField(max_length=500, blank=True, null=True)
     accepted_path = models.CharField(max_length=500, blank=True, null=True)
@@ -45,6 +52,9 @@ class SegmentationResult(models.Model):
     approved_seg_sop_uid = models.CharField(max_length=64, blank=True, default="")
     # {"volume_ml": float, "dimensions_mm": [float, float, float] | None} of the model mask
     measurements = models.JSONField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # changes on every status change, so a run stuck in PROCESSING can be detected
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "segmentation_results"

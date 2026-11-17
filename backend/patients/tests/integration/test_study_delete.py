@@ -1,5 +1,6 @@
-"""Deleting a study removes it from Orthanc, storage and the database, and is refused for a
-verified one."""
+"""Deleting a study removes it from Orthanc, its masks and its rows, keeps its reports unassigned,
+and is refused for a verified study or one that is being processed. A report without a study can
+be deleted on its own."""
 
 from unittest import mock
 
@@ -7,6 +8,7 @@ import pytest
 from audit.models import AuditLog
 from common.errors import StorageError
 from django.urls import reverse
+from django.utils import timezone
 from extraction.models import ExtractionResult, StatusChoices
 from patients.models import Study
 from patients.orthanc_client import OrthancUnavailable
@@ -33,12 +35,10 @@ def storage():
 
 
 @pytest.mark.django_db
-def test_delete_removes_dicom_files_and_rows(
+def test_delete_removes_dicom_masks_and_the_study(
     authenticated_client, study, segmentation_result, orthanc, storage
 ):
     # Arrange
-    ExtractionResult.objects.create(study=study, report_path="reports/abc/opis.jpg")
-    ExtractionResult.objects.create(study=study)  # no file, nothing to delete
     study_id = study.id
 
     # Act
@@ -48,10 +48,51 @@ def test_delete_removes_dicom_files_and_rows(
     assert response.status_code == 204
     orthanc.delete_study.assert_called_once_with("orthanc-study-123")
     storage.prefix.assert_called_once_with("masks", f"{study_id}/")
-    storage.obj.assert_called_once_with("reports", "reports/abc/opis.jpg")
     assert not Study.objects.filter(pk=study_id).exists()
     assert not SegmentationResult.objects.filter(study_id=study_id).exists()
-    assert not ExtractionResult.objects.filter(study_id=study_id).exists()
+
+
+@pytest.mark.django_db
+def test_the_reports_stay_without_a_study_with_their_files_and_results(
+    authenticated_client, study, orthanc, storage
+):
+    # Arrange
+    report = ExtractionResult.objects.create(
+        study=study,
+        report_path="reports/abc/opis.jpg",
+        status=StatusChoices.COMPLETED,
+        generated_report={"badanie": {}},
+        assigned_at=timezone.now(),
+    )
+
+    # Act
+    response = _delete(authenticated_client, study)
+
+    # Assert
+    assert response.status_code == 204
+    storage.obj.assert_not_called()
+    report.refresh_from_db()
+    assert (report.study_id, report.assigned_at) == (None, None)
+    assert report.report_path == "reports/abc/opis.jpg"
+    assert report.generated_report == {"badanie": {}}
+    assert report.status == StatusChoices.COMPLETED
+    assert "opisy bez badania: 1" in AuditLog.objects.get().detail
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("model", [SegmentationResult, ExtractionResult])
+@pytest.mark.parametrize("busy", [StatusChoices.PENDING, StatusChoices.PROCESSING])
+def test_a_study_being_processed_is_refused(
+    authenticated_client, study, orthanc, storage, model, busy
+):
+    model.objects.create(study=study, status=busy)
+
+    response = _delete(authenticated_client, study)
+
+    assert response.status_code == 409
+    assert response.data["code"] == "processing"
+    assert Study.objects.filter(pk=study.pk).exists()
+    orthanc.delete_study.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -156,3 +197,76 @@ def test_an_anonymous_user_cannot_delete(api_client, study, orthanc, storage):
 
     assert response.status_code in (401, 403)
     assert Study.objects.filter(pk=study.pk).exists()
+
+
+# ---------------------------------------------------------------- a report without a study
+
+
+def _delete_report(client, report_id):
+    return client.delete(reverse("report-delete", kwargs={"report_id": report_id}))
+
+
+@pytest.mark.django_db
+def test_an_unassigned_report_is_deleted_with_its_file(
+    authenticated_client, unassigned_extraction_result, storage
+):
+    # Arrange
+    report = unassigned_extraction_result
+    report.report_path = "reports/u/opis.txt"
+    report.save()
+
+    # Act
+    response = _delete_report(authenticated_client, report.id)
+
+    # Assert
+    assert response.status_code == 204
+    storage.obj.assert_called_once_with("reports", report.report_path)
+    assert not ExtractionResult.objects.filter(pk=report.pk).exists()
+    entry = AuditLog.objects.get()
+    assert (entry.kind, entry.object) == ("report_deleted", f"opis #{report.id}")
+
+
+@pytest.mark.django_db
+def test_a_report_of_a_study_is_not_deleted_from_here(
+    authenticated_client, extraction_result, storage
+):
+    response = _delete_report(authenticated_client, extraction_result.id)
+
+    assert response.status_code == 404
+    assert ExtractionResult.objects.filter(pk=extraction_result.pk).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("busy", [StatusChoices.PENDING, StatusChoices.PROCESSING])
+def test_a_report_being_processed_is_not_deleted(authenticated_client, storage, busy):
+    report = ExtractionResult.objects.create(report_path="reports/x/a.txt", status=busy)
+
+    response = _delete_report(authenticated_client, report.id)
+
+    assert response.status_code == 409
+    storage.obj.assert_not_called()
+    assert ExtractionResult.objects.filter(pk=report.pk).exists()
+
+
+@pytest.mark.django_db
+def test_when_storage_fails_the_report_stays(
+    authenticated_client, unassigned_extraction_result, storage
+):
+    report = unassigned_extraction_result
+    report.report_path = "reports/u/opis.txt"
+    report.save()
+    storage.obj.side_effect = StorageError("minio down")
+
+    response = _delete_report(authenticated_client, report.id)
+
+    assert response.status_code == 502
+    assert ExtractionResult.objects.filter(pk=report.pk).exists()
+
+
+@pytest.mark.django_db
+def test_a_researcher_cannot_delete_a_report(
+    researcher_client, unassigned_extraction_result, storage
+):
+    response = _delete_report(researcher_client, unassigned_extraction_result.id)
+
+    assert response.status_code == 403

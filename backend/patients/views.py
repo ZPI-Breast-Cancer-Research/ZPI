@@ -24,6 +24,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from segmentation.models import SegmentationResult
+from segmentation.models import StatusChoices as SegmentationStatus
 from users.permissions import require_permission
 
 from .errors import OrthancUnavailable
@@ -39,6 +40,10 @@ STUDIES_CACHE_TTL = 5
 # What the extraction worker can read (workers/extraction/documents.py); the same list as the
 # file picker in the frontend (AttachReport.tsx).
 REPORT_SUFFIXES = (".txt", ".jpg", ".jpeg", ".png")
+
+# A worker is on it: deleting now would leave its files behind or fail its save.
+BUSY = (ExtractionStatus.PENDING, ExtractionStatus.PROCESSING)
+VERIFIED = (ExtractionStatus.APPROVED, ExtractionStatus.CORRECTED)
 
 
 # ---------------------------------------------------------------- helpers
@@ -60,7 +65,7 @@ def _orthanc_error_response(exc: OrthancUnavailable) -> Response:
 def _load_state(orthanc_studies: list[dict]):
     """Three queries in total, no matter how many studies there are.
 
-    When a study has several: the newest segmentation (highest id) and the report assigned last.
+    When a study has several reports: the one assigned last.
     """
     ids = [s.get("orthanc_id") for s in orthanc_studies]
     db_studies = {s.orthanc_path: s for s in Study.objects.filter(orthanc_path__in=ids)}
@@ -70,8 +75,7 @@ def _load_state(orthanc_studies: list[dict]):
         for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
     segmentations = {
-        s.study_id: s
-        for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
+        s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids)
     }
     return db_studies, extractions, segmentations
 
@@ -314,6 +318,9 @@ def study_import(request):
                 )
             # stored only after Orthanc accepted it, so a rejected study leaves no orphan in MinIO
             # put_bytes(archive_bytes, "studies", f"ZIP/{archive_file.name}")
+            # the row exists from the start, so the study shows as queued and cannot be deleted
+            # under the worker's hands
+            SegmentationResult.objects.create(study=study, status=SegmentationStatus.PENDING)
             study_pk = study.id
             transaction.on_commit(
                 lambda: current_app.send_task("segmentation.run", kwargs={"study_id": study_pk})
@@ -457,7 +464,7 @@ def dashboard_view(request):
 
         # the same number as in the review screens, not the position in the Orthanc list
         study_number = str(db_study.id).zfill(4)
-        if ext_status == ExtractionStatus.FAILED:
+        if ExtractionStatus.FAILED in (seg_status, ext_status):
             failed_studies.append(study_number)
 
         if seg_status in ("PROCESSING", "PENDING") or ext_status in ("PROCESSING", "PENDING"):
@@ -514,20 +521,27 @@ def dashboard_view(request):
     )
 
 
+def _busy_response(what: str) -> Response:
+    return Response(
+        {"code": "processing", "detail": f"{what} jest w trakcie przetwarzania; spróbuj później."},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 @api_view(["DELETE"])
 @require_permission("addStudies")
 def study_delete(request, orthanc_id):
-    """Removes a study everywhere: DICOM in Orthanc, masks and report files in storage, DB rows.
+    """Removes a study: DICOM in Orthanc, its masks in storage and its rows.
 
-    A study a radiologist has verified is refused; the verification has to be taken back first, so
-    nobody deletes approved work by accident. Orthanc and storage go first and a failure there
-    leaves the rows in place, so the request can simply be repeated.
+    Its reports stay, unassigned, with their files and results (docs/database.md): a wrong DICOM
+    upload must not cost a correct report. Refused for a verified study (the verification has to
+    be taken back first) and while a worker processes it. Orthanc and storage go first and a
+    failure there leaves the rows in place, so the request can simply be repeated.
     """
     study = get_object_or_404(Study, orthanc_path=orthanc_id)
-    verified = (ExtractionStatus.APPROVED, ExtractionStatus.CORRECTED)
     if (
-        SegmentationResult.objects.filter(study=study, status__in=verified).exists()
-        or ExtractionResult.objects.filter(study=study, status__in=verified).exists()
+        SegmentationResult.objects.filter(study=study, status__in=VERIFIED).exists()
+        or ExtractionResult.objects.filter(study=study, status__in=VERIFIED).exists()
     ):
         return Response(
             {
@@ -536,15 +550,16 @@ def study_delete(request, orthanc_id):
             },
             status=status.HTTP_409_CONFLICT,
         )
+    if (
+        SegmentationResult.objects.filter(study=study, status__in=BUSY).exists()
+        or ExtractionResult.objects.filter(study=study, status__in=BUSY).exists()
+    ):
+        return _busy_response("Badanie")
 
     label = f"#{str(study.id).zfill(4)}"
     try:
         OrthancClient().delete_study(study.orthanc_path)
         delete_prefix(BUCKET_MASKS, f"{study.id}/")  # model mask, probabilities, corrected masks
-        for key in study.extractions.exclude(report_path__isnull=True).values_list(
-            "report_path", flat=True
-        ):
-            delete_object(BUCKET_REPORTS, key)
     except OrthancUnavailable as exc:  # includes OrthancUnauthorized
         return _orthanc_error_response(exc)
     except StorageError as exc:
@@ -554,7 +569,42 @@ def study_delete(request, orthanc_id):
             status=status.HTTP_502_BAD_GATEWAY,
         )
 
-    study.delete()  # results go with it (CASCADE)
+    with transaction.atomic():
+        unassigned = study.extractions.update(study=None, assigned_at=None)
+        study.delete()  # the mask row goes with it (CASCADE)
     cache.delete(STUDIES_CACHE_KEY)
-    record_audit(request, kind="study_deleted", object=label, detail="Badanie usunięte z systemu")
+    detail = "Badanie usunięte z systemu"
+    if unassigned:
+        detail += f"; opisy bez badania: {unassigned}"
+    record_audit(request, kind="study_deleted", object=label, detail=detail)
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["DELETE"])
+@require_permission("addStudies")
+def report_delete(request, report_id):
+    """Removes a report without a study: its file in storage and its row.
+
+    A report assigned to a study goes with the study's own actions, not from here.
+    """
+    report = get_object_or_404(ExtractionResult, pk=report_id, study__isnull=True)
+    if report.status in BUSY:
+        return _busy_response("Opis")
+
+    if report.report_path:
+        try:
+            delete_object(BUCKET_REPORTS, report.report_path)
+        except StorageError as exc:
+            logger.error("Deleting report %s failed: %s", report.id, exc)
+            return Response(
+                {
+                    "code": "delete_failed",
+                    "detail": "Nie udało się usunąć opisu; spróbuj ponownie.",
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+    report.delete()
+    record_audit(
+        request, kind="report_deleted", object=f"opis #{report_id}", detail="Opis bez badania"
+    )
     return Response(status=status.HTTP_204_NO_CONTENT)

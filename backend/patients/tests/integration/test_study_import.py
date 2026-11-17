@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from extraction.models import ExtractionResult
 from patients.models import Study
+from segmentation.models import SegmentationResult
 
 
 @pytest.mark.django_db
@@ -172,3 +173,48 @@ def test_import_does_not_schedule_task_when_request_fails(
     assert response.status_code == 400
     assert len(callbacks) == 0
     send_task.assert_not_called()
+
+
+def _dicom_zip() -> SimpleUploadedFile:
+    """A ZIP with one minimal DICOM file of one study."""
+    import io
+    import zipfile
+
+    from pydicom.dataset import Dataset, FileMetaDataset
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+    ds = Dataset()
+    ds.file_meta = FileMetaDataset()
+    ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    ds.file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.4"  # MR Image Storage
+    ds.file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    ds.StudyInstanceUID = generate_uid()
+    dicom = io.BytesIO()
+    ds.save_as(dicom, enforce_file_format=True)
+
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("IM0001.dcm", dicom.getvalue())
+    return SimpleUploadedFile("study.zip", archive.getvalue(), content_type="application/zip")
+
+
+@mock.patch("patients.views.current_app.send_task")
+@mock.patch("patients.views.OrthancClient")
+@pytest.mark.django_db
+def test_import_creates_the_pending_mask_row_and_schedules_segmentation(
+    orthanc, send_task, authenticated_client, django_capture_on_commit_callbacks
+):
+    # Arrange
+    orthanc.return_value.upload_dicom_zip.return_value = {"ParentStudy": "orthanc-new"}
+
+    # Act
+    with django_capture_on_commit_callbacks(execute=True):
+        response = authenticated_client.post(
+            reverse("study-import"), {"archives": _dicom_zip()}, format="multipart"
+        )
+
+    # Assert
+    assert response.status_code == 201
+    study = Study.objects.get(orthanc_path="orthanc-new")
+    assert SegmentationResult.objects.get(study=study).status == "PENDING"
+    send_task.assert_called_once_with("segmentation.run", kwargs={"study_id": study.id})

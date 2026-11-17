@@ -111,6 +111,7 @@ const IMAGE_FROM_BACKEND: Record<string, ImageStatus> = {
   APPROVED: "verified_unchanged",
   CORRECTED: "verified_corrected",
   REJECTED: "error",
+  FAILED: "error",
   queued: "queued",
 };
 
@@ -202,11 +203,22 @@ export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<
   }
 }
 
-// removes the study everywhere (Orthanc, storage, database); the backend refuses a verified one
+// removes the study (Orthanc, masks, database); its reports stay, without a study. The backend
+// refuses a verified study and one that is still being processed
 export async function deleteStudy(studyId: string): Promise<void> {
   if (MOCK_API) return mockDelay(undefined, 300);
   try {
     await api.delete(`/api/studies/${studyId}/`);
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
+// removes a report without a study, file included; refused while it is being processed
+export async function deleteReport(reportId: string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 300);
+  try {
+    await api.delete(`/api/reports/${reportId}/`);
   } catch (error) {
     handleApiError(error);
   }
