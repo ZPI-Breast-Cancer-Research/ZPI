@@ -258,6 +258,3 @@ The Django user (`username`, `password`, `first_name`, `last_name`, `email`, `is
 | OCR and LLM columns of `reports` (`ocr_model_id`, `ocr_*`, `page_rotations`, `llm_seconds`, `attempts`, `schema_version`) | inside the JSON columns `result` and `provenance` |
 | `module_version` configuration: `ocr_engine`, `ocr_settings`, `llm_model`, `prompt_version`, `structured_output`, `few_shot_examples` | missing; the worker reads them from files and environment variables |
 | `seg` keys of `metrics`: `dice`, `iou`, `dice_small`, `volume_error_pct` | the comment in `mlops/models.py` also lists `hd95` |
-| Uploading a report computes nothing (status `UPLOADED`) | the upload schedules the extraction right away |
-| `source = manual` reports | the value exists, nothing creates such a row yet |
-| A verified mask or report form is never replaced; a closed study accepts no new report or run | only deleting a verified study is refused |

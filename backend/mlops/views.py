@@ -7,7 +7,7 @@ from django.db.models import Count, Q
 from django.db.models.functions import TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from extraction.models import ExtractionResult
+from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ExtStatus
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -295,7 +295,8 @@ def extraction_overview(request):
         .order_by("-created_at")
         .first()
     )
-    extractions = ExtractionResult.objects.all()
+    # a form filled in by hand has no model answer to compare with
+    extractions = ExtractionResult.objects.exclude(source=SourceChoices.MANUAL)
 
     if prod_ext:
         extractions = extractions.filter(model=prod_ext)
