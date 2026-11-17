@@ -18,6 +18,7 @@ env = environ.Env(
     ORTHANC_PASSWORD=(str, ""),
     CELERY_BROKER_URL=(str, "redis://localhost:6379/0"),
     MLFLOW_TRACKING_URI=(str, "http://mlflow:5000"),
+    LLM_BASE_URL=(str, ""),
 )
 
 # Local runs outside docker: pick up the repo-level .env if present.
@@ -128,6 +129,9 @@ ORTHANC_USER = env("ORTHANC_USER")
 ORTHANC_PASSWORD = env("ORTHANC_PASSWORD")
 
 MLFLOW_TRACKING_URI = env("MLFLOW_TRACKING_URI").rstrip("/")
+
+# The LLM server of the extraction worker (OpenAI-compatible); the models screen lists its models.
+LLM_BASE_URL = env("LLM_BASE_URL").rstrip("/")
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
 CELERY_TASK_ROUTES = {

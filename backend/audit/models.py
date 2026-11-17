@@ -8,6 +8,8 @@ class AuditKind(models.TextChoices):
     FORM_APPROVED = "form_approved", "Potwierdzenie formularza"
     FORM_UNAPPROVED = "form_unapproved", "Cofnięcie potwierdzenia formularza"
     MODEL_PROPOSED = "model_proposed", "Propozycja modelu"
+    VERSION_CREATED = "version_created", "Utworzenie wersji modułu"
+    VERSION_CHANGED = "version_changed", "Zmiana szkicu wersji modułu"
     PROPOSAL_WITHDRAWN = "proposal_withdrawn", "Wycofanie propozycji"
     MODEL_PROMOTED = "model_promoted", "Promocja modelu"
     MODEL_REJECTED = "model_rejected", "Odrzucenie modelu"

@@ -21,6 +21,7 @@ from .config import Settings
 from .documents import Document
 from .pipeline import Extractor
 from .schema import ExtractionResult
+from .structuring.prompting import PROMPT_VERSION, examples_from_version
 
 logger = logging.getLogger(__name__)
 
@@ -34,19 +35,41 @@ OCR_FAILURE = "OCR:"
 OCR_SETTINGS = ("lang", "orientation")
 
 
-def _extractor(ocr: ModelVersion | None) -> Extractor:
-    """The extractor reading pages the way the OCR version in use says.
+class VersionNotRunnable(Exception):
+    """The extraction version in use asks for something this worker cannot do."""
 
-    Without a version (a database without one) the OCR_* variables decide, as before.
+
+def _extractor(ocr: ModelVersion | None, ext: ModelVersion | None = None) -> Extractor:
+    """The extractor set up the way the versions in use say: the OCR version reads the pages,
+    the extraction version gives the LLM, structured output and the few-shot examples.
+
+    Without a version (a database without one) the environment variables and the example files
+    decide, as before.
     """
-    if ocr is None:
-        return _cached_extractor("", "{}")
-    return _cached_extractor(ocr.ocr_engine, json.dumps(ocr.ocr_settings or {}, sort_keys=True))
+    ocr_key = ("", "{}")
+    if ocr is not None:
+        ocr_key = (ocr.ocr_engine, json.dumps(ocr.ocr_settings or {}, sort_keys=True))
+    ext_key = ""
+    if ext is not None:
+        if ext.prompt_version and ext.prompt_version != PROMPT_VERSION:
+            raise VersionNotRunnable(
+                f"Extraction version {ext.version} needs prompt {ext.prompt_version}; "
+                f"this worker has {PROMPT_VERSION}"
+            )
+        ext_key = json.dumps(
+            {
+                "llm_model": ext.llm_model,
+                "structured_output": ext.structured_output,
+                "few_shot_examples": ext.few_shot_examples,
+            },
+            sort_keys=True,
+        )
+    return _cached_extractor(*ocr_key, ext_key)
 
 
 @cache
-def _cached_extractor(engine: str, settings_json: str) -> Extractor:
-    # One per OCR configuration and worker process: loading the OCR models takes a while.
+def _cached_extractor(engine: str, settings_json: str, ext_json: str = "") -> Extractor:
+    # One per configuration and worker process: loading the OCR models takes a while.
     settings = Settings.from_env()
     ocr_settings = json.loads(settings_json)
     if engine:
@@ -56,8 +79,18 @@ def _cached_extractor(engine: str, settings_json: str) -> Extractor:
             ocr_lang=ocr_settings.get("lang", settings.ocr_lang),
             ocr_orientation=ocr_settings.get("orientation", settings.ocr_orientation),
         )
+    examples = None
+    if ext_json:
+        ext = json.loads(ext_json)
+        settings = dataclasses.replace(
+            settings,
+            # empty: the only model loaded on the LLM server, as LLM_MODEL= does
+            llm_model=ext["llm_model"] or settings.llm_model,
+            llm_structured_output=ext["structured_output"],
+        )
+        examples = examples_from_version(ext["few_shot_examples"] or [])
     options = {key: value for key, value in ocr_settings.items() if key not in OCR_SETTINGS}
-    return Extractor.from_settings(settings, ocr_options=options)
+    return Extractor.from_settings(settings, ocr_options=options, examples=examples)
 
 
 @app.task(name="extraction.run")
@@ -68,11 +101,12 @@ def run(keys: list[str], extraction_id: int | None = None, source: str | None = 
     result is only returned. The return value is informational: there is no result backend.
     """
     ocr = _production_version(ModelVersion.ModuleChoices.OCR)
-    if extraction_id is not None and not _start(extraction_id, ocr):
+    ext = _production_version(ModelVersion.ModuleChoices.EXT)
+    if extraction_id is not None and not _start(extraction_id, ocr, ext):
         return {"status": "skipped", "extraction_id": extraction_id}
 
     try:
-        result = _extract(keys, source, ocr)
+        result = _extract(keys, source, ocr, ext)
     except Exception as exc:
         # Download or an unexpected bug; the pipeline itself turns OCR/LLM errors into results.
         logger.exception("Extraction %s failed", extraction_id)
@@ -87,17 +121,20 @@ def run(keys: list[str], extraction_id: int | None = None, source: str | None = 
     return dumped
 
 
-def _extract(keys: list[str], source: str | None, ocr: ModelVersion | None) -> ExtractionResult:
+def _extract(
+    keys: list[str], source: str | None, ocr: ModelVersion | None, ext: ModelVersion | None
+) -> ExtractionResult:
+    extractor = _extractor(ocr, ext)  # before the download: a wrong version fails fast
     with tempfile.TemporaryDirectory() as tmp:
         paths = [
             download_file(BUCKET_REPORTS, key, Path(tmp) / f"{i:03d}{Path(key).suffix}")
             for i, key in enumerate(keys)
         ]
         document = Document(source or Path(keys[0]).name, paths)
-        return _extractor(ocr).extract(document)
+        return extractor.extract(document)
 
 
-def _start(extraction_id: int, ocr: ModelVersion | None) -> bool:
+def _start(extraction_id: int, ocr: ModelVersion | None, ext: ModelVersion | None) -> bool:
     """Mark the row PROCESSING and pin the versions in use; False when it must not run."""
     with transaction.atomic():
         row = ExtractionRow.objects.select_for_update().filter(id=extraction_id).first()
@@ -108,7 +145,7 @@ def _start(extraction_id: int, ocr: ModelVersion | None) -> bool:
             logger.info("Extraction %s: status %s, skipped", extraction_id, row.status)
             return False
         row.status = StatusChoices.PROCESSING
-        row.model = _production_version(ModelVersion.ModuleChoices.EXT)
+        row.model = ext
         # a text report is not read by OCR
         row.ocr_model = ocr if row.source == SourceChoices.SCAN else None
         # a retry must not show the previous attempt's result while it runs

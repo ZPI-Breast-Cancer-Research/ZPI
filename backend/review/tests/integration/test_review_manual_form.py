@@ -7,6 +7,7 @@ import pytest
 from audit.models import AuditLog
 from django.urls import reverse
 from extraction.models import ExtractionResult, SourceChoices, StatusChoices
+from mlops.models import ModelVersion
 from segmentation.models import SegmentationResult
 
 FORM = {
@@ -117,6 +118,8 @@ def test_manual_forms_are_left_out_of_the_extraction_statistics(api_client, stud
         username="researcher", password="TestPassword123!", role="researcher"
     )
     api_client.force_authenticate(user=researcher)
+    # the statistics follow the extraction version in use when there is one
+    ModelVersion.objects.filter(module="ext").delete()
     ExtractionResult.objects.create(
         study=study,
         status=StatusChoices.APPROVED,
