@@ -231,28 +231,36 @@ def _report_rows(extraction):
     ]
 
 
+# the worker has not finished a run of the report yet
+WAITING = (StatusChoices.UPLOADED, StatusChoices.PENDING, StatusChoices.PROCESSING)
+
+
 def _report_payload(extraction, study_id):
     """What the review screens show as the report (frontend/src/review/extraction.ts CaseReport).
 
     {"originalUrl", "result"} once the worker has a result; "pending" while it has none yet, which
-    the frontend shows as waiting; None without a report.
+    the frontend shows as waiting; None without a report. The result is put together from the
+    columns of the report row in the shape of the worker's ExtractionResult.
     """
     if extraction is None:
         return None
     if extraction.source == SourceChoices.MANUAL:
         return {"originalUrl": None, "result": _manual_result(extraction)}
-    result = extraction.result
-    if result is None and extraction.status == StatusChoices.FAILED:
-        result = _failed_result(extraction)  # failed before the pipeline ran, e.g. download
-    if result is None:
+    if extraction.status in WAITING:
         return "pending"
     url = reverse("review-report-scan", args=[study_id]) if extraction.report_path else None
-    return {"originalUrl": url, "result": result}
+    return {"originalUrl": url, "result": _worker_result(extraction)}
 
 
-def _failed_result(extraction) -> dict:
-    """A worker result for a report that failed before extraction, so the screen shows the error."""
-    return _result_shape(extraction, outcome="error", data=None, error=extraction.error)
+def _worker_result(extraction) -> dict:
+    failed = extraction.status == StatusChoices.FAILED
+    return _result_shape(
+        extraction,
+        outcome="error" if failed else "ok",
+        data=None if failed else extraction.generated_report,
+        error=extraction.error,
+        source=(extraction.report_path or "").rsplit("/", 1)[-1],
+    )
 
 
 def _manual_result(extraction) -> dict:
@@ -262,29 +270,34 @@ def _manual_result(extraction) -> dict:
     )
 
 
-def _result_shape(extraction, *, outcome, data, error, source="") -> dict:
-    """The worker's ExtractionResult (workers/extraction/schema.py) without a worker run."""
+def _result_shape(extraction, *, outcome, data, error, source) -> dict:
+    """The worker's ExtractionResult (workers/extraction/schema.py) from the report columns."""
+    ocr = extraction.ocr_model
+    ocr_settings = (ocr.ocr_settings or {}) if ocr else {}
+    model = extraction.model
     return {
         "source": source,
         "status": outcome,
         "data": data,
         "error": (error or "unknown error") if outcome == "error" else None,
-        "warnings": [],
-        "text": "",
+        "failedStep": extraction.failed_step or None,
+        "warnings": extraction.warnings or [],
+        "text": extraction.ocr_text or "",
         "provenance": {
-            "ocr_engine": None,
-            "ocr_engine_version": None,
-            "ocr_mean_confidence": None,
-            "orientation_detector": None,
-            "page_rotations": [],
+            "ocr_engine": ocr.ocr_engine if ocr else None,
+            "ocr_engine_version": extraction.ocr_engine_version or None,
+            "ocr_mean_confidence": extraction.ocr_confidence,
+            "orientation_detector": ocr_settings.get("orientation"),
+            "page_rotations": extraction.page_rotations or [],
+            # the LLM and the prompt belong to the extraction version (#118)
             "llm_provider": "",
-            "llm_model": "",
+            "llm_model": model.name if model else "",
             "prompt_version": "",
-            "schema_version": "",
+            "schema_version": extraction.schema_version or "",
         },
-        "attempts": 0,
-        "ocr_seconds": None,
-        "llm_seconds": None,
+        "attempts": extraction.attempts or 0,
+        "ocr_seconds": extraction.ocr_seconds,
+        "llm_seconds": extraction.llm_seconds,
         "created_at": extraction.updated_at.isoformat() if extraction.updated_at else "",
     }
 

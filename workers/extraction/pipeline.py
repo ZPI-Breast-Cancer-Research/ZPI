@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cached_property, partial
 from pathlib import Path
+from typing import Any
 
 from .config import Settings
 from .documents import Document
@@ -31,11 +32,14 @@ class Extractor:
         ocr_engine: str = "paddle",
         ocr_lang: str = "pl",
         orientation: str = "paddle",
+        ocr_options: dict[str, Any] | None = None,
         few_shot: int = 1,
         structured_output: bool = True,
         log: Callable[[str], None] | None = None,
     ):
         self.llm = llm
+        # passed to the engine as they are, e.g. {"unwarp": True} for PaddleOCR
+        self._ocr_options = dict(ocr_options or {})
         self.few_shot = few_shot
         self.structured_output = structured_output
         self._ocr_engine = ocr_engine
@@ -45,7 +49,11 @@ class Extractor:
 
     @classmethod
     def from_settings(
-        cls, settings: Settings, *, log: Callable[[str], None] | None = None
+        cls,
+        settings: Settings,
+        *,
+        ocr_options: dict[str, Any] | None = None,
+        log: Callable[[str], None] | None = None,
     ) -> "Extractor":
         llm = get_llm_client(
             settings.llm_provider,
@@ -59,6 +67,7 @@ class Extractor:
             ocr_engine=settings.ocr_engine,
             ocr_lang=settings.ocr_lang,
             orientation=settings.ocr_orientation,
+            ocr_options=ocr_options,
             few_shot=settings.few_shot_examples,
             structured_output=settings.llm_structured_output,
             log=log,
@@ -67,7 +76,7 @@ class Extractor:
     @cached_property
     def ocr(self) -> OcrEngine:
         self._log(f"Loading OCR: {self._ocr_engine} ...")
-        return get_ocr_engine(self._ocr_engine, lang=self._ocr_lang)
+        return get_ocr_engine(self._ocr_engine, lang=self._ocr_lang, **self._ocr_options)
 
     @cached_property
     def orientation(self) -> OrientationDetector | None:

@@ -354,7 +354,7 @@ def _build_demo_case_result(
     with_scan: bool,
 ) -> dict:
     """
-    Zwraca bezpośrednio ExtractionResult zapisywany w extraction.result.
+    Zwraca ExtractionResult workera; jego pola trafiają do kolumn opisu (ocr_text, ...).
 
     Nie tworzy wrappera {originalUrl, scanKey, result}.
     Oryginalny plik jest wskazywany przez extraction.report_path.
@@ -1071,7 +1071,14 @@ class Command(BaseCommand):
             else:
                 result = None
 
-            extraction.result = result
+            # the result in the report columns, as the extraction worker writes it
+            provenance = result["provenance"] if result else {}
+            extraction.ocr_text = result["text"] if result else ""
+            extraction.ocr_confidence = provenance.get("ocr_mean_confidence")
+            extraction.page_rotations = provenance.get("page_rotations") or []
+            extraction.ocr_seconds = result["ocr_seconds"] if result else None
+            extraction.attempts = result["attempts"] if result else 0
+            extraction.schema_version = provenance.get("schema_version") or ""
 
             extraction.accepted_by = ext_reviewer
             extraction.accepted_at = ext_accepted_at

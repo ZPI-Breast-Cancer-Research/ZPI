@@ -118,7 +118,7 @@ def test_processing_again_clears_the_previous_result(
         status=StatusChoices.REJECTED,
         generated_report={"birads": "3"},
         accepted_report={"birads": "4"},
-        result={"text": "stary"},
+        ocr_text="stary",
         uncertainty=0.4,
     )
 
@@ -131,7 +131,8 @@ def test_processing_again_clears_the_previous_result(
     report.refresh_from_db()
     assert report.status == StatusChoices.PENDING
     assert report.requested_by == researcher_user
-    assert report.generated_report is report.accepted_report is report.result is None
+    assert report.generated_report is report.accepted_report is None
+    assert report.ocr_text == ""
     assert report.uncertainty is None
     assert AuditLog.objects.get().detail == "Ponowne przetwarzanie"
 
