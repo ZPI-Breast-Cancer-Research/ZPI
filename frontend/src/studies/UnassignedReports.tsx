@@ -2,10 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useToast } from "../components/Toast";
-import { useCan } from "../auth/AuthProvider";
+import { useAuth, useCan } from "../auth/AuthProvider";
 import { formatDate } from "../format";
 import { t } from "../i18n";
-import { attachReport, deleteReport, type StudyRow, type UnassignedReport } from "./api";
+import { attachReport, deleteReport, processReport, type StudyRow, type UnassignedReport } from "./api";
 import ReportCard from "./ReportCard";
 
 interface Props {
@@ -21,6 +21,13 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
   const canDelete = useCan()("addStudies");
+  const { user } = useAuth();
+  // the first run is for anyone here; again: a researcher or an admin, a radiologist after a failure
+  const processLabel = (report: UnassignedReport) => {
+    if (report.status === "UPLOADED") return t("studies.unassigned.process");
+    const again = report.status === "FAILED" || (["COMPLETED", "REJECTED"].includes(report.status) && (user?.role === "researcher" || user?.role === "admin"));
+    return again ? t("studies.unassigned.processAgain") : null;
+  };
 
   const waiting = studies.filter((s) => s.report === "missing");
   const candidates = selected?.report === "missing" ? [selected, ...waiting.filter((s) => s.id !== selected.id)] : waiting;
@@ -40,6 +47,14 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     onSuccess: (_, report) => {
       toast(t("studies.unassigned.delete.done", { name: report.fileName }));
       setOpenId(null);
+      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+    },
+    onError: (error: Error) => toast(error.message || t("api.unknown")),
+  });
+  const process = useMutation({
+    mutationFn: (report: UnassignedReport) => processReport(report.id),
+    onSuccess: () => {
+      toast(t("studies.unassigned.process.done"));
       queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
     },
     onError: (error: Error) => toast(error.message || t("api.unknown")),
@@ -76,6 +91,12 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
             ) : (
               <p className="note">{t("studies.assign.noStudies")}</p>
             )}
+            {processLabel(report) && (
+              <button type="button" className="btn btn--small" disabled={process.isPending} onClick={() => process.mutate(report)}>
+                {processLabel(report)}
+              </button>
+            )}
+            {report.status === "FAILED" && report.error && <p className="note">{report.error}</p>}
             {canDelete && (
               <button type="button" className="btn btn--small" disabled={remove.isPending} onClick={() => askDelete(report)}>
                 {t("studies.unassigned.delete")}

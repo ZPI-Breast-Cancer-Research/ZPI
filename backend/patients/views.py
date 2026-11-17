@@ -17,6 +17,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ExtractionStatus
+from extraction.processing import BUSY, VERIFIED, is_closed, may_process, start_processing
 from pydicom.errors import InvalidDicomError
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
@@ -40,10 +41,6 @@ STUDIES_CACHE_TTL = 5
 # What the extraction worker can read (workers/extraction/documents.py); the same list as the
 # file picker in the frontend (AttachReport.tsx).
 REPORT_SUFFIXES = (".txt", ".jpg", ".jpeg", ".png")
-
-# A worker is on it: deleting now would leave its files behind or fail its save.
-BUSY = (ExtractionStatus.PENDING, ExtractionStatus.PROCESSING)
-VERIFIED = (ExtractionStatus.APPROVED, ExtractionStatus.CORRECTED)
 
 
 # ---------------------------------------------------------------- helpers
@@ -206,7 +203,11 @@ def _check_report_file(report_file) -> Response | None:
 
 
 def _store_report(report_file, study, user) -> ExtractionResult:
-    """Saves the file, creates the row and schedules extraction once the transaction commits."""
+    """Saves the file and creates the row (UPLOADED).
+
+    A report that comes with its study is processed right away; one without a study waits until
+    it is assigned or someone orders the processing.
+    """
     # uuid folder: two reports with the same file name must not overwrite each other
     key = f"reports/{uuid4().hex}/{report_file.name}"
     put_bytes(report_file.read(), "reports", key, report_file.content_type)
@@ -215,15 +216,20 @@ def _store_report(report_file, study, user) -> ExtractionResult:
         report_path=key,
         source=SourceChoices.of_file(report_file.name),
         assigned_at=timezone.now() if study else None,
-        requested_by=user,
     )
-    extraction_id = extraction.id
-    transaction.on_commit(
-        lambda: current_app.send_task(
-            "extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]}
-        )
-    )
+    if study is not None:
+        start_processing(extraction, user)
     return extraction
+
+
+def _closed_response() -> Response:
+    return Response(
+        {
+            "code": "closed",
+            "detail": "Badanie jest zamknięte: maska i opis są zweryfikowane.",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
 
 
 # ---------------------------------------------------------------- views
@@ -261,6 +267,13 @@ def study_list(request):
                 "extraction_status": extraction.status if extraction else "missing",
                 "segmentation_status": segmentation.status if segmentation else "queued",
                 "uncertainty": _pick_uncertainty(segmentation, extraction),
+                # mask and active report verified: no new report, no new run
+                "closed": bool(
+                    segmentation
+                    and extraction
+                    and segmentation.status in VERIFIED
+                    and extraction.status in VERIFIED
+                ),
             }
         )
     return Response(response_data)
@@ -363,6 +376,8 @@ def attach_report_to_study(request, orthanc_id):
         return Response({"detail": "No report file provided."}, status=status.HTTP_400_BAD_REQUEST)
     if error := _check_report_file(report_file):
         return error
+    if is_closed(study):
+        return _closed_response()
 
     with transaction.atomic():
         _store_report(report_file, study, request.user)
@@ -387,13 +402,26 @@ def attach_existing_report(request, orthanc_id):
     if not report_id:
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(
-        study=study, assigned_at=timezone.now()
-    )
-    if not updated:
-        return Response(
-            {"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND
+    if is_closed(study):
+        return _closed_response()
+
+    with transaction.atomic():
+        report = (
+            ExtractionResult.objects.select_for_update()
+            .filter(id=report_id, study__isnull=True)
+            .first()
         )
+        if report is None:
+            return Response(
+                {"detail": "Report not found or already assigned."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        report.study = study
+        report.assigned_at = timezone.now()
+        report.save(update_fields=["study", "assigned_at", "updated_at"])
+        # assigning starts the processing of a report that has no result yet
+        if report.status == ExtractionStatus.UPLOADED:
+            start_processing(report, request.user)
 
     record_audit(
         request,
@@ -578,6 +606,50 @@ def study_delete(request, orthanc_id):
         detail += f"; opisy bez badania: {unassigned}"
     record_audit(request, kind="study_deleted", object=label, detail=detail)
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["POST"])
+@require_permission(["addStudies", "proposeModels"])
+def report_process(request, report_id):
+    """Orders OCR and extraction of a report, the first time or again.
+
+    Processing again overwrites a result that is not verified. A researcher and an admin may
+    order it any time, a radiologist the first time and after a failure.
+    """
+    with transaction.atomic():
+        report = get_object_or_404(ExtractionResult.objects.select_for_update(), pk=report_id)
+        if report.status in VERIFIED:
+            return Response(
+                {
+                    "code": "verified",
+                    "detail": "Opis jest zweryfikowany; najpierw cofnij weryfikację.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if report.status in BUSY:
+            return _busy_response("Opis")
+        if report.source == SourceChoices.MANUAL or not report.report_path:
+            return Response(
+                {"code": "nothing_to_process", "detail": "Opis wypełniony ręcznie nie ma pliku."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if report.study_id and is_closed(report.study):
+            return _closed_response()
+        if not may_process(getattr(request.user, "role", None), report):
+            return Response(
+                {"detail": "Ponowne przetworzenie poprawnego opisu może zlecić tylko badacz."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        again = report.status != ExtractionStatus.UPLOADED
+        start_processing(report, request.user)
+
+    record_audit(
+        request,
+        kind="report_processed",
+        object=f"opis #{report.id}",
+        detail="Ponowne przetwarzanie" if again else "Przetwarzanie",
+    )
+    return Response({"status": report.status}, status=status.HTTP_202_ACCEPTED)
 
 
 @api_view(["DELETE"])
