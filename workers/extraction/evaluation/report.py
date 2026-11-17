@@ -76,6 +76,8 @@ class Report:
             "fields": scores(self.fields, ("n", "accuracy", "precision", "recall", "f1")),
             "ocr_cer": {"mean": self.ocr.mean, "documents": self.ocr.documents},
             "ocr_bow_wer": {"mean": self.ocr.words_mean, "documents": self.ocr.words},
+            # what `manage.py save_ocr_metrics` stores in the OCR version
+            "ocr_metrics": {**self.ocr.metrics(), "cases": len(self.ocr.documents)},
             "uncertainty": {
                 "rho": self.uncertainty.rho(),
                 "component_rho": self.uncertainty.component_rho(),

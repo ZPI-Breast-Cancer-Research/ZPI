@@ -1,8 +1,7 @@
 # Database schema
 
-This is the binding schema of the application database. The code is being migrated to it; where
-a model in `backend/` still differs, this document is the target and the difference is listed in
-[Differences from the current code](#4-differences-from-the-current-code).
+This is the binding schema of the application database. The models in `backend/` follow it; a
+change to the schema changes this document in the same pull request.
 
 ```mermaid
 erDiagram
@@ -163,7 +162,7 @@ other kinds stay empty. A version can be edited only in status `new`; once propo
 | `llm_model` | varchar | `ext` | |
 | `prompt_version` | varchar | `ext` | |
 | `structured_output` | boolean | `ext` | Whether the LLM is forced to answer in the form schema. |
-| `few_shot_examples` | json | `ext` | List of `{report, output}`; the whole set is one value, as it goes into the prompt. |
+| `few_shot_examples` | json | `ext` | List of `{report, output, report_id?}`; the whole set is one value, as it goes into the prompt. `report_id` marks an example taken from a verified report, which the evaluation of the version leaves out. |
 | `trained_at` | datetime | `seg` | |
 | `training_cases` | integer | `seg` | |
 | `celery_task_id` | varchar | `seg` | Lets a running training be stopped. |
@@ -252,7 +251,5 @@ The Django user (`username`, `password`, `first_name`, `last_name`, `email`, `is
 
 ## 4. Differences from the current code
 
-| Target | Today |
-| :--- | :--- |
-| `module_version` configuration of `ext`: `llm_model`, `prompt_version`, `structured_output`, `few_shot_examples` | missing; the worker reads them from files and environment variables |
-| `ocr` metrics (`cer`, `word_error`, ...) in `module_version.metrics` | computed by the evaluation CLI, not saved to the version |
+None: the models in `backend/` follow this document. A change to the schema changes this document
+in the same pull request.

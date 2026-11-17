@@ -58,13 +58,29 @@ def _type_name(annotation: Any) -> str:
     )
 
 
+# (report text, the expected answer as JSON) of one few-shot example
+Example = tuple[str, str]
+
+
 @cache
-def load_few_shot() -> list[tuple[str, str]]:
+def load_few_shot() -> list[Example]:
+    """The examples in prompts/few_shot/: the CLI and experiments use them; the Celery worker
+    takes the examples of the extraction version in use (``examples_from_version``)."""
+    return examples_from_version(
+        [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted((PROMPTS_DIR / "few_shot").glob("*.json"))
+        ]
+    )
+
+
+def examples_from_version(items: list[dict[str, Any]]) -> list[Example]:
+    """``module_version.few_shot_examples`` ([{"report", "output"}, ...]) for the prompt; each
+    output is checked against the schema, so a broken example fails here, not in the LLM."""
     examples = []
-    for path in sorted((PROMPTS_DIR / "few_shot").glob("*.json")):
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        output = EkstrakcjaBadania.model_validate(raw["output"])
-        examples.append((raw["report"], output.model_dump_json(exclude_none=False)))
+    for item in items:
+        output = EkstrakcjaBadania.model_validate(item["output"])
+        examples.append((item["report"], output.model_dump_json(exclude_none=False)))
     return examples
 
 
@@ -74,9 +90,13 @@ def system_prompt() -> str:
     return system.replace("{fields}", describe_schema())
 
 
-def build_messages(report_text: str, *, few_shot: int = 1) -> list[Message]:
+def build_messages(
+    report_text: str, *, few_shot: int = 1, examples: list[Example] | None = None
+) -> list[Message]:
+    """``examples`` (all of them) when given, otherwise the first ``few_shot`` example files."""
     messages: list[Message] = [{"role": "system", "content": system_prompt()}]
-    for example_report, example_output in load_few_shot()[:few_shot]:
+    chosen = examples if examples is not None else load_few_shot()[:few_shot]
+    for example_report, example_output in chosen:
         messages.append({"role": "user", "content": _user_content(example_report)})
         messages.append({"role": "assistant", "content": example_output})
     messages.append({"role": "user", "content": _user_content(report_text)})
