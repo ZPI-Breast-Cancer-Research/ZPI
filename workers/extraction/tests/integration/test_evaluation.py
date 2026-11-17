@@ -13,7 +13,7 @@ from workers.extraction.evaluation import (
     load_predictions,
     load_transcripts,
 )
-from workers.extraction.schema import KategoriaBiRads, Wniosek
+from workers.extraction.schema import SCHEMA_VERSION, KategoriaBiRads, Wniosek
 from workers.extraction.structuring.prompting import load_few_shot
 from workers.extraction.tests.factories import (
     REPORT,
@@ -159,7 +159,7 @@ def test_report_formats_and_exports(gold_dir, tmp_path):
     exported = json.loads(json.dumps(report.to_dict()))
 
     # Assert
-    assert "model: fake-model | prompt: v6 | schema: 3" in text
+    assert f"model: fake-model | prompt: v6 | schema: {SCHEMA_VERSION}" in text
     assert "documents: 2 evaluated (failed, scored as empty: doc2)" in text
     assert exported["errors"] == ["doc2"]
     assert exported["summary"]["zmiany_f1"] == pytest.approx(2 / 3)

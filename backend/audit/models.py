@@ -24,6 +24,7 @@ class AuditKind(models.TextChoices):
     STUDY_DELETED = "study_deleted", "Badanie usunięte"
     ATTACH_REPORT = "attach_report"
     REPORT_DELETED = "report_deleted", "Opis usunięty"
+    REPORT_PROCESSED = "report_processed", "Zlecenie przetworzenia opisu"
 
 
 class AuditLog(models.Model):

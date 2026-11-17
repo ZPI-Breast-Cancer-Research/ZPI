@@ -61,8 +61,9 @@ class ExtractionResult(models.Model):
         blank=True,
         related_name="extraction_results",
     )
+    # UPLOADED until someone orders the processing or the report is assigned to a study
     status = models.CharField(
-        max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING
+        max_length=20, choices=StatusChoices.choices, default=StatusChoices.UPLOADED
     )
     uncertainty = models.FloatField(blank=True, null=True)
 

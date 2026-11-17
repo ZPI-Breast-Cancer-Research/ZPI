@@ -64,7 +64,7 @@ def test_successful_extraction_is_saved_as_completed(monkeypatch, storage):
     # Arrange
     use_llm(monkeypatch, answer_json())
     model = production_model()
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -83,7 +83,7 @@ def test_successful_extraction_is_saved_as_completed(monkeypatch, storage):
 def test_full_result_with_the_ocr_text_is_saved_for_the_frontend(monkeypatch, storage):
     # Arrange: the frontend (review/extraction.ts) reads the whole ExtractionResult, text included
     use_llm(monkeypatch, answer_json())
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     returned = tasks.run(keys=[KEY], extraction_id=row.id)
@@ -101,7 +101,7 @@ def test_generated_report_is_what_the_review_form_reads(monkeypatch, storage):
     from review.views import _as_fields
 
     use_llm(monkeypatch, answer_json())
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -114,7 +114,7 @@ def test_generated_report_is_what_the_review_form_reads(monkeypatch, storage):
 def test_llm_error_is_saved_as_failed_with_the_reason(monkeypatch, storage):
     # Arrange
     use_llm(monkeypatch, LLMError("Cannot connect to http://localhost:1234/v1"))
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -136,7 +136,7 @@ def test_download_error_is_saved_as_failed(monkeypatch):
         raise OSError("MinIO unreachable")
 
     monkeypatch.setattr(tasks, "download_file", download_file)
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     returned = tasks.run(keys=[KEY], extraction_id=row.id)
@@ -173,7 +173,7 @@ def test_without_production_model_extraction_runs_and_model_stays_empty(monkeypa
     use_llm(monkeypatch, answer_json())
     production_model(status=ModelVersion.StatusChoices.CANDIDATE)
     production_model(module=ModelVersion.ModuleChoices.SEG)
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -191,6 +191,8 @@ def test_without_production_model_extraction_runs_and_model_stays_empty(monkeypa
         StatusChoices.CORRECTED,
         StatusChoices.REJECTED,
         StatusChoices.COMPLETED,
+        # stored only: nobody ordered the processing (backend sets PENDING when it does)
+        StatusChoices.UPLOADED,
     ],
 )
 def test_reviewed_or_finished_row_is_never_overwritten(monkeypatch, storage, status):
@@ -256,7 +258,7 @@ def test_without_extraction_id_the_result_is_only_returned(monkeypatch, storage)
 def test_status_moves_to_processing_before_extraction(monkeypatch, storage):
     # Arrange: look at the row while the LLM is "working".
     seen = {}
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     class Watching(FakeLLM):
         def complete(self, messages, **kwargs):
@@ -276,7 +278,7 @@ def test_uncertainty_is_saved_in_the_column_the_review_queue_sorts_by(monkeypatc
     # Arrange: an answer whose node quote is not in the report -> a heavy warning
     bad = extraction(wezly=[node(cytat="Węzeł nadobojczykowy lewy 25mm.")])
     use_llm(monkeypatch, answer_json(bad))
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -291,7 +293,7 @@ def test_uncertainty_is_saved_in_the_column_the_review_queue_sorts_by(monkeypatc
 def test_correct_extraction_of_a_text_report_has_zero_uncertainty(monkeypatch, storage):
     # Arrange
     use_llm(monkeypatch, answer_json())
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -304,7 +306,7 @@ def test_correct_extraction_of_a_text_report_has_zero_uncertainty(monkeypatch, s
 def test_failed_extraction_has_maximum_uncertainty(monkeypatch, storage):
     # Arrange
     use_llm(monkeypatch, LLMError("down"))
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -320,7 +322,7 @@ def test_failure_outside_the_pipeline_has_maximum_uncertainty(monkeypatch):
         raise OSError("MinIO unreachable")
 
     monkeypatch.setattr(tasks, "download_file", download_file)
-    row = ExtractionRow.objects.create(report_path=KEY)
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)

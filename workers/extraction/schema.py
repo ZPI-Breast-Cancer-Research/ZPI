@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, computed_field
 
 from .structuring import uncertainty as _uncertainty
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 MM_PER_UNIT = {"mm": 1.0, "cm": 10.0}
 
@@ -15,6 +15,7 @@ MM_PER_UNIT = {"mm": 1.0, "cm": 10.0}
 class Modalnosc(StrEnum):
     MAMMOGRAFIA = "mammografia"
     USG = "usg"
+    MRI = "mri"  # a form filled in by the radiologist from the MRI study (source = manual)
 
 
 class Strona(StrEnum):

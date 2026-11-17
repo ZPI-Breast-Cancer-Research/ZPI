@@ -10,5 +10,6 @@ urlpatterns = [
     path("studies/<str:orthanc_id>/attach-existing-report/", views.attach_existing_report),
     path("reports/unassigned/", views.unassigned_reports_list, name="unassigned-reports-list"),
     path("reports/<int:report_id>/", views.report_delete, name="report-delete"),
+    path("reports/<int:report_id>/process/", views.report_process, name="report-process"),
     path("dashboard/", views.dashboard_view, name="dashboard-view"),
 ]
