@@ -131,7 +131,7 @@ def test_restored_version_has_a_period_for_every_time_it_was_in_use(admin):
 
 @pytest.mark.django_db
 def test_put_in_use_leaves_other_modules_alone(admin):
-    extraction = ModelVersion.objects.create(module="ext", name="ext", version="1")
+    extraction = ModelVersion.objects.create(module="ext", name="ext", version="ext-test")
     extraction.put_in_use(admin)
 
     ModelVersion.objects.create(module="seg", name="seg", version="1").put_in_use(admin)

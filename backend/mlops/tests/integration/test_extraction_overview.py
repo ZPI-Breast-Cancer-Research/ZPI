@@ -21,6 +21,9 @@ def test_extraction_overview_returns_200(authenticated_client):
 
 @pytest.mark.django_db
 def test_extraction_overview_empty_data(authenticated_client):
+    # without the version 1 the migration creates (mlops 0006)
+    ModelVersion.objects.filter(module="ext").delete()
+
     response = authenticated_client.get(reverse("extraction-overview"))
 
     data = response.json()

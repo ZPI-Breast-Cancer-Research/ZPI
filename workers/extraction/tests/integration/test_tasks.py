@@ -47,7 +47,7 @@ def storage(monkeypatch):
 
 def use_llm(monkeypatch, *answers):
     llm = FakeLLM(answers)
-    monkeypatch.setattr(tasks, "_extractor", lambda ocr: Extractor(llm))
+    monkeypatch.setattr(tasks, "_extractor", lambda ocr, ext: Extractor(llm))
     return llm
 
 
@@ -118,7 +118,7 @@ def test_a_scan_points_at_the_ocr_version_in_use_and_a_text_does_not(monkeypatch
     monkeypatch.setattr(
         tasks,
         "_extractor",
-        lambda version: seen.append(version) or Extractor(FakeLLM([answer_json()])),
+        lambda version, ext: seen.append(version) or Extractor(FakeLLM([answer_json()])),
     )
 
     # Act
@@ -137,7 +137,7 @@ def test_the_extractor_reads_pages_the_way_the_ocr_version_says(monkeypatch):
     # Arrange
     created = {}
 
-    def from_settings(settings, *, ocr_options=None, log=None):
+    def from_settings(settings, *, ocr_options=None, examples=None, log=None):
         created.update(engine=settings.ocr_engine, lang=settings.ocr_lang, options=ocr_options)
         return "extractor"
 
@@ -235,7 +235,8 @@ def test_retry_clears_the_previous_result(monkeypatch):
 
 
 def test_without_production_model_extraction_runs_and_model_stays_empty(monkeypatch, storage):
-    # Arrange: only a candidate and a segmentation model exist.
+    # Arrange: only a candidate and a segmentation model exist (not the migration's version 1).
+    ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.EXT).delete()
     use_llm(monkeypatch, answer_json())
     production_model(status=ModelVersion.StatusChoices.CANDIDATE)
     production_model(module=ModelVersion.ModuleChoices.SEG)
@@ -331,7 +332,7 @@ def test_status_moves_to_processing_before_extraction(monkeypatch, storage):
             seen["status"] = ExtractionRow.objects.get(id=row.id).status
             return super().complete(messages, **kwargs)
 
-    monkeypatch.setattr(tasks, "_extractor", lambda ocr: Extractor(Watching([answer_json()])))
+    monkeypatch.setattr(tasks, "_extractor", lambda ocr, ext: Extractor(Watching([answer_json()])))
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -409,7 +410,7 @@ def test_retry_clears_the_previous_uncertainty_while_it_runs(monkeypatch, storag
             seen["uncertainty"] = ExtractionRow.objects.get(id=row.id).uncertainty
             return super().complete(messages, **kwargs)
 
-    monkeypatch.setattr(tasks, "_extractor", lambda ocr: Extractor(Watching([answer_json()])))
+    monkeypatch.setattr(tasks, "_extractor", lambda ocr, ext: Extractor(Watching([answer_json()])))
 
     # Act
     tasks.run(keys=[KEY], extraction_id=row.id)
@@ -418,3 +419,88 @@ def test_retry_clears_the_previous_uncertainty_while_it_runs(monkeypatch, storag
     row.refresh_from_db()
     assert seen["uncertainty"] is None
     assert row.uncertainty == 0.0
+
+
+# ---------------------------------------------------------------- the extraction version in use
+
+
+def _ext_version(**overrides) -> ModelVersion:
+    ModelVersion.objects.filter(
+        module=ModelVersion.ModuleChoices.EXT, status=ModelVersion.StatusChoices.PRODUCTION
+    ).update(status=ModelVersion.StatusChoices.ARCHIVED)
+    values = {
+        "llm_model": "bielik-test",
+        "prompt_version": tasks.PROMPT_VERSION,
+        "structured_output": False,
+        "few_shot_examples": [
+            {"report": "Przykładowy opis.", "output": extraction().model_dump(mode="json")}
+        ],
+    }
+    return production_model(version="ext-test", **{**values, **overrides})
+
+
+def test_the_extractor_follows_the_extraction_version(monkeypatch):
+    # Arrange
+    created = {}
+
+    def from_settings(settings, *, ocr_options=None, examples=None, log=None):
+        created.update(
+            model=settings.llm_model,
+            structured=settings.llm_structured_output,
+            examples=examples,
+        )
+        return "extractor"
+
+    monkeypatch.setattr(tasks.Extractor, "from_settings", from_settings)
+    tasks._cached_extractor.cache_clear()
+
+    # Act
+    tasks._extractor(None, _ext_version())
+
+    # Assert
+    assert created["model"] == "bielik-test"
+    assert created["structured"] is False
+    [(report, output)] = created["examples"]
+    assert report == "Przykładowy opis."
+    assert '"wniosek"' in output
+    tasks._cached_extractor.cache_clear()
+
+
+def test_the_examples_of_the_version_go_into_the_prompt(monkeypatch, storage):
+    # Arrange: a fake LLM that sees the messages; the real extractor set-up from the version
+    llm = FakeLLM([answer_json()])
+    monkeypatch.setattr(
+        tasks.Extractor,
+        "from_settings",
+        lambda settings, **kw: Extractor(llm, **{k: v for k, v in kw.items() if k == "examples"}),
+    )
+    tasks._cached_extractor.cache_clear()
+    model = _ext_version()
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.model == model
+    [call] = llm.calls
+    users = [m["content"] for m in call["messages"] if m["role"] == "user"]
+    assert any("Przykładowy opis." in content for content in users)
+    tasks._cached_extractor.cache_clear()
+
+
+def test_a_version_with_another_prompt_fails_the_report_with_the_reason(monkeypatch, storage):
+    # Arrange
+    tasks._cached_extractor.cache_clear()
+    _ext_version(prompt_version="v1")
+    row = ExtractionRow.objects.create(report_path=KEY, status=StatusChoices.PENDING)
+
+    # Act
+    tasks.run(keys=[KEY], extraction_id=row.id)
+
+    # Assert
+    row.refresh_from_db()
+    assert row.status == StatusChoices.FAILED
+    assert "needs prompt v1" in row.error
+    assert storage == []  # failed before downloading anything
