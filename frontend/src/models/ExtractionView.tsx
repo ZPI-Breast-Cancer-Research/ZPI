@@ -264,6 +264,7 @@ function Registry({ data }: { data: ExtractionOverview }) {
           </tbody>
         </table>
       )}
+      {data.versions.length > 0 && <p className="note">{t("models.ext.f1Note")}</p>}
       {proposing && <ProposeDialog version={proposing} replaces={data.inUse?.version ?? null} onClose={() => setProposing(null)} />}
       {editing && <DraftDialog version={editing} onClose={() => setEditing(null)} />}
       {examples && <FewShotDialog version={examples} onClose={() => setExamples(null)} />}
@@ -283,7 +284,6 @@ export default function ExtractionView({ data }: { data: ExtractionOverview }) {
         </Panel>
       )}
       <Registry data={data} />
-      <p className="note">{t("models.ext.f1Note")}</p>
     </div>
   );
 }
