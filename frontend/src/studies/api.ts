@@ -29,6 +29,8 @@ export interface Study {
   extraction_status: string;
   segmentation_status: string;
   uncertainty: number | null;
+  // mask and active report verified: no new report, no new run
+  closed?: boolean;
 }
 
 export interface StudyRow {
@@ -41,6 +43,8 @@ export interface StudyRow {
   uncertainty: number | null;
   // ISO date and time the image was verified
   verifiedAt: string | null;
+  // mask and active report verified: the backend refuses a new report, a new run and deleting
+  closed: boolean;
 }
 
 export interface UnassignedReport {
@@ -52,6 +56,10 @@ export interface UnassignedReport {
   originalUrl: string | null;
   // null until the extraction worker has read it
   report: CaseReport | null;
+  // backend status: UPLOADED (nothing ordered yet), PENDING, PROCESSING, COMPLETED, FAILED…
+  status: string;
+  // why the processing failed
+  error: string;
 }
 
 export type StepState = "done" | "running" | "waiting" | "waiting_report" | "error";
@@ -89,6 +97,7 @@ const MOCK_ROWS: StudyRow[] = (
   report,
   uncertainty,
   verifiedAt: VERIFIED_AT[`s${i + 1}`] ?? null,
+  closed: false,
 }));
 
 // mock rows follow what was approved on the review screen in this session
@@ -123,6 +132,8 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   CORRECTED: "verified_corrected",
   REJECTED: "to_review",
   FAILED: "error",
+  // stored, processing not ordered yet
+  UPLOADED: "ready",
   missing: "missing",
 };
 
@@ -142,6 +153,7 @@ export async function listStudies(): Promise<StudyRow[]> {
       report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
       uncertainty: study.uncertainty,
       verifiedAt: null,
+      closed: study.closed ?? false,
     }));
   } catch (error) {
     handleApiError(error, url);
@@ -151,12 +163,23 @@ export async function listStudies(): Promise<StudyRow[]> {
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
   if (MOCK_API) {
     return mockDelay([
-      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", originalUrl: null, report: null },
-      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null },
+      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", originalUrl: null, report: null, status: "UPLOADED", error: "" },
+      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null, status: "FAILED", error: "OCR" },
     ]);
   }
   const reports = await api.get<
-    { id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string; originalUrl?: string | null; report?: unknown }[]
+    {
+      id: string;
+      file_name?: string;
+      fileName?: string;
+      kind: UnassignedReport["kind"];
+      added_at?: string;
+      addedAt?: string;
+      originalUrl?: string | null;
+      report?: unknown;
+      status?: string;
+      error?: string;
+    }[]
   >("/api/reports/unassigned/");
   return reports.data.map((report) => ({
     id: report.id,
@@ -165,7 +188,19 @@ export async function listUnassignedReports(): Promise<UnassignedReport[]> {
     addedAt: report.added_at ?? report.addedAt ?? "",
     originalUrl: report.originalUrl ?? null,
     report: isCaseReport(report.report) ? report.report : null,
+    status: report.status ?? "",
+    error: report.error ?? "",
   }));
+}
+
+// orders OCR and extraction of a report, the first time or again; the backend checks who may
+export async function processReport(reportId: string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 300);
+  try {
+    await api.post(`/api/reports/${reportId}/process/`);
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 // TODO: no backend endpoint for the processing steps yet

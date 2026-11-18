@@ -7,7 +7,7 @@ from django.db.models import Count, Q
 from django.db.models.functions import TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from extraction.models import ExtractionResult
+from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ExtStatus
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -17,6 +17,7 @@ from segmentation.models import SegmentationResult
 from segmentation.models import StatusChoices as SegStatus
 from users.permissions import require_permission
 
+from .extraction_versions import few_shot_report_ids
 from .models import ModelVersion, ModuleUsagePeriod
 
 VERIFIED = (SegStatus.APPROVED, SegStatus.CORRECTED)
@@ -295,10 +296,14 @@ def extraction_overview(request):
         .order_by("-created_at")
         .first()
     )
-    extractions = ExtractionResult.objects.all()
+    # a form filled in by hand has no model answer to compare with
+    extractions = ExtractionResult.objects.exclude(source=SourceChoices.MANUAL)
 
     if prod_ext:
-        extractions = extractions.filter(model=prod_ext)
+        # its own few-shot examples would flatter the version
+        extractions = extractions.filter(model=prod_ext).exclude(
+            pk__in=few_shot_report_ids(prod_ext)
+        )
     verified = extractions.filter(
         status__in=(
             ExtStatus.APPROVED,
@@ -345,6 +350,11 @@ def extraction_overview(request):
             "createdAt": _iso(model.created_at),
             # start of the last period the version was in use
             "activatedAt": _iso(max((p.started_at for p in model.periods.all()), default=None)),
+            # what the version consists of (docs/database.md)
+            "llmModel": model.llm_model,
+            "promptVersion": model.prompt_version,
+            "structuredOutput": model.structured_output,
+            "fewShot": len(model.few_shot_examples),
         }
         for model in ext_versions
     ]

@@ -57,7 +57,7 @@ def test_import_does_not_create_study_when_archive_is_invalid(
 @pytest.mark.django_db
 @mock.patch("patients.views.current_app.send_task")
 @mock.patch("patients.views.put_bytes", return_value="reports/test.json")
-def test_import_report_creates_extraction_result(
+def test_import_of_a_report_alone_only_stores_it(
     mock_put_bytes,
     send_task,
     authenticated_client,
@@ -83,13 +83,12 @@ def test_import_report_creates_extraction_result(
 
     result = ExtractionResult.objects.first()
 
+    # nothing is computed until the report is assigned or someone orders it
     assert result.study is None
-    assert result.status == "PENDING"
-    assert len(callbacks) == 1
-
-    send_task.assert_called_once()
-    assert send_task.call_args.args[0] == "extraction.run"
-    assert send_task.call_args.kwargs["kwargs"]["extraction_id"] == result.id
+    assert result.status == "UPLOADED"
+    assert result.requested_by is None
+    assert callbacks == []
+    send_task.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -99,6 +98,7 @@ def test_extraction_task_is_not_sent_before_transaction_commit(
     mock_put_bytes,
     send_task,
     authenticated_client,
+    study,
     django_capture_on_commit_callbacks,
 ):
     report_file = SimpleUploadedFile(
@@ -109,7 +109,7 @@ def test_extraction_task_is_not_sent_before_transaction_commit(
 
     with django_capture_on_commit_callbacks(execute=False) as callbacks:
         response = authenticated_client.post(
-            reverse("study-import"),
+            f"/api/studies/{study.orthanc_path}/attach-report/",
             {
                 "report": report_file,
             },
@@ -130,6 +130,8 @@ def test_extraction_task_is_sent_after_transaction_commit(
     mock_put_bytes,
     send_task,
     authenticated_client,
+    study,
+    user,
     django_capture_on_commit_callbacks,
 ):
     report_file = SimpleUploadedFile(
@@ -138,9 +140,10 @@ def test_extraction_task_is_sent_after_transaction_commit(
         content_type="text/plain",
     )
 
+    # a report that comes with its study is processed right away
     with django_capture_on_commit_callbacks(execute=True) as callbacks:
         response = authenticated_client.post(
-            reverse("study-import"),
+            f"/api/studies/{study.orthanc_path}/attach-report/",
             {
                 "report": report_file,
             },
@@ -152,6 +155,8 @@ def test_extraction_task_is_sent_after_transaction_commit(
 
     send_task.assert_called_once()
     assert send_task.call_args.args[0] == "extraction.run"
+    stored = ExtractionResult.objects.get(study=study)
+    assert (stored.status, stored.requested_by) == ("PENDING", user)
 
 
 @pytest.mark.django_db

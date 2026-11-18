@@ -9,7 +9,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
-from extraction.models import ExtractionResult, StatusChoices
+from extraction.models import ExtractionResult, SourceChoices, StatusChoices
 from patients.errors import OrthancUnauthorized, OrthancUnavailable
 from patients.models import Study
 from patients.orthanc_client import OrthancClient
@@ -231,46 +231,73 @@ def _report_rows(extraction):
     ]
 
 
+# the worker has not finished a run of the report yet
+WAITING = (StatusChoices.UPLOADED, StatusChoices.PENDING, StatusChoices.PROCESSING)
+
+
 def _report_payload(extraction, study_id):
     """What the review screens show as the report (frontend/src/review/extraction.ts CaseReport).
 
     {"originalUrl", "result"} once the worker has a result; "pending" while it has none yet, which
-    the frontend shows as waiting; None without a report.
+    the frontend shows as waiting; None without a report. The result is put together from the
+    columns of the report row in the shape of the worker's ExtractionResult.
     """
     if extraction is None:
         return None
-    result = extraction.result
-    if result is None and extraction.status == StatusChoices.FAILED:
-        result = _failed_result(extraction)  # failed before the pipeline ran, e.g. download
-    if result is None:
+    if extraction.source == SourceChoices.MANUAL:
+        return {"originalUrl": None, "result": _manual_result(extraction)}
+    if extraction.status in WAITING:
         return "pending"
     url = reverse("review-report-scan", args=[study_id]) if extraction.report_path else None
-    return {"originalUrl": url, "result": result}
+    return {"originalUrl": url, "result": _worker_result(extraction)}
 
 
-def _failed_result(extraction) -> dict:
-    """A worker result for a report that failed before extraction, so the screen shows the error."""
+def _worker_result(extraction) -> dict:
+    failed = extraction.status == StatusChoices.FAILED
+    return _result_shape(
+        extraction,
+        outcome="error" if failed else "ok",
+        data=None if failed else extraction.generated_report,
+        error=extraction.error,
+        source=(extraction.report_path or "").rsplit("/", 1)[-1],
+    )
+
+
+def _manual_result(extraction) -> dict:
+    """A form filled in by the radiologist, in the shape of a worker result (no file, no text)."""
+    return _result_shape(
+        extraction, outcome="ok", data=extraction.accepted_report, error=None, source="manual"
+    )
+
+
+def _result_shape(extraction, *, outcome, data, error, source) -> dict:
+    """The worker's ExtractionResult (workers/extraction/schema.py) from the report columns."""
+    ocr = extraction.ocr_model
+    ocr_settings = (ocr.ocr_settings or {}) if ocr else {}
+    model = extraction.model
     return {
-        "source": "",
-        "status": "error",
-        "data": None,
-        "error": extraction.error or "unknown error",
-        "warnings": [],
-        "text": "",
+        "source": source,
+        "status": outcome,
+        "data": data,
+        "error": (error or "unknown error") if outcome == "error" else None,
+        "failedStep": extraction.failed_step or None,
+        "warnings": extraction.warnings or [],
+        "text": extraction.ocr_text or "",
         "provenance": {
-            "ocr_engine": None,
-            "ocr_engine_version": None,
-            "ocr_mean_confidence": None,
-            "orientation_detector": None,
-            "page_rotations": [],
+            "ocr_engine": ocr.ocr_engine if ocr else None,
+            "ocr_engine_version": extraction.ocr_engine_version or None,
+            "ocr_mean_confidence": extraction.ocr_confidence,
+            "orientation_detector": ocr_settings.get("orientation"),
+            "page_rotations": extraction.page_rotations or [],
+            # the LLM and the prompt belong to the extraction version (#118)
             "llm_provider": "",
-            "llm_model": "",
+            "llm_model": model.name if model else "",
             "prompt_version": "",
-            "schema_version": "",
+            "schema_version": extraction.schema_version or "",
         },
-        "attempts": 0,
-        "ocr_seconds": None,
-        "llm_seconds": None,
+        "attempts": extraction.attempts or 0,
+        "ocr_seconds": extraction.ocr_seconds,
+        "llm_seconds": extraction.llm_seconds,
         "created_at": extraction.updated_at.isoformat() if extraction.updated_at else "",
     }
 
@@ -308,12 +335,36 @@ def _apply_form(extraction, submitted, user):
         extraction.field_checks = field_checks
     elif not extraction.accepted_report:
         extraction.accepted_report = extraction.generated_report
-    # the checks stored with the accepted report, not only the ones in this request
-    corrected = _is_corrected(extraction.field_checks)
+    # the checks stored with the accepted report, not only the ones in this request;
+    # a manual form has no model answer to correct
+    corrected = extraction.source != SourceChoices.MANUAL and _is_corrected(extraction.field_checks)
     extraction.status = StatusChoices.CORRECTED if corrected else StatusChoices.APPROVED
     extraction.accepted_by = user
     extraction.accepted_at = timezone.now().date()
     extraction.save()
+
+
+def _manual_report(study, submitted, user):
+    """A study without a report gets the form filled in by the radiologist (source = manual).
+
+    None when the request carries no form. The caller holds the lock on the study.
+    """
+    report = submitted.get("report") if isinstance(submitted, dict) else None
+    if not isinstance(report, dict):
+        return None
+    fields = submitted.get("fields")
+    now = timezone.now()
+    return ExtractionResult.objects.create(
+        study=study,
+        source=SourceChoices.MANUAL,
+        status=StatusChoices.APPROVED,
+        accepted_report=report,
+        field_checks=fields if isinstance(fields, dict) else None,
+        accepted_by=user,
+        accepted_at=now.date(),
+        requested_by=user,
+        assigned_at=now,
+    )
 
 
 def _audit_object(study) -> str:
@@ -477,9 +528,15 @@ def review_case_detail(request, study_id):
         "measurements": {
             "volume": (measured or {}).get("volume_ml"),
             "size": _largest_mm(measured),
-            "sizeInReport": _report_size_mm(extraction.generated_report) if extraction else None,
+            "sizeInReport": _report_size_mm(
+                extraction.accepted_report
+                if extraction and extraction.source == SourceChoices.MANUAL
+                else (extraction.generated_report if extraction else None)
+            ),
         },
         "maskApproved": mask_approved_val,
+        # scan, text or manual (filled in by the radiologist); None without a report
+        "reportSource": extraction.source if extraction else None,
     }
 
     return Response(case_data, status=status.HTTP_200_OK)
@@ -500,6 +557,7 @@ def approve_case(request, study_id):
             .order_by("-id")
             .first()
         )
+        Study.objects.select_for_update().get(pk=study.pk)  # one manual form at a time
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
 
         approved_mask = _approve_mask(segmentation, new_status, request.user)
@@ -509,6 +567,8 @@ def approve_case(request, study_id):
         ]
         if approved_form:
             _apply_form(extraction, payload, request.user)
+        elif extraction is None:
+            approved_form = _manual_report(study, payload, request.user) is not None
 
     if approved_mask:
         record_audit(
@@ -607,6 +667,7 @@ def approve_form(request, study_id):
     submitted = request.data
 
     with transaction.atomic():
+        Study.objects.select_for_update().get(pk=study.pk)  # one manual form at a time
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         # sent again after a later change
         updated = bool(extraction) and extraction.status in VERIFIED
@@ -614,12 +675,17 @@ def approve_form(request, study_id):
             StatusChoices.COMPLETED,
             StatusChoices.REJECTED,
         )
-        approved = updated or waiting
-        if approved:
+        manual = False
+        if updated or waiting:
             _apply_form(extraction, submitted, request.user)
+        elif extraction is None:
+            manual = _manual_report(study, submitted, request.user) is not None
+        approved = updated or waiting or manual
 
     if approved:
-        detail = "Form updated" if updated else "Form approved"
+        detail = (
+            "Form filled in by hand" if manual else "Form updated" if updated else "Form approved"
+        )
         record_audit(request, kind="form_approved", object=_audit_object(study), detail=detail)
     return Response(status=status.HTTP_200_OK)
 

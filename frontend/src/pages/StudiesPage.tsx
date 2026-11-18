@@ -243,7 +243,7 @@ const send = useMutation({
                   </Panel>
                 </>
               )}
-              <ProcessingSteps study={selected} onDelete={adds ? askDelete : undefined} deleting={remove.isPending} />
+              <ProcessingSteps study={selected} onDelete={adds && !selected?.closed ? askDelete : undefined} deleting={remove.isPending} />
             </>
           )}
         </div>

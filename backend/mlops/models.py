@@ -48,6 +48,26 @@ class ModelVersion(models.Model):
     )
     decided_by = models.ForeignKey("users.User", null=True, blank=True, on_delete=models.SET_NULL)
 
+    # module ocr: the engine and how it reads a page
+    ocr_engine = models.CharField(max_length=50, blank=True, default="")
+    ocr_settings = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text='{"lang", "orientation", "unwarp", "detect_orientation"}',
+    )
+
+    # module ext: the LLM, the prompt and the few-shot examples, one configuration
+    llm_model = models.CharField(max_length=200, blank=True, default="")
+    prompt_version = models.CharField(max_length=20, blank=True, default="")
+    structured_output = models.BooleanField(
+        default=True, help_text="The LLM is forced to answer in the form schema"
+    )
+    few_shot_examples = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='[{"report", "output", "report_id"?}]; the whole set goes into the prompt',
+    )
+
     trained_at = models.DateTimeField(null=True, blank=True)
     training_cases = models.PositiveIntegerField(null=True, blank=True)
     celery_task_id = models.CharField(max_length=64, blank=True, default="")
@@ -60,7 +80,8 @@ class ModelVersion(models.Model):
             "Set the version was trained on and its metrics were computed on; written by the worker"
         ),
     )
-    # Keys depend on the module, e.g. seg: dice, iou, hd95, dice_small, volume_error_pct; ext: f1.
+    # Keys depend on the module (docs/database.md): seg: dice, iou, dice_small, volume_error_pct;
+    # ocr: cer, word_error, worst_cer, mean_confidence, seconds_per_page; ext: field_accuracy, f1.
     metrics = models.JSONField(default=dict, blank=True)
     metrics_cases = models.PositiveIntegerField(null=True, blank=True)
     mlflow_run_id = models.CharField(max_length=64, blank=True)

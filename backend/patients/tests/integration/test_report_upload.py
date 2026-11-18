@@ -64,8 +64,8 @@ def test_import_accepts_supported_report_types(
 
     # Assert
     assert response.status_code in (200, 201)
-    assert ExtractionResult.objects.count() == 1
-    send_task.assert_called_once()
+    assert ExtractionResult.objects.get().status == StatusChoices.UPLOADED
+    send_task.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -111,7 +111,7 @@ def test_dashboard_lists_failed_extraction_as_processing_error(
 )
 @mock.patch("patients.views.current_app.send_task")
 @mock.patch("patients.views.put_bytes")
-def test_uploaded_report_knows_its_source_and_who_ordered_it(
+def test_uploaded_report_knows_its_source(
     put_bytes, send_task, authenticated_client, user, name, source
 ):
     # Act
@@ -123,4 +123,5 @@ def test_uploaded_report_knows_its_source_and_who_ordered_it(
     assert response.status_code in (200, 201)
     stored = ExtractionResult.objects.get()
     assert stored.source == source
-    assert stored.requested_by == user
+    # nobody ordered the processing yet
+    assert stored.requested_by is None

@@ -93,10 +93,37 @@ class OCRScore:
 
     documents: dict[str, float] = field(default_factory=dict)
     words: dict[str, float] = field(default_factory=dict)
+    # what OCR reported about its own read, and how long a page took
+    confidence: dict[str, float] = field(default_factory=dict)
+    seconds_per_page: dict[str, float] = field(default_factory=dict)
 
-    def add(self, key: str, reference: str, hypothesis: str) -> None:
+    def add(
+        self,
+        key: str,
+        reference: str,
+        hypothesis: str,
+        *,
+        confidence: float | None = None,
+        seconds: float | None = None,
+        pages: int = 0,
+    ) -> None:
         self.documents[key] = self.char_error_rate(reference, hypothesis)
         self.words[key] = self.bag_of_words_error_rate(reference, hypothesis)
+        if confidence is not None:
+            self.confidence[key] = confidence
+        if seconds is not None and pages:
+            self.seconds_per_page[key] = seconds / pages
+
+    def metrics(self) -> dict[str, float | None]:
+        """The metrics of an OCR version (docs/database.md, ``module_version.metrics``)."""
+        worst = self.worst
+        return {
+            "cer": self.mean,
+            "word_error": self.words_mean,
+            "worst_cer": worst[1] if worst else None,
+            "mean_confidence": _mean(self.confidence.values()),
+            "seconds_per_page": _mean(self.seconds_per_page.values()),
+        }
 
     @property
     def mean(self) -> float | None:
@@ -227,3 +254,8 @@ def _ranks(values: Sequence[float]) -> list[float]:
             ranks[order[position]] = (i + j) / 2 + 1
         i = j + 1
     return ranks
+
+
+def _mean(values) -> float | None:
+    values = list(values)
+    return sum(values) / len(values) if values else None
