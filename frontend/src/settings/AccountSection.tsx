@@ -8,7 +8,7 @@ import { t, type MessageKey } from "../i18n";
 import { forgetViewerLayout } from "../viewer/layout";
 import type { Plane, Series } from "../viewer/types";
 import { changePassword, type Profile } from "./api";
-import { usePreferences, type Preferences } from "./preferences";
+import { usePreferences, type Preferences, type Theme } from "./preferences";
 
 export function ProfileSection({ profile }: { profile: Profile }) {
   const rows: [MessageKey, string][] = [
@@ -125,6 +125,16 @@ export function WorkSection() {
   return (
     <Panel title={t("settings.work")} className="settings__section">
       <div className="settings__body settings__choices">
+        <Choice<Theme>
+          label="settings.theme"
+          value={preferences.theme}
+          options={[
+            ["dark", "settings.theme.dark"],
+            ["light", "settings.theme.light"],
+            ["system", "settings.theme.system"],
+          ]}
+          onChange={(theme) => set({ theme })}
+        />
         <Choice<Series>
           label="settings.defaultSeries"
           value={preferences.series}

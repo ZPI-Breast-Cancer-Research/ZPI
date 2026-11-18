@@ -25,7 +25,7 @@ const STORAGE_KEY = "maria.user";
 // dev only: VITE_SKIP_LOGIN=radiologist (or researcher, admin) signs in straight away with that role
 const SKIP_LOGIN = import.meta.env.DEV ? (import.meta.env.VITE_SKIP_LOGIN as Role | undefined) : undefined;
 
-function readUser(): User | null {
+export function readUser(): User | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as User;
