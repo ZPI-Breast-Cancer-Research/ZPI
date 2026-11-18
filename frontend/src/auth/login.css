@@ -17,15 +17,15 @@
   display: grid;
   place-items: center;
   padding: 24px 16px;
-  background: var(--color-ground);
+  background: var(--color-base);
 }
 
 .login__box {
   width: min(420px, 100%);
   overflow: hidden;
-  border: 1px solid var(--color-rule);
-  border-radius: 4px;
-  background: var(--color-banner);
+  border-radius: var(--radius);
+  background: var(--color-island);
+  box-shadow: var(--shadow-raised);
 }
 
 .login__id {
@@ -79,9 +79,9 @@
 .login__error {
   margin-bottom: 12px;
   padding: 8px 10px;
-  border: 1px solid rgba(240, 144, 127, 0.45);
-  border-radius: 4px;
-  background: #24161a;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-warning-tint);
   color: var(--color-warning);
   font-size: 13.5px;
 }
@@ -95,7 +95,7 @@
 .login__note {
   padding: 12px 24px;
   border-top: 1px solid var(--color-rule);
-  background: var(--color-ground);
+  background: var(--color-hover);
   color: var(--color-ink-faint);
   font-size: var(--text-sm);
 }

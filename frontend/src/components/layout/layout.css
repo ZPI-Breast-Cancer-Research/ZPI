@@ -19,22 +19,19 @@
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  padding: 8px 18px 0;
-  background: var(--color-banner);
-  border-bottom: 1px solid var(--color-rule-strong);
+  padding: 8px var(--island-gap) 0;
 }
 
-/* the active tab is a folder tab: page ground, open at the bottom, so it runs into the content */
+/* folder tabs: the active one is lit, with a pink top edge, and runs into the first panel's header */
 .tabs a {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: -1px;
   padding: 9px 18px 10px;
-  border: 1px solid transparent;
-  border-top-width: 2px;
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
+  background: var(--color-island);
+  border-top: 2px solid transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: inset 0 1px 0 var(--edge-light);
   color: var(--color-ink-muted);
   font-size: 15px;
   font-weight: 600;
@@ -47,15 +44,17 @@
 }
 
 .tabs a.active {
-  padding-bottom: 11px;
-  background: var(--color-ground);
-  border-color: var(--color-rule-strong);
+  background: var(--color-strip);
   border-top-color: var(--color-primary);
   color: var(--color-ink);
 }
 
-.page--tabs .page__body {
-  padding-top: 12px;
+.page--tabs .page__body > :first-child {
+  padding-top: 0;
+}
+
+.page--tabs .page__body > :first-child > :first-child {
+  border-top-left-radius: 0;
 }
 
 .tabs__state {
@@ -77,6 +76,16 @@
   overflow: auto;
 }
 
+/* a whole-page state (loading, empty, no access) sits in one island like the content would */
+.page__body > .state {
+  min-height: calc(100% - 2 * var(--island-gap));
+  margin: var(--island-gap);
+  padding-top: 64px;
+  background: var(--color-island);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
+}
+
 /* top bar */
 .topbar {
   display: flex;
@@ -92,7 +101,7 @@
   align-items: center;
   gap: 10px;
   padding-right: 8px;
-  color: #fff;
+  color: var(--color-ink);
   font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -122,14 +131,17 @@
 
 .topbar__nav a:hover,
 .topbar__util a:hover {
-  color: #fff;
+  color: var(--color-ink);
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* the current module is a light block inside the bar */
 .topbar__nav a.active,
 .topbar__util a.active {
-  background: var(--color-ground);
-  color: #fff;
+  margin: 9px 0;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--color-ink);
   font-weight: 600;
 }
 
@@ -151,8 +163,9 @@
 }
 
 .topbar__util a.topbar__icon.active {
+  margin: 0;
   background: none;
-  color: #fff;
+  color: var(--color-ink);
 }
 
 .topbar__icon svg {
@@ -179,7 +192,7 @@
 
 .account__button:hover,
 .account__button[aria-expanded="true"] {
-  color: #fff;
+  color: var(--color-ink);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -189,9 +202,10 @@
   right: 0;
   z-index: 20;
   width: 240px;
-  background: var(--color-side);
-  border: 1px solid var(--color-rule-strong);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: var(--color-island);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
 }
 
 .account__who {
@@ -237,8 +251,8 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: var(--color-rule-strong);
-  color: #fff;
+  background: var(--color-button);
+  color: var(--color-ink);
   font-size: 12px;
   font-weight: 600;
 }
@@ -249,9 +263,11 @@
   align-items: center;
   gap: 22px;
   padding: 0 18px;
+  position: relative;
+  z-index: 2;
   overflow: hidden;
   background: var(--color-banner);
-  border-bottom: 1px solid var(--color-rule-strong);
+  box-shadow: var(--shadow-banner);
   color: var(--color-ink-muted);
   white-space: nowrap;
 }
@@ -288,14 +304,15 @@
 
 .banner__value small {
   color: var(--color-ink-faint);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: var(--text-label);
+  font-weight: 400;
 }
 
 .banner__value span,
 .banner__value b {
   color: var(--color-ink);
   font-size: 14.5px;
+  font-weight: 500;
 }
 
 .banner__value b {
@@ -350,7 +367,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--color-ground);
+  background: var(--color-island);
 }
 
 .panel__header {
@@ -359,10 +376,11 @@
   align-items: center;
   gap: 12px;
   height: var(--strip-height);
+  position: relative;
   padding: 0 14px;
   background: var(--color-strip);
-  border-bottom: 1px solid var(--color-strip-border);
-  color: #fff;
+  box-shadow: var(--shadow-strip);
+  color: var(--color-ink);
   font-size: var(--text-strip);
   font-weight: 600;
   white-space: nowrap;

@@ -3,8 +3,6 @@ import { formatDayMonth } from "../format";
 import { t } from "../i18n";
 import type { VerifiedDay } from "./api";
 
-const UNCHANGED = "#5b6b85";
-const CORRECTED = "#c9628a";
 const WIDTH = 420;
 const HEIGHT = 110;
 
@@ -18,7 +16,7 @@ export default function VerifiedChart({ days }: { days: VerifiedDay[] }) {
       <div className="chart">
         <svg viewBox={`0 0 ${WIDTH} ${HEIGHT + 2}`} preserveAspectRatio="none" role="img" aria-label={t("dashboard.verified.chart")}>
           {[0, 1, 2].map((k) => (
-            <line key={k} x1="0" x2={WIDTH} y1={(HEIGHT * k) / 3} y2={(HEIGHT * k) / 3} stroke="#22314b" />
+            <line key={k} x1="0" x2={WIDTH} y1={(HEIGHT * k) / 3} y2={(HEIGHT * k) / 3} className="chart__grid" />
           ))}
           {days.map((day, i) => {
             const x = i * slot + (slot - barWidth) / 2;
@@ -27,12 +25,12 @@ export default function VerifiedChart({ days }: { days: VerifiedDay[] }) {
             return (
               <g key={day.date}>
                 <title>{`${formatDayMonth(day.date)}: ${day.unchanged} ${t("dashboard.verified.unchanged")}, ${day.corrected} ${t("dashboard.verified.corrected")}`}</title>
-                <rect x={x} y={HEIGHT - unchanged - corrected} width={barWidth} height={corrected} fill={CORRECTED} />
-                <rect x={x} y={HEIGHT - unchanged} width={barWidth} height={unchanged} fill={UNCHANGED} />
+                <rect x={x} y={HEIGHT - unchanged - corrected} width={barWidth} height={corrected} className="chart__corrected" />
+                <rect x={x} y={HEIGHT - unchanged} width={barWidth} height={unchanged} className="chart__unchanged" />
               </g>
             );
           })}
-          <line x1="0" x2={WIDTH} y1={HEIGHT} y2={HEIGHT} stroke="#34465f" />
+          <line x1="0" x2={WIDTH} y1={HEIGHT} y2={HEIGHT} className="chart__base" />
         </svg>
       </div>
       <div className="chart__axis">
@@ -42,11 +40,11 @@ export default function VerifiedChart({ days }: { days: VerifiedDay[] }) {
       </div>
       <div className="chart__legend">
         <span>
-          <i style={{ background: UNCHANGED }} />
+          <i className="chart__unchanged" />
           {t("dashboard.verified.unchanged")}
         </span>
         <span>
-          <i style={{ background: CORRECTED }} />
+          <i className="chart__corrected" />
           {t("dashboard.verified.corrected")}
         </span>
       </div>
