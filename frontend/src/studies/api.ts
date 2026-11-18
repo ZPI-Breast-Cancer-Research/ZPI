@@ -143,8 +143,6 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   CORRECTED: "verified_corrected",
   REJECTED: "to_review",
   FAILED: "error",
-  // stored, processing not ordered yet
-  UPLOADED: "ready",
   missing: "missing",
 };
 
