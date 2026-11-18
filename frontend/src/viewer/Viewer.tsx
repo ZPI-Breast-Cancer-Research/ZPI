@@ -770,24 +770,26 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
               <span className="viewer__head-end">
                 {isMain && (
                   <span className="viewer__zoom">
-                    <button type="button" className="viewer__head-btn" aria-label={t("viewer.zoomOut")} title={t("viewer.zoomOutTitle")} onClick={() => zoomBy(0.8)}>
-                      −
-                    </button>
-                    <input
-                      type="range"
-                      className="viewer__zoom-range"
-                      style={{ "--fill": `${(zoomLevel / 3) * 100}%` } as CSSProperties}
-                      min={0}
-                      max={3}
-                      step={0.05}
-                      value={zoomLevel}
-                      aria-label={t("viewer.zoomLabel")}
-                      onChange={(event) => zoomTo(2 ** Number(event.target.value))}
-                    />
-                    <button type="button" className="viewer__head-btn" aria-label={t("viewer.zoomIn")} title={t("viewer.zoomInTitle")} onClick={() => zoomBy(1.25)}>
-                      +
-                    </button>
-                    <span className="viewer__zoom-value">{t("viewer.zoom", { n: formatOneDecimal(zoom ?? 1) })}</span>
+                    <span className="viewer__group">
+                      <button type="button" className="viewer__step" aria-label={t("viewer.zoomOut")} title={t("viewer.zoomOutTitle")} onClick={() => zoomBy(0.8)}>
+                        −
+                      </button>
+                      <input
+                        type="range"
+                        className="viewer__zoom-range"
+                        style={{ "--fill": `${(zoomLevel / 3) * 100}%` } as CSSProperties}
+                        min={0}
+                        max={3}
+                        step={0.05}
+                        value={zoomLevel}
+                        aria-label={t("viewer.zoomLabel")}
+                        onChange={(event) => zoomTo(2 ** Number(event.target.value))}
+                      />
+                      <button type="button" className="viewer__step" aria-label={t("viewer.zoomIn")} title={t("viewer.zoomInTitle")} onClick={() => zoomBy(1.25)}>
+                        +
+                      </button>
+                      <span className="viewer__zoom-value">{t("viewer.zoom", { n: formatOneDecimal(zoom ?? 1) })}</span>
+                    </span>
                     <button type="button" className="viewer__head-btn" title={t("viewer.fitTitle")} disabled={zoom === null} onClick={fit}>
                       {t("viewer.fit")}
                     </button>
