@@ -168,21 +168,27 @@ function RowView({ row, state, original, current, side, editing, onEdit, onAnswe
             >
               {t("rows.confirm")}
             </button>
-          ) : state === "corrected" ? (
-            <button
-              type="button"
-              className="link"
-              onClick={(event) => {
-                event.stopPropagation();
-                onRestore();
-              }}
-            >
-              {t("rows.restore")}
-            </button>
           ) : (
-            <button type="button" className="rows__change">
-              {t("rows.change")}
-            </button>
+            // the state word gives way to the row's action on hover
+            <>
+              <span className={`rows__state status status--${state}`}>{t(`rows.${state}`)}</span>
+              {state === "corrected" ? (
+                <button
+                  type="button"
+                  className="link rows__swap"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRestore();
+                  }}
+                >
+                  {t("rows.restore")}
+                </button>
+              ) : (
+                <button type="button" className="rows__change rows__swap">
+                  {t("rows.change")}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

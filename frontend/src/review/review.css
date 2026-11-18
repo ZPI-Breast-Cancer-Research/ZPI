@@ -758,8 +758,11 @@
   font-size: 13px;
 }
 
+.rows__act {
+  position: relative;
+}
+
 .rows__change {
-  visibility: hidden;
   padding: 0;
   background: none;
   border: 0;
@@ -769,8 +772,21 @@
   cursor: pointer;
 }
 
-.rows__row:hover .rows__change {
-  visibility: visible;
+/* a decided row shows its state; hovering or tabbing in swaps it for the action */
+.rows__swap {
+  position: absolute;
+  right: 0;
+  opacity: 0;
+}
+
+.rows__row:hover .rows__swap,
+.rows__swap:focus-visible {
+  opacity: 1;
+}
+
+.rows__row:hover .rows__state,
+.rows__act:has(.rows__swap:focus-visible) .rows__state {
+  opacity: 0;
 }
 
 .rows__controls {

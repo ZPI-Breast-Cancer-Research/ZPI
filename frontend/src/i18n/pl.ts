@@ -625,6 +625,8 @@ export const pl = {
   "rows.model": "model: {v}",
   "rows.restore": "Przywróć",
   "rows.change": "Zmień",
+  "rows.confirmed": "Potwierdzone",
+  "rows.corrected": "Poprawione",
   "rows.confirm": "Potwierdź",
   "rows.badClock": "Wpisz godzinę 1–12 albo zakres, np. 10/11",
   "rows.badNumber": "Wpisz liczbę",
