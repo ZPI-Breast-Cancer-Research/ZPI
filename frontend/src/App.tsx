@@ -13,10 +13,11 @@ import ModelsPage from "./pages/ModelsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import SettingsPage from "./pages/SettingsPage";
 import StudiesPage from "./pages/StudiesPage";
+import { usePrefetchViewer, viewerPages } from "./viewerPages";
 
 // the image viewer is the heavy part, so its pages load when opened
-const LesionOverviewPage = lazy(() => import("./pages/LesionOverviewPage"));
-const ReviewPage = lazy(() => import("./pages/ReviewPage"));
+const LesionOverviewPage = lazy(viewerPages.lesionOverview);
+const ReviewPage = lazy(viewerPages.review);
 
 function Loading({ title, label }: { title: string; label: string }) {
   return (
@@ -27,6 +28,7 @@ function Loading({ title, label }: { title: string; label: string }) {
 }
 
 export default function App() {
+  usePrefetchViewer();
   return (
     <Routes>
       <Route path="logowanie" element={<LoginPage />} />
