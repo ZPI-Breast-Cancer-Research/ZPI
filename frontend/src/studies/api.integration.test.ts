@@ -63,7 +63,16 @@ describe("listUnassignedReports", () => {
   it("reads the reports waiting for a study, before the worker has read them", async () => {
     server.use(http.get("/api/reports/unassigned/", () => HttpResponse.json(unassigned)));
     expect(await listUnassignedReports()).toEqual(
-      unassigned.map((report) => ({ id: report.id, fileName: report.fileName, kind: report.kind, addedAt: report.addedAt, originalUrl: null, report: null })),
+      unassigned.map((report) => ({
+        id: report.id,
+        fileName: report.fileName,
+        kind: report.kind,
+        addedAt: report.addedAt,
+        originalUrl: null,
+        report: null,
+        status: report.status,
+        error: report.error,
+      })),
     );
   });
 });
