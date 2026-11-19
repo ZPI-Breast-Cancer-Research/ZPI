@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { errorText } from "../api";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { lesionGroup, observationGroups, rowLines, visibleRows } from "../review/rows";
 import ReportText from "../review/ReportText";
 import { fetchFewShot, type FewShotExample } from "./extraction";
@@ -49,7 +51,7 @@ function Answer({ example, json }: { example: FewShotExample; json: boolean }) {
 
 export default function FewShotDialog({ version, onClose }: { version: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const examples = useQuery({ queryKey: ["models", "few-shot", version], queryFn: () => fetchFewShot(version) });
+  const examples = useQuery({ queryKey: queryKeys.fewShot(version), queryFn: () => fetchFewShot(version) });
   const [picked, setPicked] = useState(0);
   const [json, setJson] = useState(false);
   const example = examples.data?.[picked];
@@ -69,7 +71,9 @@ export default function FewShotDialog({ version, onClose }: { version: string; o
       </div>
       {examples.isPending ? (
         <p className="models__pad models__empty">{t("models.loading")}</p>
-      ) : !examples.data?.length ? (
+      ) : examples.isError ? (
+        <p className="models__pad models__error">{t("models.examples.loadFailed", { why: errorText(examples.error) })}</p>
+      ) : !examples.data.length ? (
         <p className="models__pad models__empty">{t("models.examples.none")}</p>
       ) : (
         <div className="examples__cols">

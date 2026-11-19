@@ -1,0 +1,18 @@
+[
+  {
+    "id": "52",
+    "fileName": "skan_opisu_006.jpeg",
+    "kind": "scan",
+    "addedAt": "2026-11-16",
+    "status": "PENDING",
+    "error": ""
+  },
+  {
+    "id": "51",
+    "fileName": "opis_piersi_005.txt",
+    "kind": "text",
+    "addedAt": "2026-11-16",
+    "status": "COMPLETED",
+    "error": ""
+  }
+]

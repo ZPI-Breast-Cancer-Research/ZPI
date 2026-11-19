@@ -1,4 +1,4 @@
-import { api, handleApiError } from "../api";
+import { api, request } from "../api";
 import { mockDelay, mockScenario, mockStudyUid, MOCK_API } from "../mock";
 import type { SegRef } from "../viewer/types";
 import { isCaseReport, type CaseReport, type Extraction } from "../review/extraction";
@@ -50,7 +50,7 @@ export interface Overview {
 
 // ?mock=saving / ?mock=no-report preview the other states
 export async function fetchOverview(studyId: string): Promise<Overview> {
-  if(MOCK_API){
+  if (MOCK_API) {
     const scenario = mockScenario();
     const saving = scenario === "saving";
     const noReport = scenario === "no-report";
@@ -82,17 +82,13 @@ export async function fetchOverview(studyId: string): Promise<Overview> {
       },
     });
   }
-  try {
-    const { data } = await api.get<Overview>(`/api/review/cases/${encodeURIComponent(studyId)}/review-overview/`);
-    const ready = !!data.report && isCaseReport(data.report.source);
-    return {
-      ...data,
-      measurements: isMeasurements(data.measurements) ? data.measurements : null,
-      report: ready ? data.report : null,
-      reportPending: !ready && !!data.report,
-      verification: { ...data.verification, agreement: data.verification.agreement ?? null },
-    };
-  } catch (error) {
-    handleApiError(error);
-  }
+  const { data } = await request(api.get<Overview>(`/api/review/cases/${encodeURIComponent(studyId)}/review-overview/`));
+  const ready = !!data.report && isCaseReport(data.report.source);
+  return {
+    ...data,
+    measurements: isMeasurements(data.measurements) ? data.measurements : null,
+    report: ready ? data.report : null,
+    reportPending: !ready && !!data.report,
+    verification: { ...data.verification, agreement: data.verification.agreement ?? null },
+  };
 }

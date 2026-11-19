@@ -1,19 +1,34 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { RequireAuth, RequireRole } from "./auth/AuthProvider";
 import AppShell from "./components/layout/AppShell";
+import Page from "./components/layout/Page";
+import { LoadingState } from "./components/State";
 import { t } from "./i18n";
 import AccountPage from "./pages/AccountPage";
 import DashboardPage from "./pages/DashboardPage";
-import LesionOverviewPage from "./pages/LesionOverviewPage";
 import LoginPage from "./pages/LoginPage";
 import ModelsPage from "./pages/ModelsPage";
 import NotFoundPage from "./pages/NotFoundPage";
-import ReviewPage from "./pages/ReviewPage";
 import SettingsPage from "./pages/SettingsPage";
 import StudiesPage from "./pages/StudiesPage";
+import { usePrefetchViewer, viewerPages } from "./viewerPages";
+
+// the image viewer is the heavy part, so its pages load when opened
+const LesionOverviewPage = lazy(viewerPages.lesionOverview);
+const ReviewPage = lazy(viewerPages.review);
+
+function Loading({ title, label }: { title: string; label: string }) {
+  return (
+    <Page title={title}>
+      <LoadingState label={label} />
+    </Page>
+  );
+}
 
 export default function App() {
+  usePrefetchViewer();
   return (
     <Routes>
       <Route path="logowanie" element={<LoginPage />} />
@@ -22,12 +37,21 @@ export default function App() {
           <Route index element={<Navigate to="/pulpit" replace />} />
           <Route path="pulpit" element={<DashboardPage />} />
           <Route path="badania" element={<StudiesPage />} />
-          <Route path="badania/:studyId" element={<LesionOverviewPage />} />
+          <Route
+            path="badania/:studyId"
+            element={
+              <Suspense fallback={<Loading title={t("overview.title")} label={t("overview.loading")} />}>
+                <LesionOverviewPage />
+              </Suspense>
+            }
+          />
           <Route
             path="weryfikacja/:studyId?"
             element={
               <RequireRole permission="review" title={t("nav.review")}>
-                <ReviewPage />
+                <Suspense fallback={<Loading title={t("nav.review")} label={t("review.loading")} />}>
+                  <ReviewPage />
+                </Suspense>
               </RequireRole>
             }
           />

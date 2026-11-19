@@ -1,0 +1,54 @@
+{
+  "status": "ok",
+  "database": "ok",
+  "orthanc": "ok",
+  "mlflow": "ok",
+  "storage": "ok",
+  "checkedAt": "2026-11-16T22:42:57.061282+00:00",
+  "components": [
+    {
+      "key": "orthanc",
+      "state": "ok",
+      "since": null,
+      "detail": null
+    },
+    {
+      "key": "pacs",
+      "state": "unknown",
+      "since": null,
+      "detail": null
+    },
+    {
+      "key": "segmentation",
+      "state": "unknown",
+      "since": null,
+      "detail": null
+    },
+    {
+      "key": "extraction",
+      "state": "unknown",
+      "since": null,
+      "detail": null
+    },
+    {
+      "key": "training",
+      "state": "unknown",
+      "since": null,
+      "detail": null
+    },
+    {
+      "key": "llm",
+      "state": "unknown",
+      "since": null,
+      "detail": null
+    },
+    {
+      "key": "registry",
+      "state": "ok",
+      "since": null,
+      "detail": "MLflow"
+    }
+  ],
+  "profile": "gpu1",
+  "retraining": true
+}

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { errorText } from "../api";
 import { useToast } from "../components/Toast";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { applyExtraction, proposeExtraction, rejectExtraction, withdrawExtraction, type ExtractionPart } from "./extraction";
 
 type Target = { part: ExtractionPart; name: string };
@@ -10,7 +11,7 @@ type Target = { part: ExtractionPart; name: string };
 export function useExtractionActions() {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["models"] });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.models });
   const onError = (error: unknown) => toast(t("models.action.failed", { why: errorText(error) }));
   return {
     apply: useMutation({

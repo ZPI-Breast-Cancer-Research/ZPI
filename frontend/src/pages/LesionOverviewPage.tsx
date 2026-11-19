@@ -11,6 +11,7 @@ import { formatDate, formatDecimal, formatMetric, formatNumber, formatOneDecimal
 import { hasMessage, t, type MessageKey } from "../i18n";
 import { fetchOverview, type Overview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
+import { queryKeys } from "../queryKeys";
 import "../review/review.css";
 import { fromExtraction } from "../review/report";
 import ReportOriginal, { scanOf } from "../review/ReportOriginal";
@@ -57,7 +58,7 @@ export default function LesionOverviewPage() {
   const [showOriginal, setShowOriginal] = useState(false);
   const [lesionAt, setLesionAt] = useState(0);
   const reviews = useCan()("review");
-  const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
+  const { data, error, refetch } = useQuery({ queryKey: queryKeys.overview(studyId, search), queryFn: () => fetchOverview(studyId) });
 
   if (error) {
     return (

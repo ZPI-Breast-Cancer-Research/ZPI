@@ -1,4 +1,4 @@
-import { api } from "../api";
+import { api, request } from "../api";
 import { mockDelay, mockScenario, MOCK_API } from "../mock";
 import { record } from "../settings/audit";
 
@@ -317,14 +317,14 @@ export async function fetchSegmentation(): Promise<SegmentationOverview> {
     mockState ??= mockOverview();
     return mockDelay(structuredClone(mockState));
   }
-  const { data } = await api.get<SegmentationOverview | OldOverview>("/api/models/segmentation/");
+  const { data } = await request(api.get<SegmentationOverview | OldOverview>("/api/models/segmentation/"));
   return isSegmentationOverview(data) ? data : fromOld(data);
 }
 
 // the gate a version would face, before anyone proposes it
 export async function fetchGate(version: string): Promise<GateCheck[] | null> {
   if (MOCK_API) return mockDelay(version === "1.2.0" ? GATE : null);
-  const { data } = await api.get<GateCheck[] | null>(`/api/models/${version}/gate/`);
+  const { data } = await request(api.get<GateCheck[] | null>(`/api/models/${version}/gate/`));
   return data;
 }
 
@@ -369,8 +369,7 @@ export async function promote(version: string, reason: string | null = null): Pr
     record("model_promoted", version, reason);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>(`/api/models/${version}/promote/`, { reason });
-  record("model_promoted", version, reason);
+  const { data } = await request(api.post<string>(`/api/models/${version}/promote/`, { reason }));
   return data;
 }
 
@@ -386,8 +385,7 @@ export async function reject(version: string, reason: string): Promise<string> {
     record("model_rejected", version, reason);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>(`/api/models/${version}/reject/`, { reason });
-  record("model_rejected", version, reason);
+  const { data } = await request(api.post<string>(`/api/models/${version}/reject/`, { reason }));
   return data;
 }
 
@@ -397,8 +395,7 @@ export async function rollback(version: string, reason: string | null = null): P
     record("model_rolled_back", version, reason);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>(`/api/models/${version}/rollback/`, { reason });
-  record("model_rolled_back", version, reason);
+  const { data } = await request(api.post<string>(`/api/models/${version}/rollback/`, { reason }));
   return data;
 }
 
@@ -425,8 +422,7 @@ export async function propose(version: string, reason: string, restore: boolean)
     record("model_proposed", version, reason);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>("/api/models/segmentation/proposals/", { version, reason, restore });
-  record("model_proposed", version, reason);
+  const { data } = await request(api.post<string>("/api/models/segmentation/proposals/", { version, reason, restore }));
   return data;
 }
 
@@ -440,8 +436,7 @@ export async function withdraw(version: string): Promise<string> {
     record("proposal_withdrawn", version);
     return mockDelay(version, 400);
   }
-  const { data } = await api.post<string>(`/api/models/${version}/withdraw/`);
-  record("proposal_withdrawn", version);
+  const { data } = await request(api.post<string>(`/api/models/${version}/withdraw/`));
   return data;
 }
 
@@ -450,8 +445,7 @@ export async function startTraining(): Promise<void> {
     record("training_started", "");
     return mockDelay(undefined, 400);
   }
-  await api.post("/api/models/training/start/");
-  record("training_started", "");
+  await request(api.post("/api/models/training/start/"));
 }
 export async function stopTraining(): Promise<void> {
   if (MOCK_API) {
@@ -462,6 +456,5 @@ export async function stopTraining(): Promise<void> {
     record("training_stopped", "");
     return mockDelay(undefined, 400);
   }
-  await api.post("/api/models/training/stop/");
-  record("training_stopped", "");
+  await request(api.post("/api/models/training/stop/"));
 }

@@ -1,11 +1,9 @@
+import { api, ApiError, request } from "../api";
 import { mockDelay, mockScenario, MOCK_API } from "../mock";
-import axios from "axios";
-
-import { api } from "../api";
 
 export type Role = "radiologist" | "researcher" | "admin";
 
-// one role per account; the admin runs the system and the models but doesn't verify cases
+// one role per account
 export const PERMISSIONS = {
   review: ["radiologist", "admin"],
   addStudies: ["radiologist", "admin"],
@@ -46,32 +44,21 @@ export async function signIn(login: string, password: string): Promise<SignInRes
     return mockDelay({ kind: "signed-in", user: mockUser(login) }, 300);
   }
   try {
-    const response = await api.post("/api/auth/signin/", { login, password });
-    return response.data;
+    const { data } = await request(api.post<SignInResult>("/api/auth/signin/", { login, password }));
+    return data;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      throw new AuthError("bad credentials");
-    }
-    throw new AuthError("Wystąpił błąd logowania.");
+    if (error instanceof ApiError && error.status === 401) throw new AuthError("bad credentials");
+    throw error;
   }
 }
 
 export async function setFirstPassword(login: string, temporary: string, password: string): Promise<User> {
-  if (MOCK_API) {
-    return mockDelay(mockUser(login), 300);
-  }
-
-  try {
-    const response = await api.post("/api/auth/set-password/", { login, temporary, password });
-    return response.data;
-  } catch {
-    throw new Error("Nie udało się ustawić nowego hasła.");
-  }
+  if (MOCK_API) return mockDelay(mockUser(login), 300);
+  const { data } = await request(api.post<User>("/api/auth/set-password/", { login, temporary, password }));
+  return data;
 }
 
 export async function signOut(): Promise<void> {
-  if (MOCK_API) {
-    return mockDelay(undefined, 100);
-  }
-  await api.post("/api/auth/signout/");
+  if (MOCK_API) return mockDelay(undefined, 100);
+  await request(api.post("/api/auth/signout/"));
 }

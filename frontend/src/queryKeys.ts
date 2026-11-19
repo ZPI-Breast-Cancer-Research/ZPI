@@ -1,0 +1,20 @@
+// the search part keeps ?mock= scenarios apart
+export const queryKeys = {
+  dashboard: ["dashboard"],
+  studies: ["studies"],
+  unassignedReports: ["unassigned-reports"],
+  processingSteps: (studyId: string | undefined) => ["processing-steps", studyId],
+  reviewQueue: ["review-queue"],
+  reviewCase: (studyId: string | undefined) => ["review-case", studyId],
+  overview: (studyId: string, search: string) => ["overview", studyId, search],
+  models: ["models"],
+  segmentation: (search: string) => ["models", "segmentation", search],
+  extraction: (search: string) => ["models", "extraction", search],
+  fewShot: (version: string) => ["models", "few-shot", version],
+  gate: (key: unknown[]) => ["models", "gate", ...key],
+  profile: (login: string | undefined) => ["profile", login],
+  users: ["users"],
+  audit: ["audit"],
+  systemStatus: ["system-status"],
+  pacsStatus: ["pacs-status"],
+} as const;

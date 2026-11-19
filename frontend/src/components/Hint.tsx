@@ -6,8 +6,8 @@ interface Props {
   name: string;
   shortcut?: string;
   text: string;
-  // beside the element (tool rail) or above it (bars at the bottom of the screen)
-  place?: "right" | "top";
+  // beside the element (tool rail), above it (bars at the bottom of the screen) or below it (the page's top bar)
+  place?: "right" | "top" | "bottom";
   children: ReactNode;
 }
 
@@ -32,8 +32,9 @@ export default function Hint({ name, shortcut, text, place = "right", children }
     if (!open || !anchor.current || !box.current) return;
     const r = anchor.current.getBoundingClientRect();
     const h = box.current.offsetHeight;
-    const top = place === "top" ? r.top - h - 8 : Math.min(window.innerHeight - h - 8, r.top + 8);
-    box.current.style.left = `${place === "top" ? r.left : r.right + 8}px`;
+    const top = place === "top" ? r.top - h - 8 : place === "bottom" ? r.bottom + 8 : Math.min(window.innerHeight - h - 8, r.top + 8);
+    const left = place === "right" ? r.right + 8 : Math.min(r.left, window.innerWidth - box.current.offsetWidth - 8);
+    box.current.style.left = `${left}px`;
     box.current.style.top = `${Math.max(8, top)}px`;
     box.current.style.visibility = "visible";
   }, [open, place]);

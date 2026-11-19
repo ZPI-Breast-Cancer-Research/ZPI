@@ -1,21 +1,25 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
+import { hasSession, onSessionEnd } from "../api";
 import Page from "../components/layout/Page";
 import { ForbiddenState } from "../components/State";
 import { t } from "../i18n";
+import { MOCK_API } from "../mock";
 import { PERMISSIONS, signOut as apiSignOut, type Permission, type Role, type User } from "./api";
 
 interface AuthValue {
   user: User | null;
+  // signed out by the server, not by the user
+  expired: boolean;
   signIn: (user: User) => void;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-// TODO: kept in sessionStorage until there's a real session cookie from the backend
+// who is signed in, for this tab; the session itself is the backend's cookie
 const STORAGE_KEY = "maria.user";
 
 // dev only: VITE_SKIP_LOGIN=radiologist (or researcher, admin) signs in straight away with that role
@@ -33,13 +37,27 @@ function readUser(): User | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(readUser);
+  const [expired, setExpired] = useState(false);
+  const queryClient = useQueryClient();
 
   const signIn = useCallback((next: User) => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     setUser(next);
+    setExpired(false);
   }, []);
 
-  const queryClient = useQueryClient();
+  useEffect(() => {
+    const end = () => {
+      sessionStorage.removeItem(STORAGE_KEY);
+      setUser(null);
+      setExpired(true);
+      queryClient.clear();
+    };
+    const stop = onSessionEnd(end);
+    // a tab kept open overnight still remembers the user, the server may not
+    if (!MOCK_API && readUser()) hasSession().then((alive) => !alive && end());
+    return stop;
+  }, [queryClient]);
 
   // leave locally even if the server call fails, otherwise there's no way out
   const signOut = useCallback(async () => {
@@ -54,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [queryClient]);
 
-  return <AuthContext.Provider value={{ user, signIn, signOut }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, expired, signIn, signOut }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
@@ -64,9 +82,9 @@ export function useAuth() {
 }
 
 export function RequireAuth() {
-  const { user } = useAuth();
+  const { user, expired } = useAuth();
   const location = useLocation();
-  if (!user) return <Navigate to="/logowanie" replace state={{ from: location.pathname + location.search }} />;
+  if (!user) return <Navigate to="/logowanie" replace state={{ from: location.pathname + location.search, expired }} />;
   return <Outlet />;
 }
 

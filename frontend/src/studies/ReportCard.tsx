@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 
+import Hint from "../components/Hint";
 import { formatDate } from "../format";
 import { t } from "../i18n";
 import ReportOriginal from "../review/ReportOriginal";
@@ -20,7 +21,7 @@ interface Props {
 
 function summary(item: UnassignedReport) {
   const result = item.report?.result;
-  if (!result) return null;
+  if (!result) return item.reading && item.reading !== "failed" ? t(`studies.card.${item.reading}`) : null;
   if (result.status === "error" || !result.data) return t("studies.card.failed");
   const { conclusion, lesions } = fromExtraction(result.data);
   const parts = [conclusion.birads && `BI-RADS ${conclusion.birads}`, conclusion.recommendation];
@@ -34,6 +35,8 @@ export default function ReportCard({ item, selected = false, onSelect, preview =
   const photo = item.kind === "scan" && !!url;
   const thumb = useUprightImage(photo ? url : null, result?.provenance.page_rotations[0] ?? 0);
   const canOpen = !!url || !!result;
+  const failed = !result && item.reading === "failed";
+  const meta = [summary(item), item.addedAt && t("studies.card.added", { date: formatDate(item.addedAt) })].filter(Boolean).join(" · ");
 
   return (
     <div className={selected ? "report-card report-card--selected" : "report-card"}>
@@ -43,7 +46,19 @@ export default function ReportCard({ item, selected = false, onSelect, preview =
           <span className="report-card__text">
             <span className="report-card__name">{item.fileName}</span>
             <span className="report-card__meta">
-              {[summary(item), item.addedAt && t("studies.card.added", { date: formatDate(item.addedAt) })].filter(Boolean).join(" · ")}
+              {failed && (
+                <>
+                  {item.error ? (
+                    <Hint name={t("studies.card.failed")} text={item.error} place="bottom">
+                      <span className="report-card__failed">{t("studies.card.failed")}</span>
+                    </Hint>
+                  ) : (
+                    <span className="report-card__failed">{t("studies.card.failed")}</span>
+                  )}
+                  {meta && " · "}
+                </>
+              )}
+              {meta}
             </span>
           </span>
         </button>
