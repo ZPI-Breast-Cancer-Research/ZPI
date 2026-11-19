@@ -60,6 +60,14 @@ describe("StudiesPage", () => {
     expect(screen.getByText(t("studies.card.failed"))).toBeInTheDocument();
   });
 
+  it("puts a mask of unknown uncertainty first among the studies to review", async () => {
+    const unknown = studies.findIndex((s) => s.segmentation_status === "COMPLETED");
+    backend(studies.map((s, i) => (i === unknown ? { ...s, uncertainty: null } : s)));
+    renderScreen(<StudiesPage />, { route: "/badania?dzis=0&filtr=to_review", user: radiologist });
+    const rows = within(await screen.findByRole("table")).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent(studies[unknown].patient_id);
+  });
+
   it("deletes a report without a study once confirmed", async () => {
     backend(studies);
     const deleted: string[] = [];

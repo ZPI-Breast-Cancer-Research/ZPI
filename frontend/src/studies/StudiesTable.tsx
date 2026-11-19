@@ -110,9 +110,10 @@ export default function StudiesTable({ rows, selectedId, onSelect, onAttach, fil
     .filter((row) => matches(row, filter, query, part))
     .filter((row) => !verified || !today || row.verifiedAt?.startsWith(todayIso))
     .sort((a, b) =>
-      // to review: least certain first, the order verification follows; verified: latest first
+      // to review: least certain first, the order verification follows (unknown counts as least certain);
+      // verified: latest first
       filter === "to_review"
-        ? (b.uncertainty ?? -1) - (a.uncertainty ?? -1)
+        ? (b.uncertainty ?? Infinity) - (a.uncertainty ?? Infinity)
         : verified
           ? (b.verifiedAt ?? "").localeCompare(a.verifiedAt ?? "")
           : 0,
