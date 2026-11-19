@@ -35,8 +35,9 @@ def test_orthanc_study_id(response, expected):
 
 
 class DummyResult:
-    def __init__(self, uncertainty):
+    def __init__(self, uncertainty, status="PROCESSING"):
         self.uncertainty = uncertainty
+        self.status = status
 
 
 def test_pick_uncertainty_segmentation_has_priority():
@@ -51,6 +52,13 @@ def test_pick_uncertainty_falls_back_to_extraction():
     extraction = DummyResult(0.7)
 
     assert _pick_uncertainty(segmentation, extraction) == 0.7
+
+
+def test_pick_uncertainty_completed_mask_without_uncertainty_is_unknown():
+    segmentation = DummyResult(None, status="COMPLETED")
+    extraction = DummyResult(0.7)
+
+    assert _pick_uncertainty(segmentation, extraction) is None
 
 
 def test_pick_uncertainty_returns_none():

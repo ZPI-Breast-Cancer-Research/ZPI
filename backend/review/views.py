@@ -91,6 +91,14 @@ def _model_version(result) -> str | None:
 
 
 def _uncertainty(segmentation, extraction) -> float | None:
+    # a finished mask without uncertainty (empty map, failed entropy) is unknown, not certain:
+    # falling back to the report's value would push it down the queue
+    if (
+        segmentation is not None
+        and segmentation.status == StatusChoices.COMPLETED
+        and segmentation.uncertainty is None
+    ):
+        return None
     for result in (segmentation, extraction):
         if result is not None and result.uncertainty is not None:
             return float(result.uncertainty)

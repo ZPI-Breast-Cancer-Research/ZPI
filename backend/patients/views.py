@@ -83,6 +83,13 @@ def _iso_date(value):
 
 
 def _pick_uncertainty(segmentation, extraction):
+    # the same rule as the review queue: a finished mask without uncertainty is unknown
+    if (
+        segmentation is not None
+        and segmentation.status == SegmentationStatus.COMPLETED
+        and segmentation.uncertainty is None
+    ):
+        return None
     if segmentation is not None and segmentation.uncertainty is not None:
         return segmentation.uncertainty
     if extraction is not None and extraction.uncertainty is not None:

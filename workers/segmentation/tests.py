@@ -271,6 +271,7 @@ def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
     assert result.model_seg_series_uid == result.model_seg_sop_uid == ""
     assert result.generated_path in stored
     assert result.measurements == {"volume_ml": 0.0, "dimensions_mm": None}
+    assert result.uncertainty is None  # unknown, so the case goes to the top of the review queue
 
 
 def test_run_marks_the_result_failed_when_orthanc_refuses_the_seg(pipeline, study):
@@ -390,6 +391,42 @@ def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatc
     )
     assert result.approved_seg_series_uid != model_seg.SeriesInstanceUID
     assert result.model_seg_series_uid == model_seg.SeriesInstanceUID
+
+
+# --- uncertainty ---
+
+
+def _probability_map(tmp_path, values):
+    import nibabel as nib
+    import numpy as np
+
+    path = tmp_path / "prob.nii.gz"
+    nib.save(nib.Nifti1Image(np.asarray(values, dtype=np.float32), np.eye(4)), path)
+    return path
+
+
+def test_uncertainty_is_the_mean_entropy_inside_the_lesion(tmp_path):
+    from workers.segmentation.tasks import _calculate_uncertainty
+
+    # p = 0.5 has an entropy of exactly 1 bit; voxels at p <= 0.05 are background and skipped
+    values = [[[0.5, 0.5], [0.01, 0.0]]]
+
+    assert _calculate_uncertainty(_probability_map(tmp_path, values)) == pytest.approx(1.0)
+
+
+def test_uncertainty_of_an_empty_probability_map_is_unknown(tmp_path):
+    from workers.segmentation.tasks import _calculate_uncertainty
+
+    assert _calculate_uncertainty(_probability_map(tmp_path, [[[0.0, 0.0], [0.0, 0.0]]])) is None
+
+
+def test_uncertainty_of_an_unreadable_file_is_unknown(tmp_path):
+    from workers.segmentation.tasks import _calculate_uncertainty
+
+    path = tmp_path / "prob.nii.gz"
+    path.write_bytes(b"not a nifti")
+
+    assert _calculate_uncertainty(path) is None
 
 
 # --- measurements ---

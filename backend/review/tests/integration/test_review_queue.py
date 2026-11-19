@@ -147,6 +147,39 @@ def test_review_queue_puts_unknown_uncertainty_first_then_least_certain(authenti
 
 
 @pytest.mark.django_db
+def test_review_queue_does_not_hide_an_unknown_mask_uncertainty_behind_the_report(
+    authenticated_client, study, extraction
+):
+    # an empty mask has no uncertainty; the report's 0.45 must not stand in for it
+    SegmentationResult.objects.create(study=study, status=StatusChoices.COMPLETED, uncertainty=None)
+    SegmentationResult.objects.create(
+        study=Study.objects.create(orthanc_path="orthanc-study-456"),
+        status=StatusChoices.COMPLETED,
+        uncertainty=0.9,
+    )
+
+    with mock.patch("review.views.OrthancClient") as orthanc:
+        orthanc.return_value.list_studies.return_value = []
+        response = authenticated_client.get(reverse("review-queue"))
+
+    assert response.data[0]["studyId"] == study.orthanc_path
+    assert response.data[0]["uncertainty"] is None
+
+
+@pytest.mark.django_db
+def test_review_queue_uses_the_report_uncertainty_while_the_mask_is_processing(
+    authenticated_client, study, extraction
+):
+    SegmentationResult.objects.create(study=study, status=StatusChoices.PROCESSING)
+
+    with mock.patch("review.views.OrthancClient") as orthanc:
+        orthanc.return_value.list_studies.return_value = []
+        response = authenticated_client.get(reverse("review-queue"))
+
+    assert response.data[0]["uncertainty"] == 0.45
+
+
+@pytest.mark.django_db
 def test_review_queue_requires_authentication(api_client):
     response = api_client.get(reverse("review-queue"))
 
