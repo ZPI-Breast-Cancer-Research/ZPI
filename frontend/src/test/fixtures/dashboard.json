@@ -1,0 +1,137 @@
+{
+  "toReview": 10,
+  "processing": 4,
+  "verifiedToday": 0,
+  "queue": [
+    {
+      "studyId": "34",
+      "studyNumber": "0034",
+      "patientId": "DEMO-P0013",
+      "studyDate": "2026-10-23",
+      "uncertainty": 0.52
+    },
+    {
+      "studyId": "40",
+      "studyNumber": "0040",
+      "patientId": "DEMO-P0019",
+      "studyDate": "2026-11-10",
+      "uncertainty": 0.76
+    },
+    {
+      "studyId": "35",
+      "studyNumber": "0035",
+      "patientId": "DEMO-P0014",
+      "studyDate": "2026-10-16",
+      "uncertainty": 0.71
+    },
+    {
+      "studyId": "24",
+      "studyNumber": "0024",
+      "patientId": "DEMO-P0003",
+      "studyDate": "2026-11-02",
+      "uncertainty": 0.42
+    },
+    {
+      "studyId": "36",
+      "studyNumber": "0036",
+      "patientId": "DEMO-P0015",
+      "studyDate": "2026-10-09",
+      "uncertainty": 0.9
+    },
+    {
+      "studyId": "41",
+      "studyNumber": "0041",
+      "patientId": "DEMO-P0020",
+      "studyDate": "2026-11-03",
+      "uncertainty": 0.05
+    },
+    {
+      "studyId": "25",
+      "studyNumber": "0025",
+      "patientId": "DEMO-P0004",
+      "studyDate": "2026-10-26",
+      "uncertainty": 0.61
+    },
+    {
+      "studyId": "26",
+      "studyNumber": "0026",
+      "patientId": "DEMO-P0005",
+      "studyDate": "2026-10-19",
+      "uncertainty": 0.8
+    },
+    {
+      "studyId": "31",
+      "studyNumber": "0031",
+      "patientId": "DEMO-P0010",
+      "studyDate": "2026-11-13",
+      "uncertainty": 0.85
+    },
+    {
+      "studyId": "30",
+      "studyNumber": "0030",
+      "patientId": "DEMO-P0009",
+      "studyDate": "2026-09-21",
+      "uncertainty": 0.66
+    }
+  ],
+  "attention": [],
+  "inProgress": [
+    {
+      "studyNumber": "0022",
+      "stage": "extraction",
+      "state": "queued"
+    },
+    {
+      "studyNumber": "0032",
+      "stage": "extraction",
+      "state": "queued"
+    },
+    {
+      "studyNumber": "0023",
+      "stage": "segmentation",
+      "state": "running"
+    },
+    {
+      "studyNumber": "0033",
+      "stage": "segmentation",
+      "state": "running"
+    }
+  ],
+  "verifiedLastWeek": [
+    {
+      "date": "2026-11-10",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-11",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-12",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-13",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-14",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-15",
+      "unchanged": 0,
+      "corrected": 0
+    },
+    {
+      "date": "2026-11-16",
+      "unchanged": 0,
+      "corrected": 0
+    }
+  ]
+}

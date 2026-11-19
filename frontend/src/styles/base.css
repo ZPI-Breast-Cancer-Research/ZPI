@@ -375,9 +375,14 @@ textarea {
 
 .toast__link {
   margin-left: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
   color: inherit;
+  font: inherit;
   text-decoration: underline;
   text-underline-offset: 3px;
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {

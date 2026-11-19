@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
+import Hint from "../components/Hint";
 import { formatDayMonth, formatDecimal } from "../format";
 import { t } from "../i18n";
 import type { QueueEntry } from "./api";
@@ -8,6 +9,8 @@ import type { QueueEntry } from "./api";
 interface Props {
   // what still waits; the case is verified by the mask and the form, never by this control
   waiting: { mask: boolean; fields: number };
+  // a save the backend didn't take, and a way to send it again when that can help
+  failed: { reason: string; retry: (() => void) | null } | null;
   onShowMask: () => void;
   onShowFields: () => void;
   next: QueueEntry | null;
@@ -21,9 +24,9 @@ interface Props {
 }
 
 // the case's state in words and one way on: pink once the case is verified, quiet while something waits
-export default function ApproveButton({ waiting, onShowMask, onShowFields, next, upcoming, total, open, onOpen, onPickNext, onNext }: Props) {
+export default function ApproveButton({ waiting, failed, onShowMask, onShowFields, next, upcoming, total, open, onOpen, onPickNext, onNext }: Props) {
   const box = useRef<HTMLDivElement>(null);
-  const verified = !waiting.mask && waiting.fields === 0;
+  const verified = !waiting.mask && waiting.fields === 0 && !failed;
 
   useEffect(() => {
     if (!open) return;
@@ -35,7 +38,18 @@ export default function ApproveButton({ waiting, onShowMask, onShowFields, next,
   const fields = waiting.fields;
   return (
     <>
-      {verified ? (
+      {failed ? (
+        <>
+          <Hint name={t("review.saveFailed")} text={failed.reason} place="bottom">
+            <span className="approve-state approve-state--failed">{t("review.saveFailed")}</span>
+          </Hint>
+          {failed.retry && (
+            <button type="button" className="btn btn--primary" onClick={failed.retry}>
+              {t("review.saveRetry")}
+            </button>
+          )}
+        </>
+      ) : verified ? (
         <span className="approve-state approve-state--done">{t("review.verified")}</span>
       ) : (
         <span className="approve-state">

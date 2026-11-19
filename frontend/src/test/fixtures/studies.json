@@ -1,0 +1,122 @@
+[
+  {
+    "orthanc_id": "0060d00e-2552f4cd-e7a1ab3d-ebba5b90-0eafcf4a",
+    "study_instance_uid": "2.25.86277498756460827743079436336817607158",
+    "patient_id": "DEMO-P0016",
+    "study_date": "20261002",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.86277498756460827743079436336817607158",
+    "extraction_status": "CORRECTED",
+    "segmentation_status": "APPROVED",
+    "uncertainty": 0.19
+  },
+  {
+    "orthanc_id": "02796c9a-d5d200e5-162ebc43-3323cade-135f2ad3",
+    "study_instance_uid": "2.25.281860263362268985033081360762037800928",
+    "patient_id": "DEMO-P0007",
+    "study_date": "20261005",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.281860263362268985033081360762037800928",
+    "extraction_status": "REJECTED",
+    "segmentation_status": "CORRECTED",
+    "uncertainty": 0.28
+  },
+  {
+    "orthanc_id": "06f59982-2b9811f2-9310cfd2-dbefcabe-0f896f25",
+    "study_instance_uid": "2.25.234263275724891258289738533928139844428",
+    "patient_id": "DEMO-P0013",
+    "study_date": "20261023",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.234263275724891258289738533928139844428",
+    "extraction_status": "COMPLETED",
+    "segmentation_status": "COMPLETED",
+    "uncertainty": 0.52
+  },
+  {
+    "orthanc_id": "0e316c97-3e9f13dc-7c2f51ed-e2358fad-36203eed",
+    "study_instance_uid": "2.25.256957823750968850474189072328412767149",
+    "patient_id": "DEMO-P0019",
+    "study_date": "20261110",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.256957823750968850474189072328412767149",
+    "extraction_status": "COMPLETED",
+    "segmentation_status": "REJECTED",
+    "uncertainty": 0.76
+  },
+  {
+    "orthanc_id": "128d638d-b51afb30-1dbc5f73-4da17b44-a4b04240",
+    "study_instance_uid": "2.25.231920776192106570462330735196299185057",
+    "patient_id": "DEMO-P0014",
+    "study_date": "20261016",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.231920776192106570462330735196299185057",
+    "extraction_status": "APPROVED",
+    "segmentation_status": "COMPLETED",
+    "uncertainty": 0.71
+  },
+  {
+    "orthanc_id": "4718910e-33c67483-0d6c8b03-ed677920-e66ca90e",
+    "study_instance_uid": "2.25.275207205006127668218143695749672398266",
+    "patient_id": "DEMO-P0001",
+    "study_date": "20261116",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.275207205006127668218143695749672398266",
+    "extraction_status": "PENDING",
+    "segmentation_status": "PENDING",
+    "uncertainty": 0.04
+  },
+  {
+    "orthanc_id": "85d7c121-85b95233-54403bad-914789ec-f599e288",
+    "study_instance_uid": "2.25.276966125183141311881924347375353433391",
+    "patient_id": "DEMO-P0008",
+    "study_date": "20260928",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.276966125183141311881924347375353433391",
+    "extraction_status": "APPROVED",
+    "segmentation_status": "APPROVED",
+    "uncertainty": 0.47
+  },
+  {
+    "orthanc_id": "bc784e61-3363ddcc-affdff24-401eb7da-999f6c2e",
+    "study_instance_uid": "2.25.192236637933248798637212477703222328631",
+    "patient_id": "DEMO-P0002",
+    "study_date": "20261109",
+    "description": "MR piersi z kontrastem",
+    "modalities": [
+      "MR"
+    ],
+    "series_count": 3,
+    "viewer_url": "http://localhost:8042/ohif/viewer?StudyInstanceUIDs=2.25.192236637933248798637212477703222328631",
+    "extraction_status": "PROCESSING",
+    "segmentation_status": "PROCESSING",
+    "uncertainty": 0.23
+  }
+]

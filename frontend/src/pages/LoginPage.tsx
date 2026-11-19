@@ -11,7 +11,7 @@ import { t } from "../i18n";
 
 const MIN_PASSWORD = 12;
 
-function SignInForm({ onFirstLogin, onSignedIn }: { onFirstLogin: (login: string) => void; onSignedIn: (user: User) => void }) {
+function SignInForm({ expired, onFirstLogin, onSignedIn }: { expired: boolean; onFirstLogin: (login: string) => void; onSignedIn: (user: User) => void }) {
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [missing, setMissing] = useState(false);
@@ -34,9 +34,9 @@ function SignInForm({ onFirstLogin, onSignedIn }: { onFirstLogin: (login: string
     <>
       <h1 className="login__heading">{t("login.title")}</h1>
       <form className="login__form" onSubmit={onSubmit} noValidate>
-        {(failed || submit.error || missing) && (
+        {(failed || submit.error || missing || expired) && (
           <p className="login__error" role="alert">
-            {missing ? t("login.required") : failed ? t("login.failed") : t("login.unavailable")}
+            {missing ? t("login.required") : failed ? t("login.failed") : submit.error ? t("login.unavailable") : t("login.expired")}
           </p>
         )}
         <label className="field">
@@ -161,7 +161,8 @@ export default function LoginPage() {
   const [firstLogin, setFirstLogin] = useState<string | null>(null);
   const { data: pacs = "unknown" } = useQuery({ queryKey: ["pacs-status"], queryFn: fetchPacsStatus });
 
-  const from = (location.state as { from?: string } | null)?.from ?? "/pulpit";
+  const state = location.state as { from?: string; expired?: boolean } | null;
+  const from = state?.from ?? "/pulpit";
   if (auth.user) return <Navigate to={from} replace />;
 
   const signedIn = (user: User) => {
@@ -191,7 +192,7 @@ export default function LoginPage() {
           {firstLogin ? (
             <FirstLoginForm login={firstLogin} onCancel={() => setFirstLogin(null)} onSignedIn={signedIn} />
           ) : (
-            <SignInForm onFirstLogin={setFirstLogin} onSignedIn={signedIn} />
+            <SignInForm expired={!!state?.expired} onFirstLogin={setFirstLogin} onSignedIn={signedIn} />
           )}
         </div>
       </main>
