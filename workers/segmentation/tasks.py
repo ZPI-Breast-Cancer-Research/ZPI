@@ -135,7 +135,7 @@ def _is_empty(mask_path: Path) -> bool:
     return not np.asarray(nib.load(mask_path).dataobj).any()
 
 
-def _calculate_uncertainty(prob_map_path: Path) -> float:
+def _calculate_uncertainty(prob_map_path: Path) -> float | None:
     """Oblicza średnią entropię na mapie prawdopodobieństwa wewnątrz obszaru guza."""
     try:
         prob_img = nib.load(prob_map_path)
@@ -149,10 +149,10 @@ def _calculate_uncertainty(prob_map_path: Path) -> float:
         if np.any(mask):
             return float(np.mean(entropy[mask]))
 
-        return 0.0
+        return None
     except Exception as exc:
         logger.warning("Nie udało się wyliczyć entropii z %s: %s", prob_map_path, exc)
-        return 0.0
+        return None
 
 
 @app.task(name="segmentation.run", bind=True, queue="segmentation")
