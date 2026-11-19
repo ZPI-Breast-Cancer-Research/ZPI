@@ -1,4 +1,5 @@
 """Django settings – every deployment-specific value comes from the environment (.env)."""
+
 from pathlib import Path
 
 import environ
@@ -17,6 +18,7 @@ env = environ.Env(
     ORTHANC_PASSWORD=(str, ""),
     CELERY_BROKER_URL=(str, "redis://localhost:6379/0"),
     MLFLOW_TRACKING_URI=(str, "http://mlflow:5000"),
+    LLM_BASE_URL=(str, ""),
 )
 
 # Local runs outside docker: pick up the repo-level .env if present.
@@ -43,6 +45,7 @@ INSTALLED_APPS = [
     "segmentation",
     "mlops",
     "common",
+    "audit",
 ]
 
 MIDDLEWARE = [
@@ -109,6 +112,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     # Authentication/roles are out of scope for the skeleton.
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # every error leaves the API as {"code", "detail"} (common/errors.py)
+    "EXCEPTION_HANDLER": "common.exception_handler.api_exception_handler",
 }
 CORS_ALLOW_CREDENTIALS = True
 
@@ -124,6 +129,9 @@ ORTHANC_USER = env("ORTHANC_USER")
 ORTHANC_PASSWORD = env("ORTHANC_PASSWORD")
 
 MLFLOW_TRACKING_URI = env("MLFLOW_TRACKING_URI").rstrip("/")
+
+# The LLM server of the extraction worker (OpenAI-compatible); the models screen lists its models.
+LLM_BASE_URL = env("LLM_BASE_URL").rstrip("/")
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
 CELERY_TASK_ROUTES = {

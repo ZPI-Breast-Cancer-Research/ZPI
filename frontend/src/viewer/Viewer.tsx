@@ -10,17 +10,17 @@ import {
   WindowLevelTool,
   ZoomTool,
 } from "@cornerstonejs/tools";
-import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
-import { ENGINE_ID, getEngine, historyMemo, maskCenterWorld, paintMask } from "./cornerstone";
+import { ENGINE_ID, getEngine, historyMemo } from "./cornerstone";
 import { paintSeg } from "./dicomSeg";
-import { DicomWebError, findSeries, latestSeg, seriesImageIds } from "./dicomweb";
+import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
 import { applyPatch, interpolateMask, maskExtent, maskPatch, restoreSlice, type Extent, type MaskPatch } from "./maskTools";
 import SliceStrip from "./SliceStrip";
-import type { BrushShape, MaskSource, MaskState, Plane, Series, Tool } from "./types";
+import type { BrushShape, MaskState, Plane, Series, SegRef, Tool } from "./types";
 import "./viewer.css";
 
 const ERASER = "Eraser";
@@ -53,9 +53,12 @@ type Problem = DicomWebError["kind"] | "no-study";
 
 interface Props {
   studyUid: string | null;
-  // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline
-  mask: MaskSource | null;
-  modelMask?: MaskSource | null;
+  // the mask on screen (editable in review) and, optionally, the model's own mask drawn as an outline;
+  // null starts from an empty labelmap
+  mask: SegRef | null;
+  modelMask?: SegRef | null;
+  // the series the model read; without them we guess by name
+  roles?: { pre: string | null; post1: string | null; post2: string | null } | null;
   series: Series;
   maskState: MaskState;
   showMask: boolean;
@@ -111,10 +114,11 @@ async function loadVolume(studyUid: string, seriesUid: string) {
   return cache.getVolume(volumeId);
 }
 
-function addMask(segmentationId: string, volume: Types.IImageVolume, source: MaskSource | null) {
+// an empty labelmap over the volume's grid, with the SEG painted into it when there is one
+async function addMask(segmentationId: string, volume: Types.IImageVolume, seg: SegRef | null) {
   const labelmap = volumeLoader.createAndCacheDerivedLabelmapVolume(volume.volumeId, { volumeId: segmentationId });
-  if (source) paintMask(labelmap, source);
   segmentation.addSegmentations([{ segmentationId, representation: { type: Labelmap, data: { volumeId: segmentationId } } }]);
+  return seg ? (await paintSeg(labelmap, seg)).center : null;
 }
 
 function sameGrid(a: Types.IImageVolume, b: Types.IImageVolume) {
@@ -142,6 +146,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     studyUid,
     mask,
     modelMask = null,
+    roles = null,
     series,
     maskState,
     showMask,
@@ -204,6 +209,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const [grab, setGrab] = useState(false);
 
   const { main, single, split } = layout;
+  // the zoom slider runs on log2, so 1×, 2×, 4× and 8× are evenly spaced
+  const zoomLevel = Math.min(3, Math.max(0, Math.log2(zoom ?? 1)));
   const mainRef = useRef(main);
   mainRef.current = main;
   const viewports = useMemo(() => PLANES.map((plane) => ids[plane]), [ids]);
@@ -359,26 +366,18 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       return;
     }
     (async () => {
-      const found = await findSeries(studyUid);
+      const found = roles?.post1 ? { post: roles.post1, ...(roles.pre ? { pre: roles.pre } : {}) } : await findSeries(studyUid);
       if (cancelled) return;
       seriesUids.current = found;
       callbacks.current.onSeriesFound?.(Object.keys(found) as Series[]);
       // masks live on the main (post-contrast) series grid
       const main = await loadVolume(studyUid, found.post!);
       if (cancelled || !main) return;
-      addMask(ids.mask, main, mask);
-      const labelmap = cache.getVolume(ids.mask)!;
-      maskCenter.current = mask ? maskCenterWorld(labelmap, mask) : null;
-      // the model's real mask from Orthanc replaces the placeholder when the study has one
-      const seg = await latestSeg(studyUid);
+      maskCenter.current = await addMask(ids.mask, main, mask);
       if (cancelled) return;
-      if (seg) {
-        const painted = await paintSeg(labelmap, studyUid, seg);
-        if (cancelled) return;
-        maskCenter.current = painted.center;
-      }
       original.current = (cache.getVolume(ids.mask)!.voxelManager!.getCompleteScalarDataArray!() as Uint8Array).slice();
-      if (modelMask) addMask(ids.model, main, modelMask);
+      if (modelMask) await addMask(ids.model, main, modelMask);
+      if (cancelled) return;
       setLoaded(true);
     })().catch((error) => !cancelled && setProblem(error instanceof DicomWebError ? error.kind : "unavailable"));
 
@@ -387,7 +386,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       removeMask(ids.mask);
       removeMask(ids.model);
     };
-  }, [ids, studyUid, mask, modelMask, attempt]);
+  }, [ids, studyUid, mask, modelMask, roles, attempt]);
 
   // series on screen; keeps the slice and zoom when switching
   useEffect(() => {
@@ -562,11 +561,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       } else if (event.key === "v") {
         setLayout((l) => ({ ...l, single: !l.single }));
       } else if (event.key === "+" || event.key === "=" || event.key === "-") {
-        const viewport = viewportOf(mainRef.current);
-        if (!viewport) return;
-        startZoom(mainRef.current);
-        viewport.setZoom(viewport.getZoom() * (event.key === "-" ? 0.8 : 1.25));
-        viewport.render();
+        zoomBy(event.key === "-" ? 0.8 : 1.25);
       } else if (event.key === "0") {
         fit();
       }
@@ -590,8 +585,9 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       undo: () => historyMemo.undo(),
       restoreModel: () => {
         const labelmap = cache.getVolume(ids.mask);
-        if (!labelmap || !mask) return;
-        paintMask(labelmap, mask);
+        if (!labelmap || !original.current) return;
+        // the copy taken when the SEG was loaded, so no second download
+        labelmap.voxelManager!.setCompleteScalarDataArray!(original.current.slice());
         segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
       },
       resetWindow,
@@ -647,7 +643,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     }),
     // resetWindow only reads refs and stable ids
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ids, mask, viewports],
+    [ids, viewports],
   );
 
   function resetWindow() {
@@ -665,6 +661,18 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     const base = fitScale.current[plane];
     const scale = engine.current?.getViewport(ids[plane]).getCamera().parallelScale;
     return base && scale ? base / scale : null;
+  }
+
+  function zoomBy(factor: number) {
+    const viewport = engine.current?.getViewport(ids[mainRef.current]);
+    if (!viewport) return;
+    startZoom(mainRef.current);
+    viewport.setZoom(viewport.getZoom() * factor);
+    viewport.render();
+  }
+
+  function zoomTo(target: number) {
+    zoomBy(target / (zoomOf(mainRef.current) ?? 1));
   }
 
   function fit() {
@@ -760,13 +768,30 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
                 </span>
               )}
               <span className="viewer__head-end">
-                {isMain && zoom !== null && (
-                  <>
-                    <span>{t("viewer.zoom", { n: formatOneDecimal(zoom) })}</span>
-                    <button type="button" className="viewer__head-btn" title={t("viewer.fitTitle")} onClick={fit}>
+                {isMain && (
+                  <span className="viewer__zoom">
+                    <button type="button" className="viewer__head-btn" aria-label={t("viewer.zoomOut")} title={t("viewer.zoomOutTitle")} onClick={() => zoomBy(0.8)}>
+                      −
+                    </button>
+                    <input
+                      type="range"
+                      className="viewer__zoom-range"
+                      style={{ "--fill": `${(zoomLevel / 3) * 100}%` } as CSSProperties}
+                      min={0}
+                      max={3}
+                      step={0.05}
+                      value={zoomLevel}
+                      aria-label={t("viewer.zoomLabel")}
+                      onChange={(event) => zoomTo(2 ** Number(event.target.value))}
+                    />
+                    <button type="button" className="viewer__head-btn" aria-label={t("viewer.zoomIn")} title={t("viewer.zoomInTitle")} onClick={() => zoomBy(1.25)}>
+                      +
+                    </button>
+                    <span className="viewer__zoom-value">{t("viewer.zoom", { n: formatOneDecimal(zoom ?? 1) })}</span>
+                    <button type="button" className="viewer__head-btn" title={t("viewer.fitTitle")} disabled={zoom === null} onClick={fit}>
                       {t("viewer.fit")}
                     </button>
-                  </>
+                  </span>
                 )}
                 {isMain && windowChanged && (
                   <button type="button" className="viewer__head-btn" title={t("viewer.windowRestoreTitle")} onClick={resetWindow}>

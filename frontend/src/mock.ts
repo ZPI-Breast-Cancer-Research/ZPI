@@ -13,14 +13,11 @@ export function mockScenario(): string | null {
 }
 
 // mock cases borrow a real MR study from Orthanc (if there is one) so the viewer has images to show
+let mrStudies: Promise<string[]> | null = null;
+
 export async function mockStudyUid(index: number): Promise<string | null> {
-  // try {
-  //   const studies = (await fetchStudies())
-  //     .filter((s) => s.study_instance_uid && s.modalities.includes("MR"))
-  //     .sort((a, b) => b.series_count - a.series_count);
-  //   return studies.length ? studies[index % studies.length].study_instance_uid : null;
-  // } catch {
-  //   return null;
-  // }
-  return null;
+  // loaded lazily, the viewer code is heavy and most mocks don't need it
+  mrStudies ??= import("./viewer/dicomweb").then((m) => m.listMrStudies()).catch(() => []);
+  const studies = await mrStudies;
+  return studies.length ? studies[index % studies.length] : null;
 }

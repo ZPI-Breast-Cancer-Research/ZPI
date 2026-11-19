@@ -1,7 +1,8 @@
 import { adaptersSEG } from "@cornerstonejs/adapters";
 import { cache, metaData, utilities as csUtils, type Types } from "@cornerstonejs/core";
 
-import { fetchInstance, seriesImageIds, type SegRef } from "./dicomweb";
+import { fetchInstance, referencedSeries, seriesImageIds } from "./dicomweb";
+import type { SegRef } from "./types";
 
 interface ImagePlane {
   imagePositionPatient: Types.Point3;
@@ -26,10 +27,11 @@ export interface LoadedSeg {
  * position in the patient (ImagePositionPatient + orientation + spacing), not by SOP instance, so the mask
  * lands on the same tissue in any series of the same frame of reference.
  */
-export async function paintSeg(labelmap: Types.IImageVolume, studyUid: string, seg: SegRef): Promise<LoadedSeg> {
+export async function paintSeg(labelmap: Types.IImageVolume, seg: SegRef): Promise<LoadedSeg> {
+  const { studyUid, seriesUid, sopUid } = seg;
   const [referencedImageIds, buffer] = await Promise.all([
-    seriesImageIds(studyUid, seg.referencedSeriesUid),
-    fetchInstance(studyUid, seg.seriesUid, seg.sopUid),
+    referencedSeries(studyUid, seriesUid).then((uid) => seriesImageIds(studyUid, uid)),
+    fetchInstance(studyUid, seriesUid, sopUid),
   ]);
   const { labelMapImages } = await adaptersSEG.Cornerstone3D.Segmentation.createFromDICOMSegBuffer(referencedImageIds, buffer, {
     metadataProvider: metaData,

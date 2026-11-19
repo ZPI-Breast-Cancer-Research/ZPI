@@ -30,10 +30,22 @@ The project is part of a broader research plan (ZPI + TransMed/ABM): structuring
 
 ### 2.1 Entity-Relationship Diagram
 
-![database schema](docs/erd.svg)
+```mermaid
+erDiagram
+    studies ||--o| segmentation_results : "has one mask"
+    studies |o--o{ reports : "has reports"
+    module_version |o--o{ segmentation_results : "seg version"
+    module_version |o--o{ reports : "ocr version"
+    module_version |o--o{ reports : "ext version"
+    module_version ||--o{ module_usage_period : "was in use"
+    users_user |o--o{ segmentation_results : "accepted by"
+    users_user |o--o{ reports : "accepted by, requested by"
+    users_user |o--o{ module_version : "proposed by, decided by"
+    users_user |o--o{ audit_auditlog : "did"
+```
 
 ---
-Detailed database schema, table definitions, and storage architecture (Orthanc PACS & MinIO) can be found in [docs/database.md](docs/database.md).
+This is the binding schema; the code is being migrated to it. Table definitions, relations, the rules the schema relies on and the storage architecture (Orthanc PACS & MinIO) are in [docs/database.md](docs/database.md).
 ## 3. Application modules
 
 ### 3.1 Segmentation
@@ -164,13 +176,15 @@ Activating a version moves the alias; the previous champion stays in the registr
 
 ## 6. Data model (core of the learning loop)
 
-| Entity | Key fields |
+| Table | Key fields |
 |---|---|
-| `ModelVersion` | module (seg / ext), name, `mlflow_run_id`, MLflow version, alias (`challenger` / `champion` / none), test metrics, approved by / at |
-| `Prediction` | case, `model_version`, result (mask path / JSON), `uncertainty`, status: `pending_review` / `accepted` / `corrected` |
-| `Correction` | `prediction`, corrected mask / JSON, diff, author, date, editing time |
-| `DatasetSplit` | case, split: `train` / `test` (test frozen) |
-| `TrainingRun` | module, trigger, list of cases, status, `mlflow_run_id`, gate decision |
+| `studies` | `orthanc_path`: the study in Orthanc |
+| `reports` | one row per report: `study`, `source` (`scan` / `text` / `manual`), `status`, OCR text, `generated_report` (model), `accepted_report` and `field_checks` (radiologist), the OCR and extraction versions that produced it |
+| `segmentation_results` | one mask per study: `status`, mask of the model, mask approved or corrected by the radiologist, `uncertainty`, the segmentation version |
+| `module_version` | a version of one module (`seg` / `ocr` / `ext`): its configuration (OCR engine and settings, or LLM, prompt and few-shot examples), `status`, who proposed and decided, `dataset`, `metrics`, `mlflow_run_id` |
+| `module_usage_period` | when a version was in use; a restored version has several periods |
+
+A prediction and its correction are two columns of the same row (`generated_*` and `accepted_*`), so the pair the models learn from is always read together. Full definitions: [docs/database.md](docs/database.md).
 
 ---
 
@@ -326,15 +340,32 @@ infra/orthanc/load-test-study.sh Breast_MRI_002   # another patient
 
 Duke has no subtraction series and no report, so those parts can't be tried on it.
 
-### Tests
+### Tests and checks
+
+Every pull request runs CI (`.github/workflows/ci.yml`): ruff, backend and extraction worker tests
+against Postgres, and the frontend lint and build. A PR can be merged only when the `ci-ok` check passes.
+To run the same checks locally before opening a PR:
 
 ```bash
-docker compose run --rm backend python manage.py test
+uv run ruff check . && uv run ruff format --check .   # lint; `ruff format .` fixes the formatting
+docker compose up -d postgres
+docker compose run --rm backend pytest                 # backend
+uv run pytest workers/extraction -p no:django         # extraction worker (CI also runs its DB tests)
+cd frontend && npm run lint && npm run build           # frontend
 ```
+
+Segmentation and training worker tests need torch/nnU-Net and are not run in CI.
 
 ## Git workflow
 
 `master` is protected: all changes go through a pull request with at least 1 approval. No direct pushes, no force pushes.
+A PR can be merged only when:
+
+- the `ci-ok` check passes (see [Tests and checks](#tests-and-checks)),
+- the branch is up to date with `master` (merge or rebase `master` into it if GitHub says it is behind),
+- all review conversations are resolved.
+
+A new push dismisses earlier approvals, so the reviewer approves the final version.
 
 One branch per task, created from an up-to-date `master` and deleted after merge. Branch names follow `<area>/<short-description>`:
 

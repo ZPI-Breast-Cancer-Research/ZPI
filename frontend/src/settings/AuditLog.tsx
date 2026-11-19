@@ -10,23 +10,32 @@ const GROUPS: AuditGroup[] = ["review", "models", "accounts", "logins"];
 const PAGE = 50;
 
 function target(entry: AuditEntry) {
-  const kind = TARGET_OF[GROUP_OF[entry.kind]];
-  if (kind === "account") return entry.object;
-  return entry.object ? t(`audit.target.${kind}`, { ref: entry.object }) : t("audit.target.modelNext");
+  const group = GROUP_OF[entry.kind];
+  const kind = group ? TARGET_OF[group] : undefined;
+  if (!kind || kind === "account") return entry.object;
+  const translated = t(`audit.target.${kind}`, { ref: entry.object });
+  return entry.object ? (translated ?? entry.object) : (t("audit.target.modelNext") ?? "—");
 }
 
 const when = (iso: string) => `${formatDate(iso.slice(0, 10))}, ${iso.slice(11, 16)}`;
 
 // semicolons and a BOM, so it opens straight in a Polish Excel
 function exportCsv(rows: AuditEntry[]) {
-  const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  const cell = (value: string | undefined | null) => `"${(value ?? "").replace(/"/g, '""')}"`;
   const head = ["audit.col.when", "settings.col.login", "settings.col.name", "audit.col.event", "audit.col.object", "audit.col.detail"] as const;
   const lines = [
     head.map((key) => cell(t(key))).join(";"),
-    ...rows.map((row) => [when(row.at), row.login, row.name, t(`audit.kind.${row.kind}`), target(row), row.detail ?? ""].map(cell).join(";")),
+    ...rows.map((row) => [
+      when(row.at), 
+      row.login, 
+      row.name, 
+      t(`audit.kind.${row.kind}`) ?? row.kind, 
+      target(row), 
+      row.detail ?? ""
+    ].map(cell).join(";")),
   ];
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+  link.href = URL.createObjectURL(new Blob(["" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
   link.download = `dziennik-zdarzen-${toIsoDate(new Date())}.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
@@ -135,7 +144,9 @@ export default function AuditLog() {
                 {row.name === "—" ? row.login : row.name}
                 {row.name !== "—" && <span className="audit__login"> {row.login}</span>}
               </td>
-              <td className={row.kind === "login_failed" ? "audit__alert" : undefined}>{t(`audit.kind.${row.kind}`)}</td>
+              <td className={row.kind === "login_failed" ? "audit__alert" : undefined}>
+                {t(`audit.kind.${row.kind}`) ?? row.kind}
+              </td>
               <td>{target(row)}</td>
               <td>{row.detail ?? "—"}</td>
             </tr>

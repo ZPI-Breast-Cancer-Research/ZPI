@@ -1,12 +1,12 @@
-import { mockDelay, MOCK_API} from "../mock";
-import { api, handleApiError } from "../api"
+import { mockDelay, MOCK_API } from "../mock";
+import { api, handleApiError } from "../api";
 
 export interface QueueItem {
   studyId: string;
   studyNumber: string;
   patientId: string;
-  studyDate: string;
-  uncertainty: number;
+  studyDate: string | null;
+  uncertainty: number | null;
 }
 
 export type AttentionKind = "processing_error" | "model_candidate" | "missing_report";
@@ -76,11 +76,11 @@ const MOCK: Dashboard = {
 };
 
 export async function fetchDashboard(): Promise<Dashboard> {
-  if(MOCK_API) return mockDelay(MOCK);
-  try{
+  if (MOCK_API) return mockDelay(MOCK);
+  try {
     const response = await api.get("/api/dashboard/");
     return response.data;
-  } catch{error}{
+  } catch (error) {
     handleApiError(error);
   }
 }

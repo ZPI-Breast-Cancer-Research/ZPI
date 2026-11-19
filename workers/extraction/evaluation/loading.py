@@ -6,13 +6,13 @@ from ..schema import EkstrakcjaBadania, ExtractionResult
 
 
 def load_gold(directory: Path) -> dict[str, EkstrakcjaBadania]:
+    """Hand-typed jsons as a reference for perfect extraction"""
     gold = {}
     for path in sorted(directory.glob("*.json")):
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
             gold[path.stem] = EkstrakcjaBadania.model_validate(raw["data"])
         except (KeyError, TypeError, ValueError) as exc:
-            # ValueError covers both invalid JSON and a schema mismatch (pydantic).
             raise EvaluationDataError(f"{path.name}: not a valid gold file: {exc}") from exc
     return gold
 

@@ -32,9 +32,7 @@ class NnUnetModel:
         except FileNotFoundError as error:
             raise SegmentationError(f"Cannot load model from {model_dir}: {error}") from error
 
-    def predict(
-        self, channels: Sequence[Path], out_dir: Path, case_id: str
-    ) -> SegmentationResult:
+    def predict(self, channels: Sequence[Path], out_dir: Path, case_id: str) -> SegmentationResult:
         import SimpleITK as sitk
 
         if len(channels) != len(self.info.channels):

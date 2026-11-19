@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
@@ -38,11 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(next);
   }, []);
 
+  const queryClient = useQueryClient();
+
+  // leave locally even if the server call fails, otherwise there's no way out
   const signOut = useCallback(async () => {
-    await apiSignOut();
-    sessionStorage.removeItem(STORAGE_KEY);
-    setUser(null);
-  }, []);
+    try {
+      await apiSignOut();
+    } catch {
+      // the next sign-in replaces the server session anyway
+    } finally {
+      sessionStorage.removeItem(STORAGE_KEY);
+      setUser(null);
+      queryClient.clear();
+    }
+  }, [queryClient]);
 
   return <AuthContext.Provider value={{ user, signIn, signOut }}>{children}</AuthContext.Provider>;
 }

@@ -1,7 +1,9 @@
 import { api, ApiError, handleApiError, API_URL } from "../api";
 import { toIsoDate } from "../format";
+import { t } from "../i18n";
 import { MOCK_API, mockDelay } from "../mock";
 import { reviewProgress } from "../review/api";
+import { isCaseReport, type CaseReport } from "../review/extraction";
 
 export type ImageStatus =
   | "queued"
@@ -12,10 +14,12 @@ export type ImageStatus =
   | "verified_unchanged"
   | "verified_corrected";
 
-export type ReportStatus = "missing" | "extracting" | "ready" | "to_review" | "verified";
+export type ReportStatus = "missing" | "extracting" | "error" | "ready" | "to_review" | "verified_unchanged" | "verified_corrected";
 
 export interface Study {
   orthanc_id: string;
+  // the study's number in MARIA, e.g. "0012"
+  number?: string | null;
   study_instance_uid: string | null;
   patient_id: string | null;
   study_date: string | null;
@@ -25,6 +29,8 @@ export interface Study {
   extraction_status: string;
   segmentation_status: string;
   uncertainty: number | null;
+  // mask and active report verified: no new report, no new run
+  closed?: boolean;
 }
 
 export interface StudyRow {
@@ -37,6 +43,8 @@ export interface StudyRow {
   uncertainty: number | null;
   // ISO date and time the image was verified
   verifiedAt: string | null;
+  // mask and active report verified: the backend refuses a new report, a new run and deleting
+  closed: boolean;
 }
 
 export interface UnassignedReport {
@@ -44,6 +52,14 @@ export interface UnassignedReport {
   fileName: string;
   kind: "text" | "scan";
   addedAt: string;
+  // the uploaded file, there before anyone reads it
+  originalUrl: string | null;
+  // null until the extraction worker has read it
+  report: CaseReport | null;
+  // backend status: UPLOADED (nothing ordered yet), PENDING, PROCESSING, COMPLETED, FAILED…
+  status: string;
+  // why the processing failed
+  error: string;
 }
 
 export type StepState = "done" | "running" | "waiting" | "waiting_report" | "error";
@@ -69,7 +85,7 @@ const MOCK_ROWS: StudyRow[] = (
     ["to_review", "to_review", 0.58],
     ["to_review", "missing", 0.51],
     ["verified_unchanged", "to_review", 0.44],
-    ["verified_corrected", "verified", 0.4],
+    ["verified_corrected", "verified_corrected", 0.4],
     ["saving", "missing", 0.37],
   ] as [ImageStatus, ReportStatus, number | null][]
 ).map(([image, report, uncertainty], i) => ({
@@ -81,6 +97,7 @@ const MOCK_ROWS: StudyRow[] = (
   report,
   uncertainty,
   verifiedAt: VERIFIED_AT[`s${i + 1}`] ?? null,
+  closed: false,
 }));
 
 // mock rows follow what was approved on the review screen in this session
@@ -90,7 +107,7 @@ function withReview(row: StudyRow): StudyRow {
   return {
     ...row,
     image: mask === "corrected" ? "verified_corrected" : mask ? "verified_unchanged" : row.image,
-    report: form ? "verified" : row.report,
+    report: form ? "verified_unchanged" : row.report,
     verifiedAt: done ? toIsoDate(new Date()) + "T" + new Date().toTimeString().slice(0, 5) : row.verifiedAt,
   };
 }
@@ -103,6 +120,7 @@ const IMAGE_FROM_BACKEND: Record<string, ImageStatus> = {
   APPROVED: "verified_unchanged",
   CORRECTED: "verified_corrected",
   REJECTED: "error",
+  FAILED: "error",
   queued: "queued",
 };
 
@@ -110,9 +128,12 @@ const REPORT_FROM_BACKEND: Record<string, ReportStatus> = {
   PENDING: "extracting",
   PROCESSING: "extracting",
   COMPLETED: "to_review",
-  APPROVED: "verified",
-  CORRECTED: "verified",
+  APPROVED: "verified_unchanged",
+  CORRECTED: "verified_corrected",
   REJECTED: "to_review",
+  FAILED: "error",
+  // stored, processing not ordered yet
+  UPLOADED: "ready",
   missing: "missing",
 };
 
@@ -122,37 +143,64 @@ export async function listStudies(): Promise<StudyRow[]> {
   try {
     const { data } = await api.get<Study[]>("/api/studies");
     // plain `npm run dev` has no gateway, so /api returns index.html instead of JSON
-    // if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
+    if (!Array.isArray(data)) throw new ApiError(t("api.badResponse", { url }), "backend_unreachable");
     return data.map((study) => ({
       id: study.orthanc_id,
-      number: null,
+      number: study.number ?? null,
       patientId: study.patient_id ?? "—",
       studyDate: dicomDateToIso(study.study_date),
       image: IMAGE_FROM_BACKEND[study.segmentation_status] ?? null,
       report: REPORT_FROM_BACKEND[study.extraction_status] ?? null,
       uncertainty: study.uncertainty,
       verifiedAt: null,
+      closed: study.closed ?? false,
     }));
   } catch (error) {
-    handleApiError(error);
+    handleApiError(error, url);
   }
-
 }
 
 export async function listUnassignedReports(): Promise<UnassignedReport[]> {
   if (MOCK_API) {
     return mockDelay([
-      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24" },
-      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22" },
+      { id: "r7", fileName: "opis_7.txt", kind: "text", addedAt: "2026-10-24", originalUrl: null, report: null, status: "UPLOADED", error: "" },
+      { id: "r2", fileName: "skan_2.jpg", kind: "scan", addedAt: "2026-10-22", originalUrl: null, report: null, status: "FAILED", error: "OCR" },
     ]);
   }
-  const reports = await api.get<{ id: string; file_name?: string; fileName?: string; kind: UnassignedReport["kind"]; added_at?: string; addedAt?: string }[]>("/api/reports/unassigned/");
+  const reports = await api.get<
+    {
+      id: string;
+      file_name?: string;
+      fileName?: string;
+      kind: UnassignedReport["kind"];
+      added_at?: string;
+      addedAt?: string;
+      originalUrl?: string | null;
+      report?: unknown;
+      status?: string;
+      error?: string;
+    }[]
+  >("/api/reports/unassigned/");
   return reports.data.map((report) => ({
     id: report.id,
     fileName: report.file_name ?? report.fileName ?? "",
     kind: report.kind,
     addedAt: report.added_at ?? report.addedAt ?? "",
+    originalUrl: report.originalUrl ?? null,
+    report: isCaseReport(report.report) ? report.report : null,
+    status: report.status ?? "",
+    error: report.error ?? "",
   }));
+}
+
+// orders OCR and extraction of a report, the first time or again; the backend checks who may
+export async function processReport(reportId: string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 300);
+  try {
+    await api.post(`/api/reports/${reportId}/process/`);
+  } catch (error) {
+    handleApiError(error);
+  }
 }
 
 // TODO: no backend endpoint for the processing steps yet
@@ -164,7 +212,14 @@ export async function getProcessingSteps(study: StudyRow): Promise<ProcessingSte
     { key: "segmentation", state: done ? "done" : study.image === "processing" ? "running" : "waiting" },
     {
       key: "extraction",
-      state: study.report === "missing" ? "waiting_report" : study.report === "extracting" ? "running" : "done",
+      state:
+        study.report === "missing"
+          ? "waiting_report"
+          : study.report === "extracting"
+            ? "running"
+            : study.report === "error"
+              ? "error"
+              : "done",
     },
   ]);
 }
@@ -178,6 +233,27 @@ export async function sendStudy(archiveFile?: File, reportFile?: File): Promise<
   try {
     const { data } = await api.post("/api/studies/import/", formData);
     return data;
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
+// removes the study (Orthanc, masks, database); its reports stay, without a study. The backend
+// refuses a verified study and one that is still being processed
+export async function deleteStudy(studyId: string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 300);
+  try {
+    await api.delete(`/api/studies/${studyId}/`);
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
+// removes a report without a study, file included; refused while it is being processed
+export async function deleteReport(reportId: string): Promise<void> {
+  if (MOCK_API) return mockDelay(undefined, 300);
+  try {
+    await api.delete(`/api/reports/${reportId}/`);
   } catch (error) {
     handleApiError(error);
   }

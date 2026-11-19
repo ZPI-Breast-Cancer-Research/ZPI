@@ -6,6 +6,8 @@ interface Props {
   corrected: boolean;
   // approved on its own: locked until the approval is taken back
   approved: boolean;
+  // the model found nothing to segment
+  empty?: boolean;
   // slices that differ from the model's mask in the main view
   edited: number;
   // empty slices between drawn ones, numbered from 0
@@ -23,8 +25,8 @@ interface Props {
 
 // only what is about the mask itself: its state, a gap to fill, the way back to the model's, approving it
 export default function MaskStrip(props: Props) {
-  const { corrected, approved, edited, gaps, version, pending, onGoTo, onFill, onRestore, onApprove, onUnapprove, showMask, onToggleMask } = props;
-  const state = approved ? "review.mask.approved" : corrected ? "review.mask.corrected" : "review.mask.proposed";
+  const { corrected, approved, empty, edited, gaps, version, pending, onGoTo, onFill, onRestore, onApprove, onUnapprove, showMask, onToggleMask } = props;
+  const state = approved ? "review.mask.approved" : corrected ? "review.mask.corrected" : empty ? "review.mask.empty" : "review.mask.proposed";
   return (
     <div className="mask-strip" aria-label={t("review.mask")}>
       <MaskToggle shown={showMask} onToggle={onToggleMask} />

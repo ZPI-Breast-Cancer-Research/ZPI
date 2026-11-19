@@ -1,7 +1,8 @@
 const decimal = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function formatDecimal(value: number): string {
-  return decimal.format(value);
+// null (unknown) shows as a dash, never as a made-up number
+export function formatDecimal(value: number | null): string {
+  return value === null ? "—" : decimal.format(value);
 }
 
 // ISO date (YYYY-MM-DD) -> DD.MM.YYYY
@@ -23,8 +24,14 @@ export function toIsoDate(day: Date): string {
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
 }
 
-export function formatDayMonth(iso: string): string {
-  return formatDate(iso).slice(0, 5);
+export function formatDayMonth(iso: string | null): string {
+  return iso ? formatDate(iso).slice(0, 5) : "—";
+}
+
+const plain = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1 });
+
+export function formatNumber(value: number): string {
+  return plain.format(value);
 }
 
 const oneDecimal = new Intl.NumberFormat("pl-PL", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -38,13 +45,6 @@ const percent = new Intl.NumberFormat("pl-PL", { style: "percent", maximumFracti
 export function formatPercent(value: number | null | undefined): string {
   if (value == null) return "—";
   return percent.format(value);
-}
-
-// seconds -> m:ss
-export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return "—";
-  const s = Math.round(seconds);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
 export function formatMetric(value: number | null, unit = ""): string {

@@ -7,12 +7,16 @@ import { useCan } from "../auth/AuthProvider";
 import Page from "../components/layout/Page";
 import Panel from "../components/layout/Panel";
 import { ErrorState, LoadingState } from "../components/State";
-import { formatDate, formatDuration, formatMetric } from "../format";
-import { t } from "../i18n";
-import { fetchOverview } from "../lesion-overview/api";
+import { formatDate, formatDecimal, formatMetric, formatNumber, formatOneDecimal } from "../format";
+import { hasMessage, t, type MessageKey } from "../i18n";
+import { fetchOverview, type Overview } from "../lesion-overview/api";
 import "../lesion-overview/lesion-overview.css";
 import "../review/review.css";
-import { FIELDS } from "../review/fields";
+import { fromExtraction } from "../review/report";
+import ReportOriginal, { scanOf } from "../review/ReportOriginal";
+import LesionSwitcher from "../review/LesionSwitcher";
+import ReportPreview from "../review/ReportPreview";
+import { lesionGroup, lesionSummary, observationGroups, rowLines, rowState, visibleRows } from "../review/rows";
 import { MaskToggle } from "../review/MaskStrip";
 import Icon from "../viewer/icons";
 import type { Series, Tool } from "../viewer/types";
@@ -20,6 +24,23 @@ import { usePreferences } from "../settings/preferences";
 import { useViewerLayout } from "../viewer/layout";
 import Viewer from "../viewer/Viewer";
 import ViewerBar, { LayoutButton } from "../viewer/ViewerBar";
+
+// the backend sends plain numbers and area codes ("upper_outer"); on screen "16 mm" and "KGZ"
+function comparisonValue(feature: Overview["comparison"][number]["feature"], value: string | number | null): string {
+  if (value === null || value === "") return "—";
+  const text = String(value);
+  if (feature === "largestSize") return /^\d+([.,]\d+)?$/.test(text) ? `${formatNumber(Number(text.replace(",", ".")))} mm` : text;
+  const key = `field.quadrant.${text}`;
+  return hasMessage(key) ? t(key as MessageKey) : text;
+}
+
+function agreement({ mask, verification }: Overview): string {
+  if (!mask.corrected) return t("overview.agreement.same");
+  const a = verification.agreement;
+  if (!a || a.dice === null) return "—";
+  const volume = a.volumeMl === null ? "—" : `${a.volumeMl > 0 ? "+" : ""}${formatOneDecimal(a.volumeMl)} ml`;
+  return t("overview.agreement.value", { dice: formatMetric(a.dice), volume });
+}
 
 export default function LesionOverviewPage() {
   const { studyId = "" } = useParams();
@@ -33,6 +54,8 @@ export default function LesionOverviewPage() {
   const [series, setSeries] = useState<Series>(preferred.series);
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [layout, setLayout] = useViewerLayout();
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [lesionAt, setLesionAt] = useState(0);
   const reviews = useCan()("review");
   const { data, error, refetch } = useQuery({ queryKey: ["overview", studyId, search], queryFn: () => fetchOverview(studyId) });
 
@@ -53,8 +76,18 @@ export default function LesionOverviewPage() {
 
   const saving = data.status === "saving";
   const value = (text: string) => (saving ? <span className="muted">{t("overview.recalc")}</span> : text);
-  const label = (key: string) => FIELDS.find((f) => f.key === key)?.label ?? key;
-  const dims = data.measurements.dimensions;
+  const measure = data.measurements;
+  const severalParts = !!measure && measure.totalMl > measure.largest.volumeMl;
+  const volume = (ml: number | undefined) => value(ml === undefined ? "—" : `${formatDecimal(ml)} cm³`);
+  const measuredFrom = measure ? t(measure.source === "model" ? "overview.fromModel" : "overview.fromApproved") : undefined;
+  const report = data.report;
+  const extracted = report?.source.result.data;
+  const lesions = extracted ? fromExtraction(extracted).lesions : [];
+  const lesionIndex = Math.min(lesionAt, Math.max(0, lesions.length - 1));
+  const lesion = lesions[lesionIndex] ?? null;
+  // the approved report, row by row as in the form; corrected where it differs from the model's
+  const accepted = report?.accepted ?? null;
+  const groups = extracted && accepted && lesion ? [lesionGroup(lesionIndex), ...observationGroups(accepted, lesionIndex)] : [];
 
   return (
     <Page
@@ -138,22 +171,24 @@ export default function LesionOverviewPage() {
         </section>
 
         <section className="overview__info">
-          <Panel title={t("overview.measurements")} aux={saving ? t("overview.recalculating") : t("overview.fromApproved")}>
+          <Panel title={t("overview.measurements")} aux={saving ? t("overview.recalculating") : measuredFrom}>
             <div className="overview__pad">
               <table className="kv">
                 <tbody>
                   <tr>
-                    <th>{t("overview.volume")}</th>
-                    <td className="cell-right">{value(`${formatMetric(data.measurements.volume)} cm³`)}</td>
+                    <th>{t("overview.largestSize")}</th>
+                    <td className="cell-right">{value(measure ? `${Math.round(measure.largest.sizeMm)} mm` : "—")}</td>
                   </tr>
                   <tr>
-                    <th>{t("overview.dimensions")}</th>
-                    <td className="cell-right">{value(dims ? dims.map((d) => formatMetric(d)).join(" × ") + " mm" : "— × — × — mm")}</td>
+                    <th>{t(severalParts ? "overview.volumeLargest" : "overview.volume")}</th>
+                    <td className="cell-right">{volume(measure?.largest.volumeMl)}</td>
                   </tr>
-                  <tr>
-                    <th>{t("overview.intensity")}</th>
-                    <td className="cell-right">{value(formatMetric(data.measurements.intensity))}</td>
-                  </tr>
+                  {severalParts && (
+                    <tr>
+                      <th>{t("overview.volumeTotal")}</th>
+                      <td className="cell-right">{volume(measure?.totalMl)}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -161,32 +196,74 @@ export default function LesionOverviewPage() {
 
           <Panel title={t("overview.reportData")} aux={data.verification.extractionVersion ? `${t("review.extraction")} ${t("models.version")} ${data.verification.extractionVersion}` : undefined}>
             <div className="overview__pad">
-              {data.report ? (
-                <table className="kv">
-                  <thead>
-                    <tr>
-                      <th>{t("review.col.field")}</th>
-                      <th>{t("review.col.value")}</th>
-                      <th className="cell-right">{t("review.col.status")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.report.map((row) => (
-                      <tr key={row.field}>
-                        <th>{label(row.field)}</th>
-                        <td>{row.value}</td>
-                        <td className="cell-right">
-                          <span className={row.corrected ? "status status--corrected" : "status status--confirmed"}>
-                            {t(row.corrected ? "review.field.corrected" : "review.field.confirmed")}
-                          </span>
-                        </td>
+              {report ? (
+                <>
+                  <div style={{ margin: "8px 0 10px" }}>
+                    <ReportPreview report={report.source} onOpen={() => setShowOriginal(true)} />
+                  </div>
+                  {lesion && (
+                    <LesionSwitcher
+                      index={lesionIndex}
+                      total={lesions.length}
+                      summary={lesionSummary(accepted ?? extracted!, lesionIndex)}
+                      note={null}
+                      onPrev={() => setLesionAt(lesionIndex - 1)}
+                      onNext={() => setLesionAt(lesionIndex + 1)}
+                    />
+                  )}
+                  <table className="kv">
+                    <thead>
+                      <tr>
+                        <th>{t("review.col.field")}</th>
+                        <th>{t("review.col.value")}</th>
+                        <th className="cell-right">{t("review.col.status")}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {extracted &&
+                        accepted &&
+                        groups.flatMap((group, k) => [
+                          ...(k > 0
+                            ? [
+                                <tr key={group.key} className="kv__group">
+                                  <th colSpan={3}>{group.title}</th>
+                                </tr>,
+                              ]
+                            : []),
+                          ...visibleRows(group, extracted, accepted, []).map((row) => {
+                            const corrected = rowState(row, extracted, accepted, []) === "corrected";
+                            return (
+                              <tr key={row.key}>
+                                <th>{row.label}</th>
+                                <td>
+                                  {rowLines(row, accepted, accepted.zmiany[lesionIndex].strona).map((line, i) => (
+                                    <div key={i}>
+                                      {line.text ?? <span className="muted">{t("row.empty")}</span>}
+                                      {line.extra && <span className="muted"> · {line.extra}</span>}
+                                    </div>
+                                  ))}
+                                </td>
+                                <td className="cell-right">
+                                  <span className={corrected ? "status status--corrected" : "status status--confirmed"}>
+                                    {t(corrected ? "review.field.corrected" : "review.field.confirmed")}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          }),
+                        ])}
+                    </tbody>
+                  </table>
+                  <ReportOriginal
+                    scan={scanOf(report.source)}
+                    open={showOriginal}
+                    onClose={() => setShowOriginal(false)}
+                    lesion={lesion ? { number: lesionIndex + 1, quotes: lesion.observations.map((o) => o.quote) } : null}
+                  />
+                </>
               ) : (
                 <div className="empty-box" style={{ marginTop: 8 }}>
-                  <b>{t("review.noReport")}</b>
+                  <b>{t(data.reportPending ? "review.original.pending" : "review.noReport")}</b>
                   {t("overview.noReportBody")}
                   <br />
                   <Link className="btn btn--small" to={`/badania?badanie=${data.studyId}`}>
@@ -199,7 +276,7 @@ export default function LesionOverviewPage() {
 
           <Panel title={t("overview.comparison")}>
             <div className="overview__pad">
-              {data.report ? (
+              {report ? (
                 <table className="kv">
                   <thead>
                     <tr>
@@ -213,8 +290,8 @@ export default function LesionOverviewPage() {
                     {data.comparison.map((row) => (
                       <tr key={row.feature}>
                         <th>{t(`overview.${row.feature}`)}</th>
-                        <td>{saving ? "…" : (row.fromMask ?? "—")}</td>
-                        <td>{row.fromReport ?? "—"}</td>
+                        <td>{saving ? "…" : comparisonValue(row.feature, row.fromMask)}</td>
+                        <td>{comparisonValue(row.feature, row.fromReport)}</td>
                         <td className="cell-right">
                           {saving || row.match === null ? (
                             "—"
@@ -249,8 +326,8 @@ export default function LesionOverviewPage() {
                     <td className="cell-right">{formatDate(data.verification.date)}</td>
                   </tr>
                   <tr>
-                    <th>{t("overview.editTime")}</th>
-                    <td className="cell-right">{formatDuration(data.verification.editingSeconds)}</td>
+                    <th>{t("overview.agreement")}</th>
+                    <td className="cell-right">{agreement(data)}</td>
                   </tr>
                   <tr>
                     <th>{t("review.segmentation")}</th>

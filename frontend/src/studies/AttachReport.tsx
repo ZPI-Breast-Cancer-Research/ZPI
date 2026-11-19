@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { attachReport, type StudyRow, type UnassignedReport } from "./api";
 import DropZone from "./DropZone";
 import { FileTag } from "./ImportReview";
+import ReportCard from "./ReportCard";
 
 interface Props {
   study: StudyRow;
@@ -18,7 +19,7 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
-  const [existing, setExisting] = useState<string | null>(unassigned[0]?.id ?? null);
+  const [existing, setExisting] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,7 +42,14 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
   const isScan = file !== null && !file.name.toLowerCase().endsWith(".txt");
 
   return (
-    <Panel title={`${t("studies.attach.title")}${study.number ? ` · #${study.number}` : ""}`} className="attach">
+    <Panel
+      title={
+        study.number
+          ? t("studies.attach.titleFor", { n: study.number, patient: study.patientId })
+          : t("studies.attach.titleForNoNumber", { patient: study.patientId })
+      }
+      className="attach"
+    >
       <div className="pad">
         <DropZone
           title={t("studies.attach.drop")}
@@ -64,20 +72,19 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
         {unassigned.length > 0 && (
           <>
             <div className="or">{t("studies.attach.or")}</div>
-            {unassigned.map((report) => (
-              <label key={report.id} className="pick">
-                <input
-                  type="radio"
-                  name="unassigned"
-                  checked={existing === report.id && file === null}
-                  onChange={() => {
+            <div className="attach__reports">
+              {unassigned.map((report) => (
+                <ReportCard
+                  key={report.id}
+                  item={report}
+                  selected={existing === report.id && file === null}
+                  onSelect={() => {
                     setExisting(report.id);
                     setFile(null);
                   }}
                 />
-                <FileTag file={{ name: report.fileName }} />
-              </label>
-            ))}
+              ))}
+            </div>
           </>
         )}
 
@@ -90,7 +97,7 @@ export default function AttachReport({ study, unassigned, onClose }: Props) {
           {t("studies.attach.cancel")}
         </button>
         <button type="button" className="btn btn--primary" disabled={!chosen || submit.isPending} onClick={() => submit.mutate()}>
-          {t("studies.attach.submit")}
+          {study.number ? t("studies.attach.submitTo", { n: study.number }) : t("studies.attach.submit")}
         </button>
       </div>
     </Panel>

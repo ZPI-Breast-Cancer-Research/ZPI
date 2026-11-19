@@ -8,7 +8,10 @@ _SPACES = re.compile(r"[ \t ]+")
 _HYPHENATED_BREAK = re.compile(r"(?<=[a-ząćęłńóśźż])-\n(?=[a-ząćęłńóśźż])")
 _MANY_BLANK_LINES = re.compile(r"\n{3,}")
 _REPORT_START = re.compile(r"opis badania\s*:?", re.IGNORECASE)
-_REPORT_END = re.compile(r"\S*/a\s*:|\bopis\s*:", re.IGNORECASE)
+_REPORT_END = re.compile(
+    r"(?im)^[ \t]*(?:\S*/a|Wykonał/a|Wykonal/a)[ \t]*:"
+    r"|^[ \t]*Opis[ \t]*:[ \t]*$"
+)
 
 
 def normalize_text(text: str) -> str:

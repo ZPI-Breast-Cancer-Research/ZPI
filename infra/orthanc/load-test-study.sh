@@ -1,4 +1,4 @@
-git add README.md docs/ARCHITECTURE.md docs/architecture-drivers.md docs/adr infra/orthanc/load-test-study.sh#!/bin/sh
+#!/bin/sh
 # Loads one real breast MRI (Duke Breast_MRI_001 from the NCI Imaging Data Commons) into the local Orthanc,
 # so the viewer can be tried on real images. The data is CC BY-NC 4.0, stays in data/duke (git-ignored)
 # and only ever goes to the Orthanc on this machine. Needs uv and the stack running (docker compose up).

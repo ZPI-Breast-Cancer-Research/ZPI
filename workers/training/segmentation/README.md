@@ -78,6 +78,34 @@ nnU-Net identifies datasets by number. Pick a new ID for any change of channels 
 |---|---|---|
 | 501 | `Dataset501_DCE3` | MAMA-MIA, channels `pre` / `post1` / `post2` |
 
+## Evaluation
+
+Every model is scored by the same script, so results are comparable:
+
+```bash
+python -m workers.training.segmentation.evaluate \
+  --pred  "$nnUNet_results/Dataset501_DCE3/<trainer>__nnUNetPlans__3d_fullres/fold_0/validation" \
+  --gt    "$nnUNet_preprocessed/Dataset501_DCE3/gt_segmentations" \
+  --split data/splits/frozen_split_official.csv \
+  --splits "$nnUNet_preprocessed/Dataset501_DCE3/splits_final.json" --fold 0 \
+  --out   "$nnUNet_results/Dataset501_DCE3/<trainer>__nnUNetPlans__3d_fullres/fold_0/evaluation"
+```
+
+`gt_segmentations` holds every training case; `--splits` with `--fold` keeps only that fold's
+validation cases. Without them every ground-truth case is expected to have a prediction.
+
+It writes `per_case.csv` (Dice, HD95 in mm, status per case) and `summary.json` (means overall,
+per collection and per `size_bin_eval`, each with the number of cases). Cases are taken from the
+ground truth; a case without a prediction is reported as `missing` and the script returns 1. A
+prediction with a different shape or affine than its ground truth stops the run with the case name.
+
+- HD95: 95th percentile of the distances between the two mask surfaces, both directions pooled.
+- Empty masks: both empty → Dice 1, HD95 0. Only one empty → Dice 0, HD95 not defined; the case
+  counts in `n` and in the Dice mean, but not in the HD95 mean (`n_hd95` says how many have one).
+
+Models are selected on cross-validation. The frozen test set is used once, for the final evaluation
+of the chosen model.
+
 ## Tests
 
 ```bash

@@ -85,7 +85,7 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     from pydicom.uid import generate_uid
 
     from workers.segmentation.conversion import (
-        SEG_SERIES_DESCRIPTION,
+        APPROVED_SEG_SERIES_DESCRIPTION,
         Status,
         convert_nifti_to_dicom_seg,
         convert_study,
@@ -111,11 +111,16 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     nib.save(nib.Nifti1Image(mask, pre.affine), mask_path)
 
     # Act
-    seg_path = convert_nifti_to_dicom_seg(study_dir, mask_path, tmp_path / "seg.dcm")
+    written = convert_nifti_to_dicom_seg(study_dir, mask_path, tmp_path / "seg.dcm")
 
     # Assert
-    seg = hd.seg.segread(seg_path)
-    assert seg.SeriesDescription == SEG_SERIES_DESCRIPTION
+    seg = hd.seg.segread(written.path)
+    assert seg.SeriesDescription == APPROVED_SEG_SERIES_DESCRIPTION
+    assert seg.SegmentSequence[0].SegmentAlgorithmType == "MANUAL"
+    assert (seg.SeriesInstanceUID, seg.SOPInstanceUID) == (
+        written.series_instance_uid,
+        written.sop_instance_uid,
+    )
     frames = seg.pixel_array.reshape(-1, ROWS, COLUMNS)  # a single frame comes back as 2D
     marked = [
         (frame, item)
@@ -126,4 +131,307 @@ def test_dicom_seg_marks_the_same_source_voxel_as_the_nifti_mask(tmp_path, orien
     frame, item = marked[0]
     source_sop = item.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
     assert source_sop == pre_sops[source_slice]
-    assert [tuple(map(int, rc)) for rc in zip(*np.nonzero(frame))] == [(source_row, source_column)]
+    assert [tuple(map(int, rc)) for rc in zip(*np.nonzero(frame), strict=True)] == [
+        (source_row, source_column)
+    ]
+
+
+# --- segmentation.run and segmentation.correction_to_dicom_seg ----------------------------------
+
+AXIAL = [1, 0, 0, 0, 1, 0]
+
+
+class FakeOrthanc:
+    """Serves a synthetic three-phase study and keeps what was uploaded."""
+
+    fail_upload = False
+
+    def __init__(self):
+        self.uploaded = []
+        self.deleted_series = []
+
+    def download_study(self, orthanc_id, destination):
+        from pydicom.uid import generate_uid
+
+        destination.mkdir(parents=True, exist_ok=True)
+        study_uid, frame_uid = generate_uid(), generate_uid()
+        for number, time in ((1, "120000"), (2, "120100"), (3, "120200")):
+            _write_mr_series(destination, study_uid, frame_uid, number, time, AXIAL)
+
+    def upload_dicom_file(self, path):
+        import pydicom
+        from patients.orthanc_client import OrthancUnavailable
+
+        if FakeOrthanc.fail_upload:
+            raise OrthancUnavailable("Orthanc upload response invalid: 400")
+        self.uploaded.append(pydicom.dcmread(path))
+        return {"Status": "Success"}
+
+    def delete_series(self, series_instance_uid):
+        self.deleted_series.append(series_instance_uid)
+
+
+class FakeModel:
+    """Writes a mask over the pre phase grid: one voxel, or nothing when ``empty``."""
+
+    def __init__(self, empty=False):
+        from workers.segmentation.models.base import ModelInfo
+
+        self.empty = empty
+        self.info = ModelInfo("nnunet", "dce3-test", "7", ("pre", "post1", "post2"), {})
+
+    def predict(self, channels, out_dir, case_id):
+        import nibabel as nib
+        import numpy as np
+
+        from workers.segmentation.models.base import SegmentationResult as Prediction
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pre = nib.load(channels[0])
+        mask = np.zeros(pre.shape, dtype=np.uint8)
+        if not self.empty:
+            mask[1, 0, 2] = 1
+        label_path, probabilities_path = (
+            out_dir / f"{case_id}.nii.gz",
+            out_dir / f"{case_id}_prob.nii.gz",
+        )
+        nib.save(nib.Nifti1Image(mask, pre.affine), label_path)
+        nib.save(nib.Nifti1Image(mask.astype(np.float32), pre.affine), probabilities_path)
+        return Prediction(label_path, probabilities_path, self.info.name, self.info.version, 1.0)
+
+
+@pytest.fixture
+def pipeline(monkeypatch):
+    """segmentation tasks with a fake Orthanc, model and masks bucket."""
+    from workers.segmentation import tasks
+
+    orthanc = FakeOrthanc()
+    FakeOrthanc.fail_upload = False
+    stored = {}
+    monkeypatch.setattr(tasks, "OrthancClient", lambda: orthanc)
+    monkeypatch.setattr(
+        tasks, "upload_file", lambda path, bucket, key: stored.update({key: path.read_bytes()})
+    )
+    monkeypatch.setattr(tasks, "delete_object", lambda bucket, key: stored.pop(key, None))
+    monkeypatch.setattr(tasks, "_model", lambda: FakeModel())
+    return tasks, orthanc, stored
+
+
+@pytest.fixture
+def study(db):
+    from patients.models import Study
+
+    return Study.objects.create(orthanc_path="orthanc-study-1")
+
+
+def _result(study):
+    from segmentation.models import SegmentationResult
+
+    return SegmentationResult.objects.get(study=study)
+
+
+def test_run_stores_the_model_mask_as_dicom_seg(pipeline, study):
+    # Arrange
+    tasks, orthanc, _ = pipeline
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    result = _result(study)
+    assert result.status == "COMPLETED"
+    [seg] = orthanc.uploaded
+    assert seg.Modality == "SEG"
+    assert seg.SeriesDescription == "MARIA model segmentation"
+    segment = seg.SegmentSequence[0]
+    assert segment.SegmentAlgorithmType == "AUTOMATIC"
+    assert segment.SegmentAlgorithmName == "dce3-test"
+    assert segment.SegmentationAlgorithmIdentificationSequence[0].AlgorithmVersion == "7"
+    assert (result.model_seg_series_uid, result.model_seg_sop_uid) == (
+        seg.SeriesInstanceUID,
+        seg.SOPInstanceUID,
+    )
+    # the fake model marks a single voxel: tiny volume, but it has dimensions
+    assert result.measurements["volume_ml"] >= 0
+    assert len(result.measurements["dimensions_mm"]) == 3
+
+
+def test_run_with_an_empty_mask_stores_no_seg(pipeline, study, monkeypatch):
+    # Arrange
+    tasks, orthanc, stored = pipeline
+    monkeypatch.setattr(tasks, "_model", lambda: FakeModel(empty=True))
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    result = _result(study)
+    assert result.status == "COMPLETED"
+    assert orthanc.uploaded == []
+    assert result.model_seg_series_uid == result.model_seg_sop_uid == ""
+    assert result.generated_path in stored
+    assert result.measurements == {"volume_ml": 0.0, "dimensions_mm": None}
+
+
+def test_run_marks_the_result_failed_when_orthanc_refuses_the_seg(pipeline, study):
+    # Arrange
+    from patients.orthanc_client import OrthancUnavailable
+
+    tasks, _, stored = pipeline
+    FakeOrthanc.fail_upload = True
+
+    # Act
+    with pytest.raises(OrthancUnavailable):
+        tasks.run(str(study.id))
+
+    # Assert
+    result = _result(study)
+    assert result.status == "FAILED"
+    assert "400" in result.error
+    assert result.model_seg_series_uid == ""
+    assert f"{study.id}/study_{study.id}.nii.gz" in stored
+
+
+def test_a_second_run_reuses_the_row_and_replaces_the_previous_seg(pipeline, study):
+    # Arrange
+    from segmentation.models import SegmentationResult
+
+    tasks, orthanc, _ = pipeline
+    tasks.run(str(study.id))
+    first = _result(study)
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    second = _result(study)
+    assert SegmentationResult.objects.filter(study=study).count() == 1
+    assert second.pk == first.pk
+    assert second.status == "COMPLETED"
+    assert orthanc.deleted_series == [first.model_seg_series_uid]
+    assert second.model_seg_series_uid == orthanc.uploaded[-1].SeriesInstanceUID
+
+
+@pytest.mark.parametrize("verified", ["APPROVED", "CORRECTED"])
+def test_a_verified_mask_is_never_replaced(pipeline, study, verified):
+    # Arrange
+    from segmentation.models import SegmentationResult
+
+    tasks, orthanc, stored = pipeline
+    SegmentationResult.objects.create(
+        study=study, status=verified, generated_path="1/mask.nii.gz", model_seg_series_uid="1.2"
+    )
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    result = _result(study)
+    assert (result.status, result.generated_path) == (verified, "1/mask.nii.gz")
+    assert orthanc.uploaded == orthanc.deleted_series == []
+    assert stored == {}
+
+
+def test_a_deleted_study_is_skipped(pipeline, study):
+    tasks, orthanc, stored = pipeline
+    study_id = study.id
+    study.delete()
+
+    tasks.run(str(study_id))
+
+    assert orthanc.uploaded == []
+    assert stored == {}
+
+
+def test_a_study_deleted_during_the_run_gets_nothing_stored(pipeline, study, monkeypatch):
+    # Arrange
+    tasks, orthanc, stored = pipeline
+    predict = FakeModel.predict
+
+    def predict_then_delete(self, *args):
+        prediction = predict(self, *args)
+        study.delete()
+        return prediction
+
+    monkeypatch.setattr(FakeModel, "predict", predict_then_delete)
+
+    # Act
+    tasks.run(str(study.id))
+
+    # Assert
+    assert orthanc.uploaded == []
+    assert stored == {}
+
+
+def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatch):
+    # Arrange
+    from segmentation.models import SegmentationResult
+
+    tasks, orthanc, stored = pipeline
+    tasks.run(str(study.id))
+    result = _result(study)
+    model_seg = orthanc.uploaded.pop()
+    mask_bytes = stored[result.generated_path]
+    monkeypatch.setattr(
+        tasks, "download_file", lambda bucket, key, path: path.write_bytes(mask_bytes)
+    )
+
+    # Act
+    tasks.correction_to_dicom_seg(study.orthanc_path, result.generated_path, result_id=result.id)
+
+    # Assert
+    result = SegmentationResult.objects.get(pk=result.pk)
+    [seg] = orthanc.uploaded
+    assert seg.SeriesDescription == "MARIA approved segmentation"
+    assert seg.SegmentSequence[0].SegmentAlgorithmType == "MANUAL"
+    assert (result.approved_seg_series_uid, result.approved_seg_sop_uid) == (
+        seg.SeriesInstanceUID,
+        seg.SOPInstanceUID,
+    )
+    assert result.approved_seg_series_uid != model_seg.SeriesInstanceUID
+    assert result.model_seg_series_uid == model_seg.SeriesInstanceUID
+
+
+# --- measurements ---
+
+
+def _box(shape=(20, 20, 20)):
+    import numpy as np
+
+    mask = np.zeros(shape, dtype=np.uint8)
+    mask[2:12, 2:7, 2:4] = 1  # 10 x 5 x 2 voxels
+    return mask
+
+
+def test_measure_gives_volume_in_ml_and_dimensions_in_mm_longest_first():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    affine = np.diag([0.5, 1.0, 2.0, 1.0])  # voxel of 1 mm³
+
+    result = measure(_box(), affine)
+
+    assert result == {"volume_ml": 0.1, "dimensions_mm": [5.0, 5.0, 4.0]}
+
+
+def test_measure_takes_dimensions_from_the_largest_region_and_volume_from_all():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    mask = _box()
+    mask[18, 18, 18] = 1  # a small false region far away
+
+    result = measure(mask, np.eye(4))
+
+    assert result["dimensions_mm"] == [10.0, 5.0, 2.0]
+    assert result["volume_ml"] == 0.1  # 101 voxels of 1 mm³, rounded
+
+
+def test_measure_of_an_empty_mask():
+    import numpy as np
+
+    from workers.segmentation.measurements import measure
+
+    assert measure(np.zeros((5, 5, 5)), np.eye(4)) == {"volume_ml": 0.0, "dimensions_mm": None}

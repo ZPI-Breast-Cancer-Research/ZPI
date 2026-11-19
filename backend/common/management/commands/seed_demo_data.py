@@ -1,22 +1,27 @@
 """Populate database with synthetic data for local UI development."""
-import requests
 
-from patients.orthanc_client import OrthancClient
-
-from ._demo_dicom import delete_demo_studies, upload_study
+import random
+import struct
+import zlib
 from copy import deepcopy
 from datetime import timedelta
 
+import requests
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
-
-from extraction.models import ExtractionResult, StatusChoices as ExtractionStatus
+from extraction.models import ExtractionResult, SourceChoices
+from extraction.models import StatusChoices as ExtractionStatus
 from mlops.models import ModelVersion
 from patients.models import Study
-from segmentation.models import SegmentationResult, StatusChoices as SegmentationStatus
+from patients.orthanc_client import OrthancClient
+from segmentation.models import SegmentationResult
+from segmentation.models import StatusChoices as SegmentationStatus
 from users.models import Role, User
 
+from common.storage import BUCKET_REPORTS, put_bytes
+
+from ._demo_dicom import delete_demo_studies, upload_study
 
 STUDY_PREFIX = "DEMO-ORTHANC-"
 MODEL_VERSION_PREFIX = "demo-"
@@ -79,41 +84,99 @@ DEMO_BIRADS_CORRECTIONS = {
     "4c": "5",
     "5": "6",
 }
+
+
 def _apply_variant(report: dict, index: int) -> dict:
-    """Edge cases for the review views: no lesion, two lesions, incomplete observation."""
-    if index % 11 == 5:  # badanie bez zmian ogniskowych
+    """
+    Edge cases for review views:
+    - no lesion,
+    - one lesion,
+    - two lesions,
+    - three lesions,
+    - incomplete ultrasound observation.
+    """
+
+    # Co jedenaste badanie: bez zmian ogniskowych.
+    if index % 11 == 5:
         report["zmiany"] = []
+
         for side in ("lewa", "prawa"):
             report["piersi"][side]["zmiany_ogniskowe"] = False
             report["piersi"][side]["mikrozwapnienia"] = False
             report["piersi"][side]["obrzek"] = False
+
         report["wniosek"] = {
             "birads": "1",
             "tekst": "Obraz bez zmian ogniskowych, BI-RADS 1.",
             "zalecenie": "Kontrola za 12 miesięcy.",
         }
+
         return report
 
-    if index % 9 == 4:  # druga zmiana: sprawdza wybór „głównej” (najwyższy BI-RADS)
-        second = deepcopy(report["zmiany"][0])
-        second["id"] = 2
-        second["birads"] = DEMO_BIRADS[(index + 3) % len(DEMO_BIRADS)]
-        for obs in second["obserwacje"]:
-            obs["lokalizacje"] = [DEMO_LOCATIONS[(index + 2) % len(DEMO_LOCATIONS)]]
-            _refresh_observation_citation(obs)
-        report["zmiany"].append(second)
-        top = max(
-            (report["zmiany"][0]["birads"], second["birads"]), key=BIRADS_ORDER.index
-        )
-        report["wniosek"]["birads"] = top
-        report["wniosek"]["tekst"] = f"Obraz zmiany BI-RADS {top}."
+    if index % 8 == 3:
+        number_of_lesions = 3
+    elif index % 4 == 1:
+        number_of_lesions = 2
+    else:
+        number_of_lesions = 1
 
-    if index % 13 == 7:  # niekompletna obserwacja USG
+    if number_of_lesions > 1:
+        base_lesion = report["zmiany"][0]
+
+        for lesion_number in range(2, number_of_lesions + 1):
+            second = deepcopy(base_lesion)
+
+            second["id"] = lesion_number
+
+            second["strona"] = (
+                ("prawa" if base_lesion["strona"] == "lewa" else "lewa")
+                if lesion_number == 2
+                else base_lesion["strona"]
+            )
+
+            second["birads"] = DEMO_BIRADS[(index + lesion_number + 2) % len(DEMO_BIRADS)]
+
+            for obs_index, observation in enumerate(second["obserwacje"]):
+                location_index = (index + lesion_number + obs_index + 2) % len(DEMO_LOCATIONS)
+
+                observation["lokalizacje"] = [DEMO_LOCATIONS[location_index]]
+
+                observation["godzina"] = str(((index + lesion_number * 3 + obs_index) % 12) + 1)
+
+                observation["odleglosc_od_brodawki"] = {
+                    "wartosc": float(2 + (index + lesion_number) % 6),
+                    "jednostka": "cm",
+                }
+
+                # Każda zmiana ma własny opis cytowany.
+                _refresh_observation_citation(observation)
+
+            second["polaczenie_obserwacji"] = {
+                "pewne": True,
+                "powod": ("Obserwacje dotyczą tej samej zmiany w dwóch modalnościach obrazowania."),
+            }
+
+            report["zmiany"].append(second)
+
+    highest_birads = max(
+        (lesion["birads"] for lesion in report["zmiany"]),
+        key=BIRADS_ORDER.index,
+    )
+
+    report["wniosek"]["birads"] = highest_birads
+    report["wniosek"]["tekst"] = (
+        f"Stwierdzono {len(report['zmiany'])} zmian ogniskowych. "
+        f"Najwyższa kategoria BI-RADS {highest_birads}."
+    )
+
+    # Niekompletna obserwacja USG – test formularza.
+    if index % 13 == 7 and report["zmiany"]:
         usg = report["zmiany"][0]["obserwacje"][1]
         usg["wymiary"] = None
         usg["brzeg"] = None
 
     return report
+
 
 def _build_demo_observation(index: int, modality: str) -> dict:
     """Generates a complete observation matching the Pydantic schema."""
@@ -121,9 +184,7 @@ def _build_demo_observation(index: int, modality: str) -> dict:
     is_ultrasound = modality == "usg"
 
     location = DEMO_LOCATIONS[index % len(DEMO_LOCATIONS)]
-    size = list(DEMO_SIZES[
-        (index + (1 if is_ultrasound else 0)) % len(DEMO_SIZES)
-    ])
+    size = list(DEMO_SIZES[(index + (1 if is_ultrasound else 0)) % len(DEMO_SIZES)])
 
     shape = DEMO_SHAPES[index % len(DEMO_SHAPES)]
     margin = DEMO_MARGINS[(index + 1) % len(DEMO_MARGINS)]
@@ -139,12 +200,8 @@ def _build_demo_observation(index: int, modality: str) -> dict:
             "wartosc": float(5 + index % 8),
             "jednostka": "mm",
         }
-        echogenicity = DEMO_ECHOGENICITY[
-            index % len(DEMO_ECHOGENICITY)
-        ]
-        homogeneity = DEMO_HOMOGENEITY[
-            index % len(DEMO_HOMOGENEITY)
-        ]
+        echogenicity = DEMO_ECHOGENICITY[index % len(DEMO_ECHOGENICITY)]
+        homogeneity = DEMO_HOMOGENEITY[index % len(DEMO_HOMOGENEITY)]
     else:
         observation_type = "zmiana guzowata"
         depth = None
@@ -200,19 +257,14 @@ def _build_demo_breast(
 
     return {
         "budowa": DEMO_BREAST_BUILD[
-            (index + (0 if side == "lewa" else 1))
-            % len(DEMO_BREAST_BUILD)
+            (index + (0 if side == "lewa" else 1)) % len(DEMO_BREAST_BUILD)
         ],
         "obrzek": has_edema,
         "zwapnienia": has_calcifications,
         "mikrozwapnienia": has_microcalcifications,
         "zmiany_ogniskowe": has_focal_lesion,
         "skora": {
-            "stan": (
-                "niewielkie pogrubienie"
-                if skin_invasion
-                else "prawidłowa"
-            ),
+            "stan": ("niewielkie pogrubienie" if skin_invasion else "prawidłowa"),
             "naciek": skin_invasion,
         },
     }
@@ -230,22 +282,18 @@ def _build_demo_nodes(index: int, side: str) -> list[dict]:
         dimensions = [14, 7]
 
         quote = (
-            "W dole pachowym widoczne mnogie węzły chłonne "
-            "o pogrubiałej korze."
+            "W dole pachowym widoczne mnogie węzły chłonne o pogrubiałej korze."
             if multiple
-            else "W dole pachowym widoczny pojedynczy węzeł "
-                 "chłonny o pogrubiałej korze."
+            else "W dole pachowym widoczny pojedynczy węzeł chłonny o pogrubiałej korze."
         )
     else:
         note = "zachowana wnęka tłuszczowa, niepogrubiała kora"
         dimensions = [8, 4]
 
         quote = (
-            "W dole pachowym widoczne mnogie węzły chłonne "
-            "o zachowanej wnęce tłuszczowej."
+            "W dole pachowym widoczne mnogie węzły chłonne o zachowanej wnęce tłuszczowej."
             if multiple
-            else "W dole pachowym widoczny pojedynczy węzeł "
-                 "chłonny o zachowanej wnęce tłuszczowej."
+            else "W dole pachowym widoczny pojedynczy węzeł chłonny o zachowanej wnęce tłuszczowej."
         )
 
     return [
@@ -264,6 +312,89 @@ def _build_demo_nodes(index: int, side: str) -> list[dict]:
             "cytat": quote,
         }
     ]
+
+
+def render_scan(text: str) -> bytes:
+    """Fake scan of a report: a grey page with bars standing in for text (PNG, stdlib only)."""
+    width, height = 600, 800
+    rng = random.Random(text)
+    page = [[245] * width for _ in range(height)]
+    y = 60
+    for line in text.split("\n"):
+        end = width - 50
+        for _ in range(max(1, len(line) // 60 + 1)):
+            x = 50
+            while x < end and y + 8 < height - 50:
+                w = rng.randint(18, 70)
+                for yy in range(y, y + 8):
+                    row = page[yy]
+                    for xx in range(x, min(x + w, end)):
+                        row[xx] = 70
+                x += w + 10
+            y += 16
+        y += 14
+
+    raw = b"".join(b"\x00" + bytes(row) for row in page)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _build_demo_case_result(
+    generated_report: dict,
+    number: int,
+    with_scan: bool,
+) -> dict:
+    """
+    Zwraca ExtractionResult workera; jego pola trafiają do kolumn opisu (ocr_text, ...).
+
+    Nie tworzy wrappera {originalUrl, scanKey, result}.
+    Oryginalny plik jest wskazywany przez extraction.report_path.
+    """
+
+    quotes = [
+        obs["cytat"]
+        for lesion in generated_report.get("zmiany", [])
+        for obs in lesion.get("obserwacje", [])
+        if obs.get("cytat")
+    ]
+
+    quotes += [node["cytat"] for node in generated_report.get("wezly", []) if node.get("cytat")]
+
+    conclusion = generated_report.get("wniosek", {}).get("tekst") or ""
+    text = "\n".join(quotes + [conclusion])
+
+    return {
+        "source": (f"skan_{number:05d}.png" if with_scan else f"opis_{number:05d}.txt"),
+        "status": "ok",
+        "data": generated_report,
+        "error": None,
+        "warnings": [],
+        "text": text,
+        "provenance": {
+            "ocr_engine": "demo" if with_scan else None,
+            "ocr_engine_version": None,
+            "ocr_mean_confidence": 0.93 if with_scan else None,
+            "orientation_detector": None,
+            "page_rotations": [0] if with_scan else [],
+            "llm_provider": "demo",
+            "llm_model": "demo",
+            "prompt_version": "demo",
+            "schema_version": "3",
+        },
+        "attempts": 1,
+        "ocr_seconds": 1.2 if with_scan else None,
+        "llm_seconds": None,
+        "created_at": timezone.now().isoformat(),
+    }
 
 
 def _build_demo_report(index: int) -> dict:
@@ -333,11 +464,7 @@ def _refresh_observation_citation(observation: dict) -> None:
     size_text = " × ".join(str(value) for value in dimensions)
     size_text += f" {unit}"
 
-    location = (
-        observation["lokalizacje"][0]
-        if observation["lokalizacje"]
-        else "opisywanej okolicy"
-    )
+    location = observation["lokalizacje"][0] if observation["lokalizacje"] else "opisywanej okolicy"
 
     observation["cytat"] = (
         f"W lokalizacji {location} widoczna "
@@ -354,30 +481,21 @@ def _build_accepted_demo_report(
 ) -> dict:
     accepted_report = deepcopy(generated_report)
     if not accepted_report["zmiany"]:
-            return accepted_report
-    
-    should_correct_birads = (
-        index % 2 == 0
-        or ext_status == ExtractionStatus.CORRECTED
-    )
+        return accepted_report
+
+    should_correct_birads = index % 2 == 0 or ext_status == ExtractionStatus.CORRECTED
 
     if should_correct_birads:
         current_birads = accepted_report["zmiany"][0]["birads"]
 
-        corrected_birads = DEMO_BIRADS_CORRECTIONS[
-            current_birads
-        ]
+        corrected_birads = DEMO_BIRADS_CORRECTIONS[current_birads]
 
         accepted_report["zmiany"][0]["birads"] = corrected_birads
         accepted_report["wniosek"]["birads"] = corrected_birads
 
-        accepted_report["wniosek"]["tekst"] = (
-            f"Obraz zmiany BI-RADS {corrected_birads}."
-        )
+        accepted_report["wniosek"]["tekst"] = f"Obraz zmiany BI-RADS {corrected_birads}."
 
-    corrected_observation = (
-        accepted_report["zmiany"][0]["obserwacje"][0]
-    )
+    corrected_observation = accepted_report["zmiany"][0]["obserwacje"][0]
 
     if index % 3 == 0:
         corrected_observation["wymiary"]["wartosci"] = list(
@@ -385,19 +503,16 @@ def _build_accepted_demo_report(
         )
 
     if index % 4 == 0:
-        corrected_observation["brzeg"] = DEMO_MARGINS[
-            (index + 3) % len(DEMO_MARGINS)
-        ]
+        corrected_observation["brzeg"] = DEMO_MARGINS[(index + 3) % len(DEMO_MARGINS)]
 
     if index % 3 == 0 or index % 4 == 0:
         _refresh_observation_citation(corrected_observation)
 
     return accepted_report
+
+
 class Command(BaseCommand):
-    help = (
-        "Creates synthetic demo users, studies, segmentations, "
-        "reports and ML model versions."
-    )
+    help = "Creates synthetic demo users, studies, segmentations, reports and ML model versions."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -422,7 +537,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--no-orthanc",
             action="store_true",
-            help="Do not upload DICOMs; Study rows get fake Orthanc ids (the study list stays empty).",
+            help=(
+                "Do not upload DICOMs; Study rows get fake Orthanc ids "
+                "(the study list stays empty)."
+            ),
         )
 
     @transaction.atomic
@@ -460,9 +578,7 @@ class Command(BaseCommand):
         unassigned_count = ExtractionResult.objects.filter(
             report_path__startswith=UNASSIGNED_REPORT_PREFIX
         ).count()
-        model_count = ModelVersion.objects.filter(
-            version__startswith=MODEL_VERSION_PREFIX
-        ).count()
+        model_count = ModelVersion.objects.filter(version__startswith=MODEL_VERSION_PREFIX).count()
 
         self.stdout.write(self.style.SUCCESS("Demo data is ready."))
         self.stdout.write(
@@ -487,27 +603,24 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.WARNING(
-                "These are synthetic records. "
-                "Do not run this command against production data."
+                "These are synthetic records. Do not run this command against production data."
             )
         )
 
     def _demo_study_ids(self):
         """Demo studies = anything pointing at demo/ paths (or the old fake ids)."""
         ids = set(
-            SegmentationResult.objects.filter(
-                generated_path__startswith="demo/"
-            ).values_list("study_id", flat=True)
+            SegmentationResult.objects.filter(generated_path__startswith="demo/").values_list(
+                "study_id", flat=True
+            )
         )
         ids |= set(
-            ExtractionResult.objects.filter(
-                report_path__startswith="demo/"
-            ).values_list("study_id", flat=True)
+            ExtractionResult.objects.filter(report_path__startswith="demo/").values_list(
+                "study_id", flat=True
+            )
         )
         ids |= set(
-            Study.objects.filter(
-                orthanc_path__startswith=STUDY_PREFIX
-            ).values_list("id", flat=True)
+            Study.objects.filter(orthanc_path__startswith=STUDY_PREFIX).values_list("id", flat=True)
         )
         ids.discard(None)
         return ids
@@ -517,9 +630,7 @@ class Command(BaseCommand):
 
         SegmentationResult.objects.filter(study_id__in=demo_ids).delete()
         ExtractionResult.objects.filter(study_id__in=demo_ids).delete()
-        ExtractionResult.objects.filter(
-            report_path__startswith=UNASSIGNED_REPORT_PREFIX
-        ).delete()
+        ExtractionResult.objects.filter(report_path__startswith=UNASSIGNED_REPORT_PREFIX).delete()
         Study.objects.filter(id__in=demo_ids).delete()
 
         ModelVersion.objects.filter(version__startswith=MODEL_VERSION_PREFIX).delete()
@@ -529,6 +640,7 @@ class Command(BaseCommand):
             removed = delete_demo_studies(*orthanc)
             self.stdout.write(f"Removed {removed} demo studies from Orthanc.")
         self.stdout.write("Removed previous demo records.")
+
     def _seed_users(self, password):
         now = timezone.now()
 
@@ -618,9 +730,7 @@ class Command(BaseCommand):
         for spec in specs:
             username = spec["username"]
 
-            user, _ = User.objects.get_or_create(
-                username=username
-            )
+            user, _ = User.objects.get_or_create(username=username)
 
             for field, value in spec.items():
                 if field != "username":
@@ -643,7 +753,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-0.9.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.ARCHIVED,
-                "decision": ModelVersion.DecisionChoices.REPLACED,
                 "created_days_ago": 85,
                 "activated_days_ago": 85,
                 "deactivated_days_ago": 48,
@@ -657,7 +766,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.0.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.ARCHIVED,
-                "decision": ModelVersion.DecisionChoices.REPLACED,
                 "created_days_ago": 52,
                 "activated_days_ago": 48,
                 "deactivated_days_ago": 18,
@@ -671,7 +779,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.1.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.PRODUCTION,
-                "decision": ModelVersion.DecisionChoices.PROMOTED,
                 "created_days_ago": 23,
                 "activated_days_ago": 18,
                 "deactivated_days_ago": None,
@@ -685,7 +792,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.2.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.CANDIDATE,
-                "decision": ModelVersion.DecisionChoices.PENDING,
                 "created_days_ago": 3,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -699,7 +805,6 @@ class Command(BaseCommand):
                 "version": "demo-seg-1.3.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.TRAINING,
-                "decision": ModelVersion.DecisionChoices.PENDING,
                 "created_days_ago": 1,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -713,7 +818,7 @@ class Command(BaseCommand):
                 "version": "demo-seg-0.8.0",
                 "name": "Breast MRI Segmentation",
                 "status": ModelVersion.StatusChoices.REJECTED,
-                "decision": ModelVersion.DecisionChoices.REJECTED_GATE,
+                "reason": "Odrzucona przez bramkę jakości",
                 "created_days_ago": 12,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -727,7 +832,6 @@ class Command(BaseCommand):
                 "version": "demo-ext-0.9.0",
                 "name": "Breast MRI Report Extraction",
                 "status": ModelVersion.StatusChoices.ARCHIVED,
-                "decision": ModelVersion.DecisionChoices.REPLACED,
                 "created_days_ago": 70,
                 "activated_days_ago": 70,
                 "deactivated_days_ago": 30,
@@ -741,7 +845,6 @@ class Command(BaseCommand):
                 "version": "demo-ext-1.0.0",
                 "name": "Breast MRI Report Extraction",
                 "status": ModelVersion.StatusChoices.PRODUCTION,
-                "decision": ModelVersion.DecisionChoices.PROMOTED,
                 "created_days_ago": 35,
                 "activated_days_ago": 30,
                 "deactivated_days_ago": None,
@@ -755,7 +858,6 @@ class Command(BaseCommand):
                 "version": "demo-ext-1.1.0",
                 "name": "Breast MRI Report Extraction",
                 "status": ModelVersion.StatusChoices.CANDIDATE,
-                "decision": ModelVersion.DecisionChoices.PENDING,
                 "created_days_ago": 2,
                 "activated_days_ago": None,
                 "deactivated_days_ago": None,
@@ -780,56 +882,42 @@ class Command(BaseCommand):
 
             model.name = spec["name"]
             model.status = spec["status"]
-            model.decision = spec["decision"]
-
-            model.activated_at = (
-                now - timedelta(days=spec["activated_days_ago"])
-                if spec["activated_days_ago"] is not None
-                else None
-            )
-
-            model.deactivated_at = (
-                now - timedelta(days=spec["deactivated_days_ago"])
-                if spec["deactivated_days_ago"] is not None
-                else None
-            )
-
+            model.reason = spec.get("reason", "")
             model.decided_by = spec["decided_by"]
-            model.mlflow_run_id = (
-                f"demo-{module}-{version.replace('.', '-')}"
-            )
-
-            model.dice = spec["dice"]
-            model.hd95 = spec["hd95"]
-            model.f1 = spec["f1"]
+            model.mlflow_run_id = f"demo-{module}-{version.replace('.', '-')}"
+            model.metrics = {
+                key: spec[key] for key in ("dice", "hd95", "f1") if spec[key] is not None
+            }
 
             model.save()
 
-            ModelVersion.objects.filter(pk=model.pk).update(
-                created_at=now - timedelta(
-                    days=spec["created_days_ago"]
+            # one usage period per version, replaced on every run of the seeder
+            model.periods.all().delete()
+            if spec["activated_days_ago"] is not None:
+                model.periods.create(
+                    started_at=now - timedelta(days=spec["activated_days_ago"]),
+                    ended_at=(
+                        now - timedelta(days=spec["deactivated_days_ago"])
+                        if spec["deactivated_days_ago"] is not None
+                        else None
+                    ),
+                    decided_by=spec["decided_by"],
                 )
+
+            ModelVersion.objects.filter(pk=model.pk).update(
+                created_at=now - timedelta(days=spec["created_days_ago"])
             )
 
             result[(module, version)] = model
 
         return {
-            "seg_production": result[
-                (ModelVersion.ModuleChoices.SEG, "demo-seg-1.1.0")
-            ],
-            "seg_previous": result[
-                (ModelVersion.ModuleChoices.SEG, "demo-seg-1.0.0")
-            ],
-            "seg_candidate": result[
-                (ModelVersion.ModuleChoices.SEG, "demo-seg-1.2.0")
-            ],
-            "ext_production": result[
-                (ModelVersion.ModuleChoices.EXT, "demo-ext-1.0.0")
-            ],
-            "ext_previous": result[
-                (ModelVersion.ModuleChoices.EXT, "demo-ext-0.9.0")
-            ],
+            "seg_production": result[(ModelVersion.ModuleChoices.SEG, "demo-seg-1.1.0")],
+            "seg_previous": result[(ModelVersion.ModuleChoices.SEG, "demo-seg-1.0.0")],
+            "seg_candidate": result[(ModelVersion.ModuleChoices.SEG, "demo-seg-1.2.0")],
+            "ext_production": result[(ModelVersion.ModuleChoices.EXT, "demo-ext-1.0.0")],
+            "ext_previous": result[(ModelVersion.ModuleChoices.EXT, "demo-ext-0.9.0")],
         }
+
     def _seed_studies(self, count, users, versions, orthanc):
         today = timezone.localdate()
 
@@ -885,25 +973,17 @@ class Command(BaseCommand):
                 SegmentationStatus.CORRECTED,
             )
             seg_reviewer = reviewers[index % len(reviewers)] if seg_verified else None
-            seg_accepted_at = (
-                today - timedelta(days=(index * 5) % 56) if seg_verified else None
-            )
-            seg_model = (
-                versions["seg_previous"] if index % 7 == 0 else versions["seg_production"]
-            )
+            seg_accepted_at = today - timedelta(days=(index * 5) % 56) if seg_verified else None
+            seg_model = versions["seg_previous"] if index % 7 == 0 else versions["seg_production"]
             uncertainty = round(0.04 + ((index * 19) % 90) / 100, 3)
 
             segmentation, _ = SegmentationResult.objects.get_or_create(study=study)
             segmentation.model = seg_model
             segmentation.status = seg_status
             segmentation.uncertainty = uncertainty
-            segmentation.generated_path = (
-                f"demo/segmentations/{number:05d}/generated.nii.gz"
-            )
+            segmentation.generated_path = f"demo/segmentations/{number:05d}/generated.nii.gz"
             segmentation.accepted_path = (
-                f"demo/segmentations/{number:05d}/accepted.nii.gz"
-                if seg_verified
-                else None
+                f"demo/segmentations/{number:05d}/accepted.nii.gz" if seg_verified else None
             )
             segmentation.input_series_ids = series_uids
             segmentation.accepted_by = seg_reviewer
@@ -911,38 +991,133 @@ class Command(BaseCommand):
             segmentation.save()
 
             # ---------------- EXTRACTION ----------------
+
             ext_status = extraction_statuses[index % len(extraction_statuses)]
+
             ext_verified = ext_status in (
                 ExtractionStatus.APPROVED,
                 ExtractionStatus.CORRECTED,
             )
-            ext_reviewer = (
-                reviewers[(index + 1) % len(reviewers)] if ext_verified else None
-            )
-            ext_accepted_at = (
-                today - timedelta(days=(index * 3) % 56) if ext_verified else None
+
+            ext_reviewer = reviewers[(index + 1) % len(reviewers)] if ext_verified else None
+
+            ext_accepted_at = today - timedelta(days=(index * 3) % 56) if ext_verified else None
+
+            # Raport wygenerowany przez AI
+            generated_report = _apply_variant(
+                _build_demo_report(index),
+                index,
             )
 
-            generated_report = _apply_variant(_build_demo_report(index), index)
+            # Raport zaakceptowany przez lekarza
             accepted_report = (
-                _build_accepted_demo_report(generated_report, index, ext_status)
+                _build_accepted_demo_report(
+                    generated_report,
+                    index,
+                    ext_status,
+                )
                 if ext_verified
                 else None
             )
 
-            report_path = f"demo/reports/{number:05d}/report.json"
+            # Co trzeci raport jest obrazem PNG.
+            # Pozostałe raporty są plikami tekstowymi TXT.
+            with_scan = number % 2 == 0
+
+            if with_scan:
+                report_path = f"demo/reports/{number:05d}/scan.png"
+                content_type = "image/png"
+            else:
+                report_path = f"demo/reports/{number:05d}/report.txt"
+                content_type = "text/plain; charset=utf-8"
+
+            # Pobierz albo utwórz ExtractionResult.
             extraction, _ = ExtractionResult.objects.get_or_create(
-                study=study, defaults={"report_path": report_path}
+                study=study,
+                defaults={
+                    "report_path": report_path,
+                },
             )
+
+            # Dane ekstrakcji
             extraction.model = versions["ext_production"]
             extraction.status = ext_status
-            extraction.uncertainty = round(max(0.02, min(0.98, uncertainty + 0.07)), 3)
+
+            extraction.uncertainty = round(
+                max(0.02, min(0.98, uncertainty + 0.07)),
+                3,
+            )
+
+            # report_path wskazuje bezpośrednio na oryginalny plik w MinIO.
             extraction.report_path = report_path
+            extraction.source = SourceChoices.of_file(report_path)
+
+            # Raport AI
             extraction.generated_report = generated_report
+
+            # Raport zaakceptowany przez lekarza
             extraction.accepted_report = accepted_report
+
+            # Pełny wynik ekstrakcji odczytywany przez aktualny view.
+            if ext_status not in (
+                ExtractionStatus.PENDING,
+                ExtractionStatus.PROCESSING,
+            ):
+                result = _build_demo_case_result(
+                    generated_report,
+                    number,
+                    with_scan,
+                )
+            else:
+                result = None
+
+            # the result in the report columns, as the extraction worker writes it
+            provenance = result["provenance"] if result else {}
+            extraction.ocr_text = result["text"] if result else ""
+            extraction.ocr_confidence = provenance.get("ocr_mean_confidence")
+            extraction.page_rotations = provenance.get("page_rotations") or []
+            extraction.ocr_seconds = result["ocr_seconds"] if result else None
+            extraction.attempts = result["attempts"] if result else 0
+            extraction.schema_version = provenance.get("schema_version") or ""
+
             extraction.accepted_by = ext_reviewer
             extraction.accepted_at = ext_accepted_at
+
+            extraction.assigned_at = extraction.assigned_at or timezone.now()
+
             extraction.save()
+
+            # ---------------- MINIO ----------------
+            #
+            # Zapisujemy bezpośrednio oryginalny plik.
+            # Nie zapisujemy report.json ani scanKey.
+            #
+            # report_path w bazie wskazuje dokładnie na ten obiekt.
+
+            if with_scan:
+                # Syntetyczny obraz PNG
+                scan_text = result["text"] if result else "Syntetyczny raport demonstracyjny."
+
+                file_bytes = render_scan(scan_text)
+
+            else:
+                # Syntetyczny raport tekstowy TXT
+                if result:
+                    report_text = result["text"]
+                else:
+                    report_text = (
+                        "Syntetyczny raport demonstracyjny.\nRaport oczekuje na przetworzenie."
+                    )
+
+                file_bytes = report_text.encode("utf-8")
+
+            put_bytes(
+                data=file_bytes,
+                bucket=BUCKET_REPORTS,
+                key=report_path,
+                content_type=content_type,
+            )
+
     def _seed_unassigned_reports(self):
         samples = [
             ("opis_piersi_001.txt", ExtractionStatus.PENDING),
@@ -962,6 +1137,7 @@ class Command(BaseCommand):
             )
 
             report.status = state
+            report.source = SourceChoices.of_file(path)
             report.uncertainty = None
 
             report.generated_report = None

@@ -17,6 +17,9 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5173,
     strictPort: true,
+    // Host names the dev server answers to besides localhost and IPs (comma-separated), e.g. the
+    // public name of a deployment: VITE_ALLOWED_HOSTS=maria.example.com
+    allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? "").split(",").filter(Boolean),
     // File change events don't propagate into docker bind mounts on Windows/macOS.
     watch: { usePolling: process.env.VITE_USE_POLLING === "true" },
   },

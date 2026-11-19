@@ -1,1 +1,2 @@
 -r ../segmentation/requirements.txt
+scipy>=1.11  # evaluate.py (HD95); also comes with nnunetv2

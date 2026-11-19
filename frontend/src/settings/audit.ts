@@ -1,20 +1,27 @@
-import { mockDelay } from "../mock";
+import { mockDelay, MOCK_API } from "../mock";
+import { api, handleApiError } from "../api";
 
 export type AuditKind =
   | "mask_approved"
   | "mask_unapproved"
   | "form_approved"
   | "form_unapproved"
+  | "model_proposed"
+  | "proposal_withdrawn"
   | "model_promoted"
   | "model_rejected"
   | "model_rolled_back"
   | "training_started"
+  | "training_stopped"
   | "account_created"
   | "account_changed"
   | "account_blocked"
   | "account_unblocked"
   | "password_reset"
-  | "login_failed";
+  | "login_failed"
+  | "study_imported"
+  | "study_deleted"
+  | "attach_report";
 
 export type AuditGroup = "review" | "models" | "accounts" | "logins";
 
@@ -23,16 +30,22 @@ export const GROUP_OF: Record<AuditKind, AuditGroup> = {
   mask_unapproved: "review",
   form_approved: "review",
   form_unapproved: "review",
+  model_proposed: "models",
+  proposal_withdrawn: "models",
   model_promoted: "models",
   model_rejected: "models",
   model_rolled_back: "models",
   training_started: "models",
+  training_stopped: "models",
   account_created: "accounts",
   account_changed: "accounts",
   account_blocked: "accounts",
   account_unblocked: "accounts",
   password_reset: "accounts",
   login_failed: "logins",
+  study_imported: "review",
+  study_deleted: "review",
+  attach_report: "review",
 };
 
 export const TARGET_OF: Record<AuditGroup, "study" | "model" | "account"> = {
@@ -100,7 +113,15 @@ export function record(kind: AuditKind, object: string, detail: string | null = 
   entries = [{ id: `e${now.getTime()}`, at, login: who.login, name: who.name, kind, object, detail }, ...entries];
 }
 
-// read only: nothing in the UI edits or deletes an entry (Q5)
 export async function fetchAudit(): Promise<AuditEntry[]> {
-  return mockDelay([...entries].sort((a, b) => b.at.localeCompare(a.at)));
+  if (MOCK_API) {
+    return mockDelay([...entries].sort((a, b) => b.at.localeCompare(a.at)));
+  }
+
+  try {
+    const { data } = await api.get<AuditEntry[]>("/api/logs/");
+    return data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }

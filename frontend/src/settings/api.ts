@@ -145,11 +145,11 @@ export async function resetPassword(id: string): Promise<{ password: string }> {
   }
 }
 
-export async function changePassword(_current: string, _next: string): Promise<void> {
+export async function changePassword(current: string, next: string): Promise<void> {
   if(MOCK_API)  return mockDelay(undefined, 300);
   
   try {
-    await api.post("/api/auth/change-password/", { _current, _next });
+    await api.post("/api/auth/change-password/", { current, next });
   } catch (error) {
     handleApiError(error);
   }

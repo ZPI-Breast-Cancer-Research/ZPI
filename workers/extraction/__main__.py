@@ -11,6 +11,8 @@ from .documents import Document, find_documents
 from .errors import ExtractionError
 from .evaluation import (
     evaluate,
+    format_experiment_diff,
+    format_experiments,
     format_report,
     load_gold,
     load_predictions,
@@ -73,6 +75,29 @@ def cmd_ocr(args: argparse.Namespace, settings: Settings) -> int:
         if args.out_dir:
             out = args.out_dir / f"{Path(document.source).stem}.txt"
             out.write_text(result.text, encoding="utf-8")
+    return 0
+
+
+def cmd_render(args: argparse.Namespace, settings: Settings) -> int:
+    from .datagen import RenderOptions, render_directory
+
+    options = None
+    if args.level is not None:
+        options = RenderOptions(
+            level=args.level,
+            rotation=args.rotation,
+            marks=args.marks,
+            crop=args.crop,
+            seed=args.seed,
+        )
+    manifest = render_directory(args.input, args.out_dir, seed=args.seed, options=options)
+    for item in manifest:
+        print(
+            f"{item['image']}: level {item['level']}, rotation {item['rotation']}°, "
+            f"marks {'yes' if item['marks'] else 'no'}, crop {'yes' if item['crop'] else 'no'}",
+            file=sys.stderr,
+        )
+    print(f"{len(manifest)} images in {args.out_dir} (options in render.json)", file=sys.stderr)
     return 0
 
 
@@ -160,20 +185,27 @@ def cmd_experiment(args: argparse.Namespace, settings: Settings) -> int:
     )
     previous = tracking.load_records()
     record = tracking.build_record(
-        exp_id, args.name, args.note, settings, results, report, args.gold, predictions_path
+        exp_id,
+        args.name,
+        hypothesis=args.note,
+        settings=settings,
+        results=results,
+        report=report,
+        gold_dir=args.gold,
+        predictions=predictions_path,
     )
     path = tracking.save_record(record)
 
     print(format_report(report))
     print()
     if previous:
-        print(tracking.format_diff(previous[-1], record))
+        print(format_experiment_diff(previous[-1], record))
     print(f"Saved experiment {exp_id} -> {path}", file=sys.stderr)
     return 0
 
 
 def cmd_experiments(args: argparse.Namespace, settings: Settings) -> int:
-    print(tracking.format_table(tracking.load_records()))
+    print(format_experiments(tracking.load_records()))
     return 0
 
 
@@ -281,6 +313,29 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", type=Path, help="image, or directory of images / page folders")
     p.add_argument("--out-dir", type=Path, help="also save each text as <name>.txt here")
     p.set_defaults(handler=cmd_ocr)
+
+    p = sub.add_parser(
+        "render", help="images of report texts, like phone photos (synthetic test data)"
+    )
+    p.add_argument("input", type=Path, help="directory of <name>.txt reports")
+    p.add_argument("--out-dir", type=Path, required=True, help="where <name>.jpg go")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--level",
+        type=int,
+        choices=(0, 1, 2),
+        help="0 clean scan, 1 decent photo, 2 poor photo; default: a random mix per report",
+    )
+    p.add_argument(
+        "--rotation",
+        type=int,
+        choices=(0, 90, 180, 270),
+        default=0,
+        help="with --level: page rotation",
+    )
+    p.add_argument("--marks", action="store_true", help="with --level: pen marks")
+    p.add_argument("--crop", action="store_true", help="with --level: no header in the frame")
+    p.set_defaults(handler=cmd_render)
 
     p = sub.add_parser("extract", parents=[common], help="LLM only: extract from a .txt file")
     p.add_argument("input", type=Path)

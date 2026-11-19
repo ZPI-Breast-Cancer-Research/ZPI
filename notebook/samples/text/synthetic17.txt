@@ -1,0 +1,23 @@
+PRACOWNIA DIAGNOSTYKI CHORÓB PIERSI - SZPITAL TESTOWY
+Pacjentka: Anna Testowa (dane fikcyjne)
+Data badania: 05-03-2025
+Rozpoznanie: N63 Nieokreślony guzek w piersi
+
+Opis badania:
++ usg
+Piersi gruczołowo-tłuszczowe.
+W piersi lewej w kw górno-zewn. nieregularna zmiana ogniskowa o zarysach spikularnych wlk 24mm, w jej obrębie poj mikrozwapnienia.
+W piersi prawej mikrozwapnień nie stwierdza się.
+Zarys skóry piersi prawidłowy.
+W lewym dole pachowym patologiczny węzeł chłonny wlk 19mm.
+Dół pachowy prawy bez cech patologii.
+
+W badaniu usg w piersi lewej na godz 2-5cm od brodawki nieregularne, nieostro odgraniczone ognisko hypoechogeniczne z cieniem akustycznym, wym 22x17mm, gł 13mm.
+W piersi prawej zmian ogniskowych nie stwierdza się.
+W lewym dole pachowym poj węzeł chłonny wlk 18mm o zatartej budowie - patologiczny.
+Prawy dół pachowy bez cech patologii.
+
+R. Zmiana w piersi lewej o cechach malign - BIRADS 5 - do BMU + foto próbki.
+
+Wykonał/a: lek. Jan Testowy
+Opis:
