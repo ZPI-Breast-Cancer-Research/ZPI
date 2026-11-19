@@ -1,10 +1,11 @@
-import pytest
 from unittest import mock
-from django.urls import reverse
-from rest_framework import status
 
-from segmentation.models import SegmentationResult
+import pytest
+from django.urls import reverse
 from extraction.models import StatusChoices
+from mlops.models import ModelVersion
+from rest_framework import status
+from segmentation.models import SegmentationResult
 
 
 @pytest.mark.django_db
@@ -143,3 +144,32 @@ def test_review_case_detail_returns_confirmed_mask_status(
 
     assert response.status_code == status.HTTP_200_OK
     assert response.data["maskApproved"] == "confirmed"
+
+
+@pytest.mark.django_db
+def test_review_case_detail_returns_model_versions_not_database_ids(
+    authenticated_client,
+    study,
+    segmentation,
+    extraction,
+):
+    segmentation.model = ModelVersion.objects.create(
+        module="seg", name="segmentation", version="7.1"
+    )
+    segmentation.save()
+    extraction.model = ModelVersion.objects.create(module="ext", name="extraction", version="3.2")
+    extraction.save()
+
+    with mock.patch("review.views.OrthancClient") as orthanc:
+        orthanc.return_value.list_studies.return_value = []
+
+        response = authenticated_client.get(
+            reverse(
+                "review-case-detail",
+                kwargs={"study_id": study.orthanc_path},
+            )
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data["segmentationVersion"] == "7.1"
+    assert response.data["extractionVersion"] == "3.2"

@@ -1,10 +1,9 @@
-import pytest
-from django.utils import timezone
 from datetime import timedelta
 
-from patients.views import _verified_stats
+import pytest
+from django.utils import timezone
 from extraction.models import ExtractionResult
-from segmentation.models import SegmentationResult
+from patients.views import _verified_stats
 
 
 @pytest.mark.django_db

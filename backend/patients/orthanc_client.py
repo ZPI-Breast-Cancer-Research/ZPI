@@ -4,6 +4,7 @@ Orthanc may be down or not deployed at all – every call uses short timeouts an
 any network/HTTP/JSON failure is raised as ``OrthancUnavailable`` (or its subclass
 ``OrthancUnauthorized`` when Orthanc rejects the credentials).
 """
+
 import io
 import zipfile
 from pathlib import Path
@@ -12,6 +13,8 @@ from urllib.parse import quote
 import requests
 from django.conf import settings
 
+from .errors import OrthancUnauthorized, OrthancUnavailable, StudyNotFound
+
 # (connect, read) timeouts in seconds
 TIMEOUT = (2, 5)
 DOWNLOAD_TIMEOUT = (2, 60)
@@ -19,18 +22,6 @@ DOWNLOAD_TIMEOUT = (2, 60)
 UPLOAD_TIMEOUT = (2, 300)
 
 SERIES_INSTANCE_UID = "0020000E"
-
-
-class OrthancUnavailable(Exception):
-    """Orthanc could not be reached or returned an unusable response."""
-
-
-class OrthancUnauthorized(OrthancUnavailable):
-    """Orthanc is reachable but rejected the request (HTTP 401)."""
-
-
-class StudyNotFound(Exception):
-    """Orthanc has no study with the given StudyInstanceUID."""
 
 
 def _tag(item: dict, tag: str) -> str:
@@ -56,9 +47,7 @@ class OrthancClient:
         # Basic auth only when both credentials are set.
         self.auth = (user, password) if user and password else None
 
-    def _request(
-        self, path: str, params: dict | None = None, timeout=TIMEOUT
-    ) -> requests.Response:
+    def _request(self, path: str, params: dict | None = None, timeout=TIMEOUT) -> requests.Response:
         """GET from Orthanc; failures raise OrthancUnavailable or OrthancUnauthorized."""
         try:
             response = requests.get(
@@ -153,6 +142,48 @@ class OrthancClient:
             "viewer_url": self.viewer_url(uid),
         }
 
+    def delete_study(self, orthanc_id: str) -> None:
+        """Remove a study with all its series and instances.
+
+        A study Orthanc no longer has is fine.
+        """
+        self._delete(f"/studies/{orthanc_id}")
+
+    def delete_series(self, series_instance_uid: str) -> None:
+        """Remove a series (e.g. an outdated DICOM SEG) by its SeriesInstanceUID.
+
+        A series Orthanc does not have is fine.
+        """
+        url = f"{self.base_url}/tools/lookup"
+        try:
+            response = requests.post(url, data=series_instance_uid, auth=self.auth, timeout=TIMEOUT)
+            if response.status_code == 401:
+                raise OrthancUnauthorized(f"Orthanc rejected credentials for {url} (HTTP 401)")
+            response.raise_for_status()
+            found = response.json()
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc lookup of a series failed: {exc}") from exc
+        except ValueError as exc:
+            raise OrthancUnavailable(f"Orthanc lookup returned invalid JSON: {exc}") from exc
+        for item in found:
+            if item.get("Type") == "Series":
+                self._delete(f"/series/{item['ID']}")
+
+    def _delete(self, path: str) -> None:
+        url = f"{self.base_url}{path}"
+        try:
+            response = requests.delete(url, auth=self.auth, timeout=TIMEOUT)
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc delete of {url} failed: {exc}") from exc
+        if response.status_code == 401:
+            raise OrthancUnauthorized(f"Orthanc rejected credentials for {url} (HTTP 401)")
+        if response.status_code == 404:
+            return
+        try:
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise OrthancUnavailable(f"Orthanc delete of {url} failed: {exc}") from exc
+
     def upload_dicom_zip(self, zip_bytes: bytes) -> dict:
         return self._post_instances(zip_bytes, "application/zip")
 
@@ -181,4 +212,3 @@ class OrthancClient:
             return response.json()
         except (requests.RequestException, ValueError) as exc:
             raise OrthancUnavailable(f"Orthanc upload response invalid: {exc}") from exc
-

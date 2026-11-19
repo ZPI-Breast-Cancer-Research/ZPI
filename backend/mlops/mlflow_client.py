@@ -1,6 +1,8 @@
 import requests
 from django.conf import settings
 
+from .errors import MlflowUnavailable
+
 TIMEOUT = (2, 5)
 
 ALIAS_CHAMPION = "champion"
@@ -9,19 +11,13 @@ ALIAS_CHALLENGER = "challenger"
 _ALIAS_PATH = "/api/2.0/mlflow/registered-models/alias"
 
 
-class MlflowUnavailable(Exception):
-    pass
-
-
 class MlflowClient:
     def __init__(self, base_url: str | None = None):
         self.base_url = (base_url or settings.MLFLOW_TRACKING_URI).rstrip("/")
 
     def _request(self, method: str, path: str, **kwargs) -> requests.Response:
         try:
-            response = requests.request(
-                method, f"{self.base_url}{path}", timeout=TIMEOUT, **kwargs
-            )
+            response = requests.request(method, f"{self.base_url}{path}", timeout=TIMEOUT, **kwargs)
             response.raise_for_status()
         except requests.RequestException as exc:
             raise MlflowUnavailable(f"MLflow request {path} failed: {exc}") from exc

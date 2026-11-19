@@ -1,9 +1,8 @@
 import pytest
 from django.contrib.auth import get_user_model
-from rest_framework.test import APIClient
-
 from mlops.models import ModelVersion
 from patients.models import Study
+from rest_framework.test import APIClient
 
 
 @pytest.fixture
@@ -12,7 +11,7 @@ def user(db):
     return User.objects.create_user(
         username="testuser",
         password="testpassword",
-        role = "researcher"
+        role="admin",
     )
 
 
@@ -24,10 +23,23 @@ def authenticated_client(user):
 
 
 @pytest.fixture
+def client_as(db):
+    """APIClient signed in as a new user with the given role."""
+
+    def make(role):
+        User = get_user_model()
+        client = APIClient()
+        client.force_authenticate(
+            user=User.objects.create_user(username=role, password="x", role=role)
+        )
+        return client
+
+    return make
+
+
+@pytest.fixture
 def study(db):
-    return Study.objects.create(
-        orthanc_path="test-study-123"
-    )
+    return Study.objects.create(orthanc_path="test-study-123")
 
 
 @pytest.fixture
@@ -37,7 +49,7 @@ def production_model(db):
         name="segmentation",
         version="1.0",
         status=ModelVersion.StatusChoices.PRODUCTION,
-        dice=0.85,
+        metrics={"dice": 0.85},
     )
 
 
@@ -48,8 +60,9 @@ def candidate_model(db):
         name="segmentation",
         version="2.0",
         status=ModelVersion.StatusChoices.CANDIDATE,
-        dice=0.90,
+        metrics={"dice": 0.90},
     )
+
 
 @pytest.fixture
 def api_client():

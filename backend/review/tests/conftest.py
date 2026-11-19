@@ -1,11 +1,9 @@
 import pytest
-from rest_framework.test import APIClient
 from django.contrib.auth import get_user_model
-
-from patients.models import Study
-from segmentation.models import SegmentationResult
 from extraction.models import ExtractionResult, StatusChoices
-
+from patients.models import Study
+from rest_framework.test import APIClient
+from segmentation.models import SegmentationResult
 
 User = get_user_model()
 
@@ -34,9 +32,7 @@ def authenticated_client(api_client, reviewer):
 
 @pytest.fixture
 def study(db):
-    return Study.objects.create(
-        orthanc_path="orthanc-study-123"
-    )
+    return Study.objects.create(orthanc_path="orthanc-study-123")
 
 
 @pytest.fixture

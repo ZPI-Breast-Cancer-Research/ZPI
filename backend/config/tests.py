@@ -2,9 +2,8 @@ from unittest import mock
 
 import pytest
 from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
-
+from rest_framework.test import APIClient
 from users.models import Role, User
 from users.permissions import PERMISSIONS
 
@@ -33,10 +32,7 @@ class HealthTests(TestCase):
         self.assertIn("profile", body)
         self.assertIn("retraining", body)
 
-        components = {
-            component["key"]: component
-            for component in body["components"]
-        }
+        components = {component["key"]: component for component in body["components"]}
 
         self.assertEqual(components["orthanc"]["state"], "ok")
         self.assertEqual(components["registry"]["state"], "ok")
@@ -60,10 +56,7 @@ class HealthTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        components = {
-            component["key"]: component
-            for component in response.json()["components"]
-        }
+        components = {component["key"]: component for component in response.json()["components"]}
 
         self.assertEqual(components["orthanc"]["state"], "down")
 
@@ -80,10 +73,7 @@ class HealthTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        components = {
-            component["key"]: component
-            for component in response.json()["components"]
-        }
+        components = {component["key"]: component for component in response.json()["components"]}
 
         self.assertEqual(components["orthanc"]["state"], "unknown")
         self.assertEqual(components["orthanc"]["detail"], "401")
@@ -104,10 +94,7 @@ class HealthTests(TestCase):
             status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
-        components = {
-            component["key"]: component
-            for component in response.json()["components"]
-        }
+        components = {component["key"]: component for component in response.json()["components"]}
 
         self.assertEqual(components["segmentation"]["state"], "down")
         self.assertEqual(components["extraction"]["state"], "down")
@@ -125,10 +112,7 @@ class HealthTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        components = {
-            component["key"]: component
-            for component in response.json()["components"]
-        }
+        components = {component["key"]: component for component in response.json()["components"]}
 
         self.assertEqual(components["registry"]["state"], "down")
 

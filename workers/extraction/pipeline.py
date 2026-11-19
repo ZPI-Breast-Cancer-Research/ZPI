@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import cached_property, partial
 from pathlib import Path
+from typing import Any
 
 from .config import Settings
 from .documents import Document
@@ -15,7 +16,7 @@ from .orientation import OrientationDetector, get_orientation_detector, make_upr
 from .schema import ExtractionResult, Provenance, llm_json_schema
 from .structuring.checks import check_extraction
 from .structuring.parsing import parse_response
-from .structuring.prompting import PROMPT_VERSION, build_messages
+from .structuring.prompting import PROMPT_VERSION, Example, build_messages
 
 MAX_ATTEMPTS = 2
 
@@ -31,12 +32,18 @@ class Extractor:
         ocr_engine: str = "paddle",
         ocr_lang: str = "pl",
         orientation: str = "paddle",
+        ocr_options: dict[str, Any] | None = None,
         few_shot: int = 1,
+        examples: list[Example] | None = None,
         structured_output: bool = True,
         log: Callable[[str], None] | None = None,
     ):
         self.llm = llm
-        self.few_shot = few_shot
+        # the examples of an extraction version; None: the first ``few_shot`` example files
+        self.examples = examples
+        # passed to the engine as they are, e.g. {"unwarp": True} for PaddleOCR
+        self._ocr_options = dict(ocr_options or {})
+        self.few_shot = len(examples) if examples is not None else few_shot
         self.structured_output = structured_output
         self._ocr_engine = ocr_engine
         self._ocr_lang = ocr_lang
@@ -45,7 +52,12 @@ class Extractor:
 
     @classmethod
     def from_settings(
-        cls, settings: Settings, *, log: Callable[[str], None] | None = None
+        cls,
+        settings: Settings,
+        *,
+        ocr_options: dict[str, Any] | None = None,
+        examples: list[Example] | None = None,
+        log: Callable[[str], None] | None = None,
     ) -> "Extractor":
         llm = get_llm_client(
             settings.llm_provider,
@@ -59,7 +71,9 @@ class Extractor:
             ocr_engine=settings.ocr_engine,
             ocr_lang=settings.ocr_lang,
             orientation=settings.ocr_orientation,
+            ocr_options=ocr_options,
             few_shot=settings.few_shot_examples,
+            examples=examples,
             structured_output=settings.llm_structured_output,
             log=log,
         )
@@ -67,7 +81,7 @@ class Extractor:
     @cached_property
     def ocr(self) -> OcrEngine:
         self._log(f"Loading OCR: {self._ocr_engine} ...")
-        return get_ocr_engine(self._ocr_engine, lang=self._ocr_lang)
+        return get_ocr_engine(self._ocr_engine, lang=self._ocr_lang, **self._ocr_options)
 
     @cached_property
     def orientation(self) -> OrientationDetector | None:
@@ -87,6 +101,7 @@ class Extractor:
             orientation=self.orientation,
             source=document.source,
             few_shot=self.few_shot,
+            examples=self.examples,
             structured_output=self.structured_output,
         )
 
@@ -96,6 +111,7 @@ class Extractor:
             self.llm,
             source=source,
             few_shot=self.few_shot,
+            examples=self.examples,
             structured_output=self.structured_output,
         )
 
@@ -138,6 +154,7 @@ def extract_from_images(
     orientation: OrientationDetector | None = None,
     source: str | None = None,
     few_shot: int = 1,
+    examples: list[Example] | None = None,
     structured_output: bool = True,
 ) -> ExtractionResult:
     source = source or images[0].name
@@ -153,6 +170,7 @@ def extract_from_images(
         llm,
         source=source,
         few_shot=few_shot,
+        examples=examples,
         structured_output=structured_output,
     )
     _add_ocr_provenance(result, ocr_result)
@@ -165,8 +183,11 @@ def extract_from_text(
     *,
     source: str = "text",
     few_shot: int = 1,
+    examples: list[Example] | None = None,
     structured_output: bool = True,
 ) -> ExtractionResult:
+    if examples is not None:
+        few_shot = len(examples)
     # Built when the result is made: an auto-selected model is known only after the first call.
     provenance = partial(_provenance, llm, few_shot, structured_output)
     text = normalize_text(text)
@@ -174,7 +195,7 @@ def extract_from_text(
         error = "Empty report text (did OCR read nothing?)"
         return _error_result(source, error, text, provenance())
 
-    messages = build_messages(text, few_shot=few_shot)
+    messages = build_messages(text, few_shot=few_shot, examples=examples)
     schema = llm_json_schema() if structured_output else None
     llm_seconds = 0.0
     last_error = ""

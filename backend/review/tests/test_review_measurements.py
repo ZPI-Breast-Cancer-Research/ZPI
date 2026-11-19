@@ -61,7 +61,10 @@ def test_overview_shows_the_measurements_of_an_approved_mask(authenticated_clien
     # Assert
     assert response.data["measurements"] == {
         "source": "approved",
-        "largest": {"sizeMm": 24.0, "volumeMl": 3.25},  # stored before the largest part was measured
+        "largest": {
+            "sizeMm": 24.0,
+            "volumeMl": 3.25,
+        },  # stored before the largest part was measured
         "totalMl": 3.25,
     }
     largest = next(r for r in response.data["comparison"] if r["feature"] == "largestSize")
@@ -69,7 +72,9 @@ def test_overview_shows_the_measurements_of_an_approved_mask(authenticated_clien
 
 
 @pytest.mark.django_db
-def test_overview_of_a_corrected_mask_shows_the_models_numbers_and_says_so(authenticated_client, study):
+def test_overview_of_a_corrected_mask_shows_the_models_numbers_and_says_so(
+    authenticated_client, study
+):
     # Arrange: the stored measurements belong to the model mask, not to the correction (#25)
     SegmentationResult.objects.create(
         study=study, status=StatusChoices.CORRECTED, measurements=MEASURED
@@ -87,7 +92,9 @@ def test_overview_of_a_corrected_mask_shows_the_models_numbers_and_says_so(authe
 def test_overview_tells_the_largest_part_from_all_parts(authenticated_client, study):
     # Arrange
     measured = {"volume_ml": 3.25, "largest_volume_ml": 2.9, "dimensions_mm": [24.0, 18.5, 12.0]}
-    SegmentationResult.objects.create(study=study, status=StatusChoices.APPROVED, measurements=measured)
+    SegmentationResult.objects.create(
+        study=study, status=StatusChoices.APPROVED, measurements=measured
+    )
 
     # Act
     response = _get(authenticated_client, study, "review-overview")

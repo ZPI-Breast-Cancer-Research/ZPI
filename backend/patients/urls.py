@@ -5,9 +5,11 @@ from . import views
 urlpatterns = [
     path("studies", views.study_list, name="study-list"),
     path("studies/import/", views.study_import, name="study-import"),
-    path('studies/<str:orthanc_id>/attach-report/', views.attach_report_to_study),
-    path('studies/<str:orthanc_id>/attach-existing-report/', views.attach_existing_report),
+    path("studies/<str:orthanc_id>/", views.study_delete, name="study-delete"),
+    path("studies/<str:orthanc_id>/attach-report/", views.attach_report_to_study),
+    path("studies/<str:orthanc_id>/attach-existing-report/", views.attach_existing_report),
     path("reports/unassigned/", views.unassigned_reports_list, name="unassigned-reports-list"),
-
-    path("dashboard/", views.dashboard_view, name="dashboard-view")
+    path("reports/<int:report_id>/", views.report_delete, name="report-delete"),
+    path("reports/<int:report_id>/process/", views.report_process, name="report-process"),
+    path("dashboard/", views.dashboard_view, name="dashboard-view"),
 ]

@@ -41,7 +41,14 @@ def evaluate(
             report.provenance.append(provenance)
         reference = (transcripts or {}).get(key)
         if reference and result.provenance.ocr_engine and result.text:
-            report.ocr.add(key, reference, result.text)
+            report.ocr.add(
+                key,
+                reference,
+                result.text,
+                confidence=result.provenance.ocr_mean_confidence,
+                seconds=result.ocr_seconds,
+                pages=len(result.provenance.page_rotations),
+            )
         if result.status != "ok" or result.data is None:
             # A failed document counts as nothing found.
             report.errors.append(key)

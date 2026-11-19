@@ -1,30 +1,36 @@
 import io
 import logging
 import zipfile
-from uuid import uuid4
+import zlib
 from datetime import timedelta
+from uuid import uuid4
 
-from django.db.models import Count, Q
-from django.utils import timezone
 import pydicom
+from audit.utils import record_audit
 from celery import current_app
+from common.errors import StorageError
+from common.storage import BUCKET_MASKS, BUCKET_REPORTS, delete_object, delete_prefix, put_bytes
 from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from extraction.models import ExtractionResult, SourceChoices
+from extraction.models import StatusChoices as ExtractionStatus
+from extraction.processing import BUSY, VERIFIED, is_closed, may_process, start_processing
+from pydicom.errors import InvalidDicomError
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-
-from common.storage import put_bytes
-from extraction.models import ExtractionResult
-from extraction.models import StatusChoices as ExtractionStatus
 from segmentation.models import SegmentationResult
+from segmentation.models import StatusChoices as SegmentationStatus
 from users.permissions import require_permission
-from audit.utils import record_audit
+
+from .errors import OrthancUnavailable
 from .models import Study
-from .orthanc_client import OrthancClient, OrthancUnauthorized, OrthancUnavailable
+from .orthanc_client import OrthancClient
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +38,13 @@ logger = logging.getLogger(__name__)
 STUDIES_CACHE_KEY = "orthanc:studies"
 STUDIES_CACHE_TTL = 5
 
-SERVER_ERROR = {
-    "code": "server_error",
-    "detail": "Wystąpił nieoczekiwany błąd serwera.",
-}
-
 # What the extraction worker can read (workers/extraction/documents.py); the same list as the
 # file picker in the frontend (AttachReport.tsx).
 REPORT_SUFFIXES = (".txt", ".jpg", ".jpeg", ".png")
 
 
 # ---------------------------------------------------------------- helpers
+
 
 def _orthanc_studies() -> list[dict]:
     studies = cache.get(STUDIES_CACHE_KEY)
@@ -53,27 +55,14 @@ def _orthanc_studies() -> list[dict]:
 
 
 def _orthanc_error_response(exc: OrthancUnavailable) -> Response:
-    if isinstance(exc, OrthancUnauthorized):
-        return Response(
-            {
-                "code": "orthanc_unauthorized",
-                "detail": "Orthanc (DICOM server) rejected the backend's credentials.",
-            },
-            status=status.HTTP_503_SERVICE_UNAVAILABLE,
-        )
-    return Response(
-        {
-            "code": "orthanc_unavailable",
-            "detail": "Orthanc (DICOM server) is unavailable.",
-        },
-        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-    )
+    """The code and the text come from the error itself (patients/errors.py)."""
+    return Response(exc.payload(), status=exc.status_code)
 
 
 def _load_state(orthanc_studies: list[dict]):
     """Three queries in total, no matter how many studies there are.
 
-    When a study has several: the newest segmentation (highest id) and the report assigned last.
+    When a study has several reports: the one assigned last.
     """
     ids = [s.get("orthanc_id") for s in orthanc_studies]
     db_studies = {s.orthanc_path: s for s in Study.objects.filter(orthanc_path__in=ids)}
@@ -83,7 +72,7 @@ def _load_state(orthanc_studies: list[dict]):
         for e in ExtractionResult.objects.filter(study_id__in=study_ids).oldest_assigned_first()
     }
     segmentations = {
-        s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids).order_by("id")
+        s.study_id: s for s in SegmentationResult.objects.filter(study_id__in=study_ids)
     }
     return db_studies, extractions, segmentations
 
@@ -104,27 +93,34 @@ def _pick_uncertainty(segmentation, extraction):
 def _check_archive(archive_bytes: bytes) -> Response | None:
     """Returns an error response, or None when the archive holds exactly one DICOM study."""
     if not zipfile.is_zipfile(io.BytesIO(archive_bytes)):
-        return Response({"detail": "Not correct ZIP file archive."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Not correct ZIP file archive."}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     try:
         with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
             names = [
                 n
                 for n in zf.namelist()
-                if not n.startswith("__MACOSX") and not n.endswith(".DS_Store") and not n.endswith("/")
+                if not n.startswith("__MACOSX")
+                and not n.endswith(".DS_Store")
+                and not n.endswith("/")
             ]
             if not names:
-                return Response({"detail": "No files in archive."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "No files in archive."}, status=status.HTTP_400_BAD_REQUEST
+                )
 
             study_uids: set[str] = set()
             for name in names:
                 try:
+                    # no specific_tags: on a member of an uncompressed (stored) ZIP it reads nothing
                     with zf.open(name) as dicom_file:
-                        ds = pydicom.dcmread(dicom_file, stop_before_pixels=True, specific_tags=["StudyInstanceUID"])
+                        ds = pydicom.dcmread(dicom_file, stop_before_pixels=True)
                     if hasattr(ds, "StudyInstanceUID"):
                         study_uids.add(str(ds.StudyInstanceUID))
-                except Exception:
-                    continue
+                except (InvalidDicomError, EOFError, ValueError):
+                    continue  # not a DICOM file (e.g. a README) or a cut-off one: skipped
                 if len(study_uids) > 1:
                     break  # no need to read the rest
 
@@ -144,9 +140,10 @@ def _check_archive(archive_bytes: bytes) -> Response | None:
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-    except zipfile.BadZipFile:
+    except (zipfile.BadZipFile, zlib.error):  # zlib: a member that cannot be decompressed
         return Response({"detail": "ZIP archive is damaged."}, status=status.HTTP_400_BAD_REQUEST)
     return None
+
 
 def _verified_stats():
     """Verified cases for today and for each of the last 7 days (one query)."""
@@ -154,8 +151,9 @@ def _verified_stats():
     week_start = today - timedelta(days=6)
 
     rows = (
-        SegmentationResult.objects
-        .filter(accepted_at__range=(week_start, today), status__in=["APPROVED", "CORRECTED"])
+        SegmentationResult.objects.filter(
+            accepted_at__range=(week_start, today), status__in=["APPROVED", "CORRECTED"]
+        )
         .order_by()
         .values("accepted_at")
         .annotate(
@@ -169,11 +167,13 @@ def _verified_stats():
     for i in range(7):
         day = week_start + timedelta(days=i)
         row = by_day.get(day)
-        last_week.append({
-            "date": day.isoformat(),
-            "unchanged": row["unchanged"] if row else 0,
-            "corrected": row["corrected"] if row else 0,
-        })
+        last_week.append(
+            {
+                "date": day.isoformat(),
+                "unchanged": row["unchanged"] if row else 0,
+                "corrected": row["corrected"] if row else 0,
+            }
+        )
 
     today_row = by_day.get(today)
     verified_today = (today_row["unchanged"] + today_row["corrected"]) if today_row else 0
@@ -202,22 +202,38 @@ def _check_report_file(report_file) -> Response | None:
     )
 
 
-def _store_report(report_file, study) -> ExtractionResult:
-    """Saves the file, creates the row and schedules extraction once the transaction commits."""
+def _store_report(report_file, study, user) -> ExtractionResult:
+    """Saves the file and creates the row (UPLOADED).
+
+    A report that comes with its study is processed right away; one without a study waits until
+    it is assigned or someone orders the processing.
+    """
     # uuid folder: two reports with the same file name must not overwrite each other
     key = f"reports/{uuid4().hex}/{report_file.name}"
     put_bytes(report_file.read(), "reports", key, report_file.content_type)
     extraction = ExtractionResult.objects.create(
-        study=study, report_path=key, assigned_at=timezone.now() if study else None
+        study=study,
+        report_path=key,
+        source=SourceChoices.of_file(report_file.name),
+        assigned_at=timezone.now() if study else None,
     )
-    extraction_id = extraction.id
-    transaction.on_commit(
-        lambda: current_app.send_task("extraction.run", kwargs={"extraction_id": extraction_id, "keys": [key]})
-    )
+    if study is not None:
+        start_processing(extraction, user)
     return extraction
 
 
+def _closed_response() -> Response:
+    return Response(
+        {
+            "code": "closed",
+            "detail": "Badanie jest zamknięte: maska i opis są zweryfikowane.",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 # ---------------------------------------------------------------- views
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -233,7 +249,8 @@ def study_list(request):
     for o_study in orthanc_studies:
         orthanc_id = o_study.get("orthanc_id")
         db_study = db_studies.get(orthanc_id)
-        if not db_study: continue
+        if not db_study:
+            continue
         extraction = extractions.get(db_study.id) if db_study else None
         segmentation = segmentations.get(db_study.id) if db_study else None
 
@@ -250,6 +267,13 @@ def study_list(request):
                 "extraction_status": extraction.status if extraction else "missing",
                 "segmentation_status": segmentation.status if segmentation else "queued",
                 "uncertainty": _pick_uncertainty(segmentation, extraction),
+                # mask and active report verified: no new report, no new run
+                "closed": bool(
+                    segmentation
+                    and extraction
+                    and segmentation.status in VERIFIED
+                    and extraction.status in VERIFIED
+                ),
             }
         )
     return Response(response_data)
@@ -264,7 +288,9 @@ def study_import(request):
     report_file = request.FILES.get("report")
 
     if not archive_file and not report_file:
-        return Response({"detail": "No files were provided for import."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "No files were provided for import."}, status=status.HTTP_400_BAD_REQUEST
+        )
     # before the archive goes to Orthanc, so a bad report leaves nothing behind
     if report_file and (error := _check_report_file(report_file)):
         return error
@@ -292,30 +318,30 @@ def study_import(request):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-    # 2. Database rows, files and tasks
-    try:
-        with transaction.atomic():
-            study = None
-            if orthanc_study_id:
-                study, created = Study.objects.get_or_create(orthanc_path=orthanc_study_id)
-                if not created:
-                    return Response(
-                        {"code": "study_already_exists", "detail": "To badanie jest już w systemie."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                # stored only after Orthanc accepted it, so a rejected study leaves no orphan in MinIO
-                # put_bytes(archive_bytes, "studies", f"ZIP/{archive_file.name}")
-                study_pk = study.id
-                transaction.on_commit(
-                    lambda: current_app.send_task("segmentation.run", kwargs={"study_id": study_pk})
+    # 2. Database rows, files and tasks. A failed write of the report (StorageError) rolls the
+    # rows back and is reported by common/exception_handler.py.
+    with transaction.atomic():
+        study = None
+        if orthanc_study_id:
+            study, created = Study.objects.get_or_create(orthanc_path=orthanc_study_id)
+            if not created:
+                return Response(
+                    {"code": "study_already_exists", "detail": "To badanie jest już w systemie."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
+            # stored only after Orthanc accepted it, so a rejected study leaves no orphan in MinIO
+            # put_bytes(archive_bytes, "studies", f"ZIP/{archive_file.name}")
+            # the row exists from the start, so the study shows as queued and cannot be deleted
+            # under the worker's hands
+            SegmentationResult.objects.create(study=study, status=SegmentationStatus.PENDING)
+            study_pk = study.id
+            transaction.on_commit(
+                lambda: current_app.send_task("segmentation.run", kwargs={"study_id": study_pk})
+            )
 
-            if report_file:
-                # no DICOM in this request: the report stays unassigned (study=None)
-                _store_report(report_file, study)
-    except Exception:
-        logger.exception("Study import failed")
-        return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if report_file:
+            # no DICOM in this request: the report stays unassigned (study=None)
+            _store_report(report_file, study, request.user)
 
     cache.delete(STUDIES_CACHE_KEY)  # the new study should show up in the list right away
 
@@ -324,7 +350,9 @@ def study_import(request):
         request,
         kind="study_imported",
         object=study_num_str,
-        detail=f"Zaimportowano badanie z Orthanc ID: {orthanc_study_id}" if orthanc_study_id else "Zaimportowano sam raport"
+        detail=f"Zaimportowano badanie z Orthanc ID: {orthanc_study_id}"
+        if orthanc_study_id
+        else "Zaimportowano sam raport",
     )
 
     return Response(
@@ -348,21 +376,21 @@ def attach_report_to_study(request, orthanc_id):
         return Response({"detail": "No report file provided."}, status=status.HTTP_400_BAD_REQUEST)
     if error := _check_report_file(report_file):
         return error
+    if is_closed(study):
+        return _closed_response()
 
-    try:
-        with transaction.atomic():
-            _store_report(report_file, study)
-    except Exception:
-        logger.exception("Attaching report failed")
-        return Response(SERVER_ERROR, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+    with transaction.atomic():
+        _store_report(report_file, study, request.user)
+
     record_audit(
         request,
         kind="attach_report",
         object=str(orthanc_id),
-        detail=f"Dołączono nowy plik raportu: {report_file.name}"
+        detail=f"Dołączono nowy plik raportu: {report_file.name}",
     )
-    return Response({"detail": "Report successfully attached to the study."}, status=status.HTTP_200_OK)
+    return Response(
+        {"detail": "Report successfully attached to the study."}, status=status.HTTP_200_OK
+    )
 
 
 @api_view(["POST"])
@@ -374,21 +402,37 @@ def attach_existing_report(request, orthanc_id):
     if not report_id:
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
+    if is_closed(study):
+        return _closed_response()
 
-    updated = ExtractionResult.objects.filter(id=report_id, study__isnull=True).update(
-        study=study, assigned_at=timezone.now()
-    )
-    if not updated:
-        return Response({"detail": "Report not found or already assigned."}, status=status.HTTP_404_NOT_FOUND)
-    
+    with transaction.atomic():
+        report = (
+            ExtractionResult.objects.select_for_update()
+            .filter(id=report_id, study__isnull=True)
+            .first()
+        )
+        if report is None:
+            return Response(
+                {"detail": "Report not found or already assigned."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        report.study = study
+        report.assigned_at = timezone.now()
+        report.save(update_fields=["study", "assigned_at", "updated_at"])
+        # assigning starts the processing of a report that has no result yet
+        if report.status == ExtractionStatus.UPLOADED:
+            start_processing(report, request.user)
+
     record_audit(
-            request,
-            kind="attach_report",
-            object=str(orthanc_id),
-            detail=f"Dołączono nowy plik raportu: {report_id}"
+        request,
+        kind="attach_report",
+        object=str(orthanc_id),
+        detail=f"Dołączono nowy plik raportu: {report_id}",
     )
 
-    return Response({"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK)
+    return Response(
+        {"detail": "Existing report successfully attached to the study."}, status=status.HTTP_200_OK
+    )
 
 
 @api_view(["GET"])
@@ -434,12 +478,13 @@ def dashboard_view(request):
     failed_studies = []
     for o_study in orthanc_studies:
         db_study = db_studies.get(o_study.get("orthanc_id"))
-        if not db_study: continue
+        if not db_study:
+            continue
         extraction = extractions.get(db_study.id) if db_study else None
         segmentation = segmentations.get(db_study.id) if db_study else None
 
         missing_reports_count += 1 if not extraction else 0
-        
+
         seg_status = segmentation.status if segmentation else None
         ext_status = extraction.status if extraction else None
 
@@ -447,7 +492,7 @@ def dashboard_view(request):
 
         # the same number as in the review screens, not the position in the Orthanc list
         study_number = str(db_study.id).zfill(4)
-        if ext_status == ExtractionStatus.FAILED:
+        if ExtractionStatus.FAILED in (seg_status, ext_status):
             failed_studies.append(study_number)
 
         if seg_status in ("PROCESSING", "PENDING") or ext_status in ("PROCESSING", "PENDING"):
@@ -457,10 +502,14 @@ def dashboard_view(request):
                     {
                         "studyNumber": study_number,
                         "stage": "segmentation" if seg_status == "PROCESSING" else "extraction",
-                        "state": "running" if "PROCESSING" in (seg_status, ext_status) else "queued",
+                        "state": "running"
+                        if "PROCESSING" in (seg_status, ext_status)
+                        else "queued",
                     }
                 )
-        elif (seg_status == "COMPLETED" and segmentation) or (ext_status == "COMPLETED" and extraction):
+        elif (seg_status == "COMPLETED" and segmentation) or (
+            ext_status == "COMPLETED" and extraction
+        ):
             to_review_count += 1
             queue_items.append(
                 {
@@ -472,14 +521,18 @@ def dashboard_view(request):
                 }
             )
 
-
     attention_items = [
         {"kind": "processing_error", "subject": number, "href": "/badania"}
         for number in failed_studies
     ]
     if missing_reports_count > 0:
         attention_items.append(
-            {"kind": "missing_report", "subject": "", "count": missing_reports_count, "href": "/badania"}
+            {
+                "kind": "missing_report",
+                "subject": "",
+                "count": missing_reports_count,
+                "href": "/badania",
+            }
         )
     verified_today, verified_last_week = _verified_stats()
     return Response(
@@ -494,3 +547,136 @@ def dashboard_view(request):
         },
         status=status.HTTP_200_OK,
     )
+
+
+def _busy_response(what: str) -> Response:
+    return Response(
+        {"code": "processing", "detail": f"{what} jest w trakcie przetwarzania; spróbuj później."},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+@api_view(["DELETE"])
+@require_permission("addStudies")
+def study_delete(request, orthanc_id):
+    """Removes a study: DICOM in Orthanc, its masks in storage and its rows.
+
+    Its reports stay, unassigned, with their files and results (docs/database.md): a wrong DICOM
+    upload must not cost a correct report. Refused for a verified study (the verification has to
+    be taken back first) and while a worker processes it. Orthanc and storage go first and a
+    failure there leaves the rows in place, so the request can simply be repeated.
+    """
+    study = get_object_or_404(Study, orthanc_path=orthanc_id)
+    if (
+        SegmentationResult.objects.filter(study=study, status__in=VERIFIED).exists()
+        or ExtractionResult.objects.filter(study=study, status__in=VERIFIED).exists()
+    ):
+        return Response(
+            {
+                "code": "verified",
+                "detail": "Badanie jest zweryfikowane; najpierw cofnij weryfikację.",
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    if (
+        SegmentationResult.objects.filter(study=study, status__in=BUSY).exists()
+        or ExtractionResult.objects.filter(study=study, status__in=BUSY).exists()
+    ):
+        return _busy_response("Badanie")
+
+    label = f"#{str(study.id).zfill(4)}"
+    try:
+        OrthancClient().delete_study(study.orthanc_path)
+        delete_prefix(BUCKET_MASKS, f"{study.id}/")  # model mask, probabilities, corrected masks
+    except OrthancUnavailable as exc:  # includes OrthancUnauthorized
+        return _orthanc_error_response(exc)
+    except StorageError as exc:
+        logger.error("Deleting study %s failed: %s", study.id, exc)
+        return Response(
+            {"code": "delete_failed", "detail": "Nie udało się usunąć badania; spróbuj ponownie."},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    with transaction.atomic():
+        unassigned = study.extractions.update(study=None, assigned_at=None)
+        study.delete()  # the mask row goes with it (CASCADE)
+    cache.delete(STUDIES_CACHE_KEY)
+    detail = "Badanie usunięte z systemu"
+    if unassigned:
+        detail += f"; opisy bez badania: {unassigned}"
+    record_audit(request, kind="study_deleted", object=label, detail=detail)
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["POST"])
+@require_permission(["addStudies", "proposeModels"])
+def report_process(request, report_id):
+    """Orders OCR and extraction of a report, the first time or again.
+
+    Processing again overwrites a result that is not verified. A researcher and an admin may
+    order it any time, a radiologist the first time and after a failure.
+    """
+    with transaction.atomic():
+        report = get_object_or_404(ExtractionResult.objects.select_for_update(), pk=report_id)
+        if report.status in VERIFIED:
+            return Response(
+                {
+                    "code": "verified",
+                    "detail": "Opis jest zweryfikowany; najpierw cofnij weryfikację.",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if report.status in BUSY:
+            return _busy_response("Opis")
+        if report.source == SourceChoices.MANUAL or not report.report_path:
+            return Response(
+                {"code": "nothing_to_process", "detail": "Opis wypełniony ręcznie nie ma pliku."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if report.study_id and is_closed(report.study):
+            return _closed_response()
+        if not may_process(getattr(request.user, "role", None), report):
+            return Response(
+                {"detail": "Ponowne przetworzenie poprawnego opisu może zlecić tylko badacz."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        again = report.status != ExtractionStatus.UPLOADED
+        start_processing(report, request.user)
+
+    record_audit(
+        request,
+        kind="report_processed",
+        object=f"opis #{report.id}",
+        detail="Ponowne przetwarzanie" if again else "Przetwarzanie",
+    )
+    return Response({"status": report.status}, status=status.HTTP_202_ACCEPTED)
+
+
+@api_view(["DELETE"])
+@require_permission("addStudies")
+def report_delete(request, report_id):
+    """Removes a report without a study: its file in storage and its row.
+
+    A report assigned to a study goes with the study's own actions, not from here.
+    """
+    report = get_object_or_404(ExtractionResult, pk=report_id, study__isnull=True)
+    if report.status in BUSY:
+        return _busy_response("Opis")
+
+    if report.report_path:
+        try:
+            delete_object(BUCKET_REPORTS, report.report_path)
+        except StorageError as exc:
+            logger.error("Deleting report %s failed: %s", report.id, exc)
+            return Response(
+                {
+                    "code": "delete_failed",
+                    "detail": "Nie udało się usunąć opisu; spróbuj ponownie.",
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+    report.delete()
+    record_audit(
+        request, kind="report_deleted", object=f"opis #{report_id}", detail="Opis bez badania"
+    )
+    return Response(status=status.HTTP_204_NO_CONTENT)

@@ -1,14 +1,16 @@
-from django.contrib.auth import authenticate, login, logout
-from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+import random
 
+from audit.utils import record_audit
+from django.contrib.auth import authenticate, login, logout
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+
 from .models import User
-import random
 from .permissions import require_permission
-from audit.utils import record_audit
+
 
 def generate_temporary_password(length=14):
     alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -23,10 +25,7 @@ def log_in(request):
     password = request.data.get("password")
 
     if not login_str or not password:
-        return Response(
-            {"detail": "Brak loginu lub hasła."}, 
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"detail": "Brak loginu lub hasła."}, status=status.HTTP_400_BAD_REQUEST)
 
     user = authenticate(request, username=login_str, password=password)
 
@@ -37,29 +36,25 @@ def log_in(request):
             object=login_str or "unknow",
             detail="loging in - incorrect data",
             fallback_login=login_str,
-            fallback_name="—"
+            fallback_name="—",
         )
-        return Response(
-            {"detail": "bad credentials"}, 
-            status=status.HTTP_401_UNAUTHORIZED
-        )
+        return Response({"detail": "bad credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
     if getattr(user, "is_first_login", False):
-        return Response({
-            "kind": "first-login", 
-            "login": user.username
-        })
+        return Response({"kind": "first-login", "login": user.username})
 
     login(request, user)
 
-    return Response({
-        "kind": "signed-in",
-        "user": {
-            "login": user.username,
-            "name": f"{user.first_name} {user.last_name}".strip() or user.username,
-            "role": getattr(user, "role", "radiologist")
+    return Response(
+        {
+            "kind": "signed-in",
+            "user": {
+                "login": user.username,
+                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                "role": getattr(user, "role", "radiologist"),
+            },
         }
-    })
+    )
 
 
 @api_view(["POST"])
@@ -71,8 +66,7 @@ def set_first_password(request):
 
     if not login_str or not new_password:
         return Response(
-            {"detail": "Wymagany login i nowe hasło."}, 
-            status=status.HTTP_400_BAD_REQUEST
+            {"detail": "Wymagany login i nowe hasło."}, status=status.HTTP_400_BAD_REQUEST
         )
 
     try:
@@ -80,27 +74,24 @@ def set_first_password(request):
         user.set_password(new_password)
         if hasattr(user, "is_first_login"):
             user.is_first_login = False
-            
+
         user.save()
 
         record_audit(
-            request,
-            kind="password_reset",
-            object=user.username,
-            detail="ustawiono pierwsze hasło"
+            request, kind="password_reset", object=user.username, detail="ustawiono pierwsze hasło"
         )
 
-        return Response({
-            "login": user.username,
-            "name": f"{user.first_name} {user.last_name}".strip() or user.username,
-            "role": getattr(user, "role", "radiologist")
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "login": user.username,
+                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                "role": getattr(user, "role", "radiologist"),
+            },
+            status=status.HTTP_200_OK,
+        )
 
     except User.DoesNotExist:
-        return Response(
-            {"detail": "Użytkownik nie istnieje."}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"detail": "Użytkownik nie istnieje."}, status=status.HTTP_404_NOT_FOUND)
 
 
 @api_view(["POST"])
@@ -109,17 +100,20 @@ def sign_out(request):
     logout(request)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_profile(request):
     user = request.user
-    return Response({
-        "name": f"{user.first_name} {user.last_name}".strip() or user.username,
-        "login": user.username,
-        "email": user.email or f"{user.username}@szpital.pl",
-        "role": getattr(user, "role", "radiologist"),
-        "pwz": getattr(user, "pwz", None),
-    })
+    return Response(
+        {
+            "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+            "login": user.username,
+            "email": user.email or f"{user.username}@szpital.pl",
+            "role": getattr(user, "role", "radiologist"),
+            "pwz": getattr(user, "pwz", None),
+        }
+    )
 
 
 @api_view(["GET", "POST"])
@@ -135,27 +129,29 @@ def manage_users(request):
             elif getattr(u, "is_first_login", False):
                 state = "temporary"
 
-            data.append({
-                "id": str(u.id),
-                "name": f"{u.first_name} {u.last_name}".strip() or u.username,
-                "login": u.username,
-                "email": u.email or f"{u.username}@szpital.pl",
-                "role": getattr(u, "role", "radiologist"),
-                "pwz": getattr(u, "pwz", None),
-                "state": state,
-                "lastLogin": u.last_login.strftime("%Y-%m-%d") if u.last_login else None
-            })
+            data.append(
+                {
+                    "id": str(u.id),
+                    "name": f"{u.first_name} {u.last_name}".strip() or u.username,
+                    "login": u.username,
+                    "email": u.email or f"{u.username}@szpital.pl",
+                    "role": getattr(u, "role", "radiologist"),
+                    "pwz": getattr(u, "pwz", None),
+                    "state": state,
+                    "lastLogin": u.last_login.strftime("%Y-%m-%d") if u.last_login else None,
+                }
+            )
         return Response(data)
 
     if request.method == "POST":
         draft = request.data
         login_str = draft.get("login")
-        
+
         if User.objects.filter(username=login_str).exists():
             return Response({"detail": "login-taken"}, status=status.HTTP_400_BAD_REQUEST)
 
         temp_password = generate_temporary_password()
-        
+
         full_name = draft.get("name", "")
         parts = full_name.split(" ", 1)
         first_name = parts[0]
@@ -170,15 +166,10 @@ def manage_users(request):
             last_name=last_name,
             role=role,
             pwz=draft.get("pwz", None),
-            is_first_login=True
+            is_first_login=True,
         )
 
-        record_audit(
-            request,
-            kind="account_created",
-            object=user.username,
-            detail=f"rola: {role}"
-        )
+        record_audit(request, kind="account_created", object=user.username, detail=f"rola: {role}")
 
         return Response({"password": temp_password}, status=status.HTTP_201_CREATED)
 
@@ -211,15 +202,12 @@ def update_user(request, user_id):
     if "pwz" in data:
         user.pwz = data["pwz"]
         changes.append("pwz")
-        
+
     user.save()
 
     if changes:
         record_audit(
-            request,
-            kind="account_changed",
-            object=user.username,
-            detail=", ".join(changes)
+            request, kind="account_changed", object=user.username, detail=", ".join(changes)
         )
 
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -232,7 +220,7 @@ def set_blocked(request, user_id):
         user = User.objects.get(id=user_id)
     except User.DoesNotExist:
         return Response({"detail": "Użytkownik nie znaleziony."}, status=status.HTTP_404_NOT_FOUND)
-    
+
     blocked = request.data.get("blocked", False)
     new_active_state = not blocked
 
@@ -241,12 +229,7 @@ def set_blocked(request, user_id):
         user.save()
 
         kind_str = "account_blocked" if blocked else "account_unblocked"
-        record_audit(
-            request,
-            kind=kind_str,
-            object=user.username,
-            detail=None
-        )
+        record_audit(request, kind=kind_str, object=user.username, detail=None)
 
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -269,7 +252,7 @@ def reset_password(request, user_id):
         request,
         kind="password_reset",
         object=user.username,
-        detail="reset hasła przez administratora"
+        detail="reset hasła przez administratora",
     )
 
     return Response({"password": temp_password})
@@ -283,17 +266,14 @@ def change_password(request):
     new_password = request.data.get("next")
 
     if not user.check_password(current_password):
-        return Response({"detail": "Stare hasło jest niepoprawne."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Stare hasło jest niepoprawne."}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     user.set_password(new_password)
     user.is_first_login = False
     user.save()
-    
-    record_audit(
-        request,
-        kind="password_reset",
-        object=user.username,
-        detail="zmiana hasła"
-    )
+
+    record_audit(request, kind="password_reset", object=user.username, detail="zmiana hasła")
 
     return Response(status=status.HTTP_204_NO_CONTENT)

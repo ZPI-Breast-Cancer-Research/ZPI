@@ -52,7 +52,15 @@ export async function findSeries(studyUid: string): Promise<Partial<Record<Serie
   if (!list.length) throw new DicomWebError("no-series");
 
   const found: Partial<Record<Series, string>> = {};
+  // one series holding the whole dynamic acquisition (ISPY1, GE): its phases are pre, post, ...
+  const phaseCounts = await Promise.all(list.map(async (s) => splitPhases(await seriesMetadata(studyUid, s.uid)).length));
+  const dynamic = list.find((_, i) => phaseCounts[i] >= 2);
+  if (dynamic) {
+    found.pre = phaseKey(dynamic.uid, 0);
+    found.post = phaseKey(dynamic.uid, 1);
+  }
   for (const s of list) {
+    if (s === dynamic) continue;
     const kind = kindOf(s.description);
     if (kind && !found[kind]) found[kind] = s.uid;
   }
@@ -102,14 +110,60 @@ export async function fetchInstance(studyUid: string, seriesUid: string, sopUid:
   return body.slice(start, end > start ? end : body.length).buffer;
 }
 
+const metadataCache = new Map<string, Promise<DicomJson[]>>();
+
+function seriesMetadata(studyUid: string, seriesUid: string): Promise<DicomJson[]> {
+  const key = `${studyUid}/${seriesUid}`;
+  if (!metadataCache.has(key)) {
+    const promise = get(`/studies/${studyUid}/series/${seriesUid}/metadata`);
+    promise.catch(() => metadataCache.delete(key));
+    metadataCache.set(key, promise);
+  }
+  return metadataCache.get(key)!;
+}
+
+// A phase of a multi-phase series is addressed as "<series uid>|<phase index>"; a plain series uid
+// stands for all of its images.
+const PHASE_SEPARATOR = "|";
+const phaseKey = (seriesUid: string, phase: number) => `${seriesUid}${PHASE_SEPARATOR}${phase}`;
+
+/**
+ * The images of a series split into dynamic phases, the same way the worker does it
+ * (split_phases in workers/segmentation/conversion.py): a series holding the whole dynamic
+ * acquisition repeats every slice position once per phase; at each position the images are
+ * ordered by acquisition time, and the k-th one belongs to phase k. A series with one image per
+ * position, or an uneven number, is a single phase.
+ */
+export function splitPhases(instances: DicomJson[]): DicomJson[][] {
+  const byPosition = new Map<string, DicomJson[]>();
+  for (const instance of instances) {
+    const position = (instance["00200032"]?.Value ?? []).map((v) => Number(v).toFixed(3)).join("\\");
+    byPosition.set(position, [...(byPosition.get(position) ?? []), instance]);
+  }
+  const counts = new Set([...byPosition.values()].map((group) => group.length));
+  const phases = counts.size === 1 ? [...counts][0] : 1;
+  if (phases < 2) return [instances];
+  const order = (i: DicomJson) => [String(tag(i, "00080032") ?? ""), Number(tag(i, "00200013") ?? 0)] as const;
+  for (const group of byPosition.values()) {
+    group.sort((a, b) => {
+      const [ta, na] = order(a);
+      const [tb, nb] = order(b);
+      return ta === tb ? na - nb : ta < tb ? -1 : 1;
+    });
+  }
+  return Array.from({ length: phases }, (_, k) => [...byPosition.values()].map((group) => group[k]));
+}
+
 const imageIdCache = new Map<string, Promise<string[]>>();
 
-// registers the series metadata with the loader and returns one imageId per frame
-export function seriesImageIds(studyUid: string, seriesUid: string): Promise<string[]> {
-  const key = `${studyUid}/${seriesUid}`;
+// registers the series (or phase) metadata with the loader and returns one imageId per frame
+export function seriesImageIds(studyUid: string, seriesKey: string): Promise<string[]> {
+  const key = `${studyUid}/${seriesKey}`;
   if (!imageIdCache.has(key)) {
-    const promise = get(`/studies/${studyUid}/series/${seriesUid}/metadata`).then((instances) =>
-      instances.flatMap((instance) => {
+    const [seriesUid, phase] = seriesKey.split(PHASE_SEPARATOR);
+    const promise = seriesMetadata(studyUid, seriesUid).then((all) => {
+      const instances = phase === undefined ? all : (splitPhases(all)[Number(phase)] ?? []);
+      return instances.flatMap((instance) => {
         const sop = tag(instance, "00080018");
         const frames = Number(tag(instance, "00280008") ?? 1);
         return Array.from({ length: frames }, (_, i) => {
@@ -117,8 +171,8 @@ export function seriesImageIds(studyUid: string, seriesUid: string): Promise<str
           wadors.metaDataManager.add(imageId, instance as never);
           return imageId;
         });
-      }),
-    );
+      });
+    });
     promise.catch(() => imageIdCache.delete(key));
     imageIdCache.set(key, promise);
   }

@@ -1,8 +1,7 @@
 from unittest import mock
+
 import pytest
 from django.urls import reverse
-
-from patients.models import Study
 from patients.views import OrthancUnavailable
 
 
@@ -40,7 +39,7 @@ def test_study_list_returns_empty_list_when_orthanc_unavailable(
 ):
     response = authenticated_client.get(reverse("study-list"))
 
-    assert response.status_code == 503 
+    assert response.status_code == 503
 
 
 @pytest.mark.django_db
@@ -60,7 +59,4 @@ def test_study_list_does_not_return_unknown_orthanc_study(
     response = authenticated_client.get(reverse("study-list"))
 
     assert response.status_code == 200
-    assert not any(
-        item.get("orthanc_path") == "unknown-study"
-        for item in response.data
-    )
+    assert not any(item.get("orthanc_path") == "unknown-study" for item in response.data)
