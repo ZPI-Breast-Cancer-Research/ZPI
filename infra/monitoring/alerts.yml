@@ -1,0 +1,41 @@
+groups:
+  - name: training-machine
+    rules:
+      - alert: ExporterDown
+        expr: up == 0
+        for: 2m
+        annotations:
+          summary: "{{ $labels.job }} exporter is not responding"
+
+      - alert: GpuHot
+        expr: nvidia_smi_temperature_gpu > 85
+        for: 5m
+        annotations:
+          summary: "GPU at {{ $value }} °C for 5 minutes"
+
+      - alert: GpuMemoryNearlyFull
+        expr: nvidia_smi_memory_used_bytes / nvidia_smi_memory_total_bytes > 0.95
+        for: 10m
+        annotations:
+          summary: "GPU memory over 95% for 10 minutes"
+
+      - alert: DiskNearlyFull
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 5m
+        annotations:
+          summary: "Less than 10% of the disk is free"
+
+      - alert: TrainingStalled
+        # No finished epoch for 3 × the last epoch time, while the process is alive.
+        expr: >
+          (time() - nnunet_last_epoch_timestamp_seconds) > 3 * nnunet_epoch_seconds
+          and on() nnunet_running == 1
+        for: 5m
+        annotations:
+          summary: "{{ $labels.trainer }} fold {{ $labels.fold }} has not finished an epoch"
+
+      - alert: TrainingMetricsStale
+        expr: time() - node_textfile_mtime_seconds{file=~".*nnunet.prom"} > 300
+        for: 5m
+        annotations:
+          summary: "nnunet_metrics.py has not updated its file for 5 minutes"
