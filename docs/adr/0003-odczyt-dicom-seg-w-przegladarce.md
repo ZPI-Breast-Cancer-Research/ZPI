@@ -5,11 +5,11 @@ Status: Proponowana
 
 ## Kontekst
 
-Ekran Weryfikacji nie pokazywał maski z modelu. `review_case_detail` i `review_overview` zwracają stałą elipsoidę (`center`, `radius`), a przeglądarka maluje ją w labelmapie Cornerstone (`paintMask` w `frontend/src/viewer/cornerstone.ts`). Narzędzia do edycji maski (pędzel, gumka, próg, cofanie, porównanie z maską modelu) już działają na tej labelmapie. Brakuje tylko prawdziwych wokseli.
+Ekran Weryfikacji nie pokazywał maski z modelu. `review_case_detail` i `review_overview` zwracały stałą elipsoidę (`center`, `radius`), a przeglądarka malowała ją w labelmapie Cornerstone (`paintMask` w `frontend/src/viewer/cornerstone.ts`). Narzędzia do edycji maski (pędzel, gumka, próg, cofanie, porównanie z maską modelu) już działają na tej labelmapie. Brakowało tylko prawdziwych wokseli.
 
 Prawdziwa maska istnieje w dwóch postaciach:
 - NIfTI w buckecie `masks` (wynik nnU-Net, układ tablicy jak w danych treningowych);
-- DICOM SEG w Orthancu, odnoszący się do fazy `pre`. Dziś powstaje po zatwierdzeniu, a po #23 powstanie też zaraz po inferencji. Geometria jest sprawdzona: SEG odczytany z Orthanca pokrywa 94% maski referencyjnej Breast_MRI_009, a po odbiciu lewo–prawo 0%.
+- DICOM SEG w Orthancu, odnoszący się do fazy `pre`. W chwili pisania powstawał tylko po zatwierdzeniu; od #78 powstaje też zaraz po inferencji. Geometria jest sprawdzona: SEG odczytany z Orthanca pokrywa 94% maski referencyjnej Breast_MRI_009, a po odbiciu lewo–prawo 0%.
 
 Kierunek był ustalony wcześniej, ale sposób odczytu nie:
 - P1 (`architecture-drivers.md`, krok 5) wymaga serii „z nałożoną maską”, a diagram P1 w `ARCHITECTURE.md` zakłada, że worker zapisuje maskę jako DICOM SEG przez STOW-RS, a aplikacja pobiera serie i DICOM SEG przez WADO-RS.
@@ -45,7 +45,7 @@ Drivery:
 
 Wybieramy **opcję A**. Przeglądarka pobiera DICOM SEG z Orthanca przez `/dicom-web` i wczytuje go do labelmapy przy pomocy `@cornerstonejs/adapters` w wersji 4.22.13, przypiętej bez `^`. Opcja A trzyma jedną reprezentację maski (DICOM SEG), jedną drogę dostępu (DICOMweb) i jedno miejsce z logiką geometrii (worker).
 
-Opcję sprawdził spike #76 na Breast_MRI_009: maska w przeglądarce pokrywa te same obszary co w OHIF i zostaje na miejscu przy przełączaniu serii `pre` / `post`, a narzędzia edycji działają na niej bez zmian. Do czasu, aż API review zwróci UID SEG danego przypadku (#24), przeglądarka bierze najnowszy SEG w badaniu.
+Opcję sprawdził spike #76 na Breast_MRI_009: maska w przeglądarce pokrywa te same obszary co w OHIF i zostaje na miejscu przy przełączaniu serii `pre` / `post`, a narzędzia edycji działają na niej bez zmian. Do czasu, aż API review zwróci UID SEG danego przypadku, przeglądarka miała brać najnowszy SEG w badaniu; od #90 API zwraca UID-y SEG modelu i SEG zatwierdzonego.
 
 ## Konsekwencje
 
@@ -56,4 +56,4 @@ Opcję sprawdził spike #76 na Breast_MRI_009: maska w przeglądarce pokrywa te 
 - \- Labelmapa powstaje nad serią `post`, a SEG odnosi się do `pre`. Piksele SEG są przenoszone po pozycji w przestrzeni pacjenta (`ImagePositionPatient`, orientacja, rozdzielczość), nie po `SOPInstanceUID` (#76).
 - \- `@cornerstonejs/adapters` dochodzi do listy paczek podnoszonych razem (ADR 0002).
 - \+ Dostęp do maski ma te same zasady co obrazy: gateway wpuszcza na `/dicom-web` tylko zalogowanych z uprawnieniem `review` (`orthanc_auth` od #66). Uprawnienia są na poziomie całego Orthanca, a nie pojedynczego badania, tak samo jak dla obrazów (Q1).
-- Do zrobienia: SEG po inferencji z UID w wyniku (#23); UID SEG w API review zamiast elipsoidy (#24). Otwarta zostaje część pytania ARCH-1 o zapis poprawek z przeglądarki (#25).
+- Stan wdrożenia (2026-11-19): odczyt SEG w przeglądarce (`frontend/src/viewer/dicomSeg.ts`, #76), SEG po inferencji z UID w wyniku (#78), UID-y SEG w API review zamiast elipsoidy (#90). Zapis poprawek z przeglądarki, czyli pozostała część ARCH-1, rozstrzyga ADR 0004 (#25).
