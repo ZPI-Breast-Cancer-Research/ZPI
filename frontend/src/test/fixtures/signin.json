@@ -1,0 +1,8 @@
+{
+  "kind": "signed-in",
+  "user": {
+    "login": "demo.radiologist",
+    "name": "Anna Nowak",
+    "role": "radiologist"
+  }
+}

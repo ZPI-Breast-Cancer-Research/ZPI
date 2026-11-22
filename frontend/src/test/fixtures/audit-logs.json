@@ -1,0 +1,47 @@
+[
+  {
+    "id": "e7",
+    "at": "2026-11-14T20:08:38",
+    "login": "demo.radiologist",
+    "name": "—",
+    "kind": "login_failed",
+    "object": "demo.radiologist",
+    "detail": "loging in - incorrect data"
+  },
+  {
+    "id": "e6",
+    "at": "2026-11-13T05:36:56",
+    "login": "?",
+    "name": "—",
+    "kind": "form_approved",
+    "object": "#0013",
+    "detail": "Form updated"
+  },
+  {
+    "id": "e5",
+    "at": "2026-11-13T05:36:19",
+    "login": "?",
+    "name": "—",
+    "kind": "mask_approved",
+    "object": "#0013",
+    "detail": "no changes"
+  },
+  {
+    "id": "e4",
+    "at": "2026-11-13T05:36:18",
+    "login": "?",
+    "name": "—",
+    "kind": "form_approved",
+    "object": "#0013",
+    "detail": "Form approved"
+  },
+  {
+    "id": "e3",
+    "at": "2026-11-13T05:36:11",
+    "login": "?",
+    "name": "—",
+    "kind": "form_unapproved",
+    "object": "#0013",
+    "detail": null
+  }
+]

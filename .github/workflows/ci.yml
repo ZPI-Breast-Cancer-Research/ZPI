@@ -117,6 +117,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm test
       - run: npm run build
 
   # The one required check in the master ruleset. Jobs skipped by the path filter count as passed,

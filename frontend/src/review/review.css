@@ -118,6 +118,14 @@
   font-weight: 600;
 }
 
+/* the reason waits in a hint */
+.approve-state--failed {
+  color: var(--color-warning);
+  font-weight: 600;
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}
+
 /* while something waits, Dalej only moves on and stays quiet */
 .approve--quiet .approve__main,
 .approve--quiet .approve__more {
