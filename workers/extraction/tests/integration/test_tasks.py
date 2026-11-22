@@ -504,3 +504,22 @@ def test_a_version_with_another_prompt_fails_the_report_with_the_reason(monkeypa
     assert row.status == StatusChoices.FAILED
     assert "needs prompt v1" in row.error
     assert storage == []  # failed before downloading anything
+
+
+def test_a_new_version_in_use_frees_the_previous_extractor(monkeypatch):
+    # Arrange: loading OCR models is slow, but the worker keeps only the configuration in use
+    monkeypatch.setattr(tasks.Extractor, "from_settings", lambda settings, **kw: object())
+    tasks._cached_extractor.cache_clear()
+
+    def version(llm_model):
+        return ModelVersion(module="ext", llm_model=llm_model, prompt_version=tasks.PROMPT_VERSION)
+
+    # Act
+    first = tasks._extractor(None, version("bielik"))
+    tasks._extractor(None, version("qwen"))
+    again = tasks._extractor(None, version("bielik"))
+
+    # Assert
+    assert tasks._cached_extractor.cache_info().currsize == 1
+    assert again is not first
+    tasks._cached_extractor.cache_clear()

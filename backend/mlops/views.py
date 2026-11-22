@@ -17,6 +17,7 @@ from segmentation.models import SegmentationResult
 from segmentation.models import StatusChoices as SegStatus
 from users.permissions import require_permission
 
+from .decisions import UNDECIDED, wrong_status
 from .extraction_versions import few_shot_report_ids
 from .models import ModelVersion, ModuleUsagePeriod
 
@@ -340,6 +341,7 @@ def extraction_overview(request):
     verified_count = verified.count()
     ext_versions = (
         ModelVersion.objects.filter(module=ModelVersion.ModuleChoices.EXT)
+        .select_related("proposed_by", "decided_by")
         .prefetch_related("periods")
         .order_by("-created_at")
     )
@@ -355,11 +357,23 @@ def extraction_overview(request):
             "promptVersion": model.prompt_version,
             "structuredOutput": model.structured_output,
             "fewShot": len(model.few_shot_examples),
+            "editable": model.editable,
+            "periods": [
+                {"from": _iso(p.started_at), "to": _iso(p.ended_at)} for p in model.periods.all()
+            ],
+            "f1": model.metrics.get("f1"),
+            "proposedBy": _person(model.proposed_by),
+            "proposedAt": _iso(model.proposed_at),
+            "decidedBy": _person(model.decided_by),
+            "reason": model.reason or None,
+            "restore": model.restore,
         }
         for model in ext_versions
     ]
     overview = {
         "version": prod_ext.version if prod_ext else None,
+        "llmModel": prod_ext.llm_model if prod_ext else None,
+        "approvedBy": _person(prod_ext.decided_by) if prod_ext else None,
         "models": models_data,
         "fewShots": [],
         "since": _iso(_in_use_since(prod_ext)) if prod_ext else None,
@@ -385,29 +399,11 @@ def _segmentation_version(version):
     return get_object_or_404(ModelVersion, module=ModelVersion.ModuleChoices.SEG, version=version)
 
 
-# a version that waits for a decision: a draft or a proposal
-UNDECIDED = (ModelVersion.StatusChoices.NEW, ModelVersion.StatusChoices.CANDIDATE)
-
-
-def _wrong_status(model, allowed):
-    """409 when the version is not in a status the action applies to, otherwise None."""
-    if model.status in allowed:
-        return None
-    return Response(
-        {
-            "code": "wrong_status",
-            "detail": f"Wersja {model.version} ma status „{model.get_status_display()}”, "
-            "tej operacji nie można na niej wykonać.",
-        },
-        status=status.HTTP_409_CONFLICT,
-    )
-
-
 @api_view(["POST"])
 @require_permission(["manageModels"])
 def promote_model(request, version):
     model_ver = _segmentation_version(version)
-    refused = _wrong_status(model_ver, UNDECIDED)
+    refused = wrong_status(model_ver, UNDECIDED)
     if refused:
         return refused
     model_ver.put_in_use(request.user, reason=request.data.get("reason", ""))
@@ -427,7 +423,7 @@ def promote_model(request, version):
 def reject_model(request, version):
     model_ver = _segmentation_version(version)
     # the version in use is replaced by promoting another one, never rejected
-    refused = _wrong_status(model_ver, UNDECIDED)
+    refused = wrong_status(model_ver, UNDECIDED)
     if refused:
         return refused
     reason = request.data.get("reason", "")
@@ -451,7 +447,7 @@ def reject_model(request, version):
 @require_permission(["manageModels"])
 def rollback_model(request, version):
     target_model = _segmentation_version(version)
-    refused = _wrong_status(target_model, (ModelVersion.StatusChoices.ARCHIVED,))
+    refused = wrong_status(target_model, (ModelVersion.StatusChoices.ARCHIVED,))
     if refused:
         return refused
     target_model.put_in_use(request.user, reason=request.data.get("reason", ""))

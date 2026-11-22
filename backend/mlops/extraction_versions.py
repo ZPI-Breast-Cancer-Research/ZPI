@@ -1,7 +1,8 @@
 """Extraction versions: one configuration of the LLM, the prompt and the few-shot examples.
 
 A researcher starts a new version from the one in use and changes it while it is a draft
-(status ``new``); once proposed it does not change (docs/database.md, ``module_version``).
+(status ``new``); once proposed it does not change (docs/database.md, ``module_version``). An
+admin puts a proposal in use or rejects it, as for segmentation.
 """
 
 import logging
@@ -11,6 +12,7 @@ from audit.utils import record_audit
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ReportStatus
 from rest_framework import status
@@ -18,6 +20,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from users.permissions import require_permission
 
+from .decisions import wrong_status
 from .errors import LlmServerUnavailable
 from .models import ModelVersion
 
@@ -25,10 +28,14 @@ logger = logging.getLogger(__name__)
 
 EXT = ModelVersion.ModuleChoices.EXT
 NEW = ModelVersion.StatusChoices.NEW
+CANDIDATE = ModelVersion.StatusChoices.CANDIDATE
+ARCHIVED = ModelVersion.StatusChoices.ARCHIVED
 VERIFIED = (ReportStatus.APPROVED, ReportStatus.CORRECTED)
 # what a researcher may change in a draft
 EDITABLE = ("llm_model", "structured_output", "few_shot_examples")
 LLM_TIMEOUT = (2, 5)
+VERSION_MAX = ModelVersion._meta.get_field("version").max_length
+NAME_MAX = ModelVersion._meta.get_field("name").max_length
 
 
 def _version(version: str) -> ModelVersion:
@@ -72,6 +79,29 @@ def _examples_error(examples) -> str | None:
     return None
 
 
+def _version_error(version: str, name: str) -> str | None:
+    """Why the number or the name of a new version cannot be stored or used in a URL."""
+    if not version.strip() or len(version) > VERSION_MAX or "/" in version:
+        return f"Numer wersji: od 1 do {VERSION_MAX} znaków, bez „/”."
+    if len(name) > NAME_MAX:
+        return f"Nazwa wersji: najwyżej {NAME_MAX} znaków."
+    return None
+
+
+def _title(report: str) -> str:
+    """The first line of an example report, for the list of examples."""
+    return next(iter(report.strip().splitlines()), "")[:80]
+
+
+def _person(user) -> dict | None:
+    if not user:
+        return None
+    return {
+        "login": user.get_username(),
+        "name": f"{user.first_name} {user.last_name}".strip() or user.get_username(),
+    }
+
+
 def _payload(model: ModelVersion) -> dict:
     return {
         "version": model.version,
@@ -83,6 +113,11 @@ def _payload(model: ModelVersion) -> dict:
         "fewShotExamples": model.few_shot_examples,
         "editable": model.editable,
         "createdAt": model.created_at.isoformat() if model.created_at else None,
+        "proposedBy": _person(model.proposed_by),
+        "proposedAt": model.proposed_at.isoformat() if model.proposed_at else None,
+        "reason": model.reason or None,
+        "restore": model.restore,
+        "decidedBy": _person(model.decided_by),
     }
 
 
@@ -117,12 +152,15 @@ def create_version(request):
     """A new draft with the configuration of the version in use."""
     base = _in_use()
     version = str(request.data.get("version") or _next_version())
+    name = str(request.data.get("name") or (base.name if base else "extraction"))
+    if error := _version_error(version, name):
+        return _bad_request(error)
     try:
         # the unique (module, version) settles two drafts created at the same moment
         with transaction.atomic():
             model = ModelVersion.objects.create(
                 module=EXT,
-                name=request.data.get("name") or (base.name if base else "extraction"),
+                name=name,
                 version=version,
                 status=NEW,
                 llm_model=base.llm_model if base else "",
@@ -156,8 +194,11 @@ def version_detail(request, version):
         return _bad_request(error)
     if "structured_output" in changes and not isinstance(changes["structured_output"], bool):
         return _bad_request("structured_output musi być true albo false.")
-    if "llm_model" in changes and not isinstance(changes["llm_model"], str):
-        return _bad_request("llm_model musi być tekstem.")
+    # the version says which model fills the forms; empty would leave it to the LLM server
+    if "llm_model" in changes and (
+        not isinstance(changes["llm_model"], str) or not changes["llm_model"].strip()
+    ):
+        return _bad_request("llm_model musi być niepustym tekstem.")
 
     with transaction.atomic():
         model = get_object_or_404(
@@ -223,7 +264,7 @@ def few_shot(request, version):
         [
             {
                 "id": str(item.get("report_id") or index + 1),
-                "title": item["report"].strip().splitlines()[0][:80],
+                "title": _title(item["report"]),
                 "report": item["report"],
                 "output": item["output"],
                 "isNew": item["report"] not in used,
@@ -238,3 +279,99 @@ def few_shot_report_ids(model: ModelVersion | None) -> set[int]:
     if model is None:
         return set()
     return {item["report_id"] for item in model.few_shot_examples if item.get("report_id")}
+
+
+# ---------------------------------------------------------------- decisions
+
+
+def _locked(version: str) -> ModelVersion:
+    return get_object_or_404(ModelVersion.objects.select_for_update(), module=EXT, version=version)
+
+
+def _other_proposal(model: ModelVersion) -> Response | None:
+    """One proposal at a time: the decision compares it with the version in use."""
+    other = ModelVersion.objects.filter(module=EXT, status=CANDIDATE).exclude(pk=model.pk).first()
+    if other is None:
+        return None
+    return Response(
+        {"code": "proposal_pending", "detail": f"Wersja {other.version} już czeka na decyzję."},
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+@api_view(["POST"])
+@require_permission(["proposeModels"])
+def propose_version(request, version):
+    """A draft (or an archived version, to bring it back) waits for the admin's decision."""
+    reason = str(request.data.get("reason") or "").strip()
+    if not reason:
+        return _bad_request("Podaj powód propozycji.")
+    with transaction.atomic():
+        model = _locked(version)
+        if refused := wrong_status(model, (NEW, ARCHIVED)):
+            return refused
+        if not model.llm_model.strip():
+            return _bad_request("Wersja bez modelu językowego nie może być zaproponowana.")
+        if refused := _other_proposal(model):
+            return refused
+        model.restore = model.status == ARCHIVED
+        model.status = CANDIDATE
+        model.proposed_by = request.user
+        model.proposed_at = timezone.now()
+        model.reason = reason
+        model.save(update_fields=["status", "restore", "proposed_by", "proposed_at", "reason"])
+    record_audit(request, kind="model_proposed", object=f"ext {model.version}", detail=reason)
+    return Response(_payload(model))
+
+
+@api_view(["POST"])
+@require_permission(["proposeModels"])
+def withdraw_version(request, version):
+    """The proposal goes back: a draft can be changed again, a restored version stays archived."""
+    with transaction.atomic():
+        model = _locked(version)
+        if refused := wrong_status(model, (CANDIDATE,)):
+            return refused
+        model.status = ARCHIVED if model.restore else NEW
+        model.restore = False
+        model.proposed_by = None
+        model.proposed_at = None
+        model.reason = ""
+        model.save(update_fields=["status", "restore", "proposed_by", "proposed_at", "reason"])
+    record_audit(request, kind="proposal_withdrawn", object=f"ext {model.version}")
+    return Response(_payload(model))
+
+
+@api_view(["POST"])
+@require_permission(["manageModels"])
+def promote_version(request, version):
+    """The proposal becomes the version in use; the next reports are processed with it."""
+    with transaction.atomic():
+        model = _locked(version)
+        if refused := wrong_status(model, (CANDIDATE,)):
+            return refused
+        model.restore = False
+        # the admin's note, or the reason of the proposal when there is none
+        model.put_in_use(request.user, reason=str(request.data.get("reason") or model.reason))
+    record_audit(request, kind="model_promoted", object=f"ext {model.version}")
+    return Response(_payload(model))
+
+
+@api_view(["POST"])
+@require_permission(["manageModels"])
+def reject_version(request, version):
+    """The proposal is turned down; a restored version stays archived."""
+    reason = str(request.data.get("reason") or "").strip()
+    if not reason:
+        return _bad_request("Podaj powód odrzucenia.")
+    with transaction.atomic():
+        model = _locked(version)
+        if refused := wrong_status(model, (CANDIDATE,)):
+            return refused
+        model.status = ARCHIVED if model.restore else ModelVersion.StatusChoices.REJECTED
+        model.restore = False
+        model.decided_by = request.user
+        model.reason = reason
+        model.save(update_fields=["status", "restore", "decided_by", "reason"])
+    record_audit(request, kind="model_rejected", object=f"ext {model.version}", detail=reason)
+    return Response(_payload(model))

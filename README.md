@@ -116,7 +116,7 @@ The radiologist does not review cases in random order — the system shows first
 **Extraction** — two stages:
 - *From the start:* corrections feed a pool of few-shot examples; the most similar reports (embeddings) are selected for the prompt. The prompt + example set is versioned.
 - *With a few hundred corrections:* LoRA/QLoRA fine-tuning of Bielik; adapters as subsequent model versions.
-- The extraction model is not managed by MLflow aliases (for now): the LLM server loads the GGUF file from MinIO at start, so a new model = replace `LLM_MODEL_FILE` in the `models` bucket and restart `llm-server`.
+- An extraction version (`module_version`, module `ext`) is one configuration: the LLM model id, the prompt version, structured output and the few-shot examples. A researcher creates a draft from the version in use, changes it and proposes it; an admin puts it in use (models screen). The weights are not managed by MLflow aliases (for now): the LLM server loads the GGUF file from MinIO at start, so a new model file = replace `LLM_MODEL_FILE` in the `models` bucket and restart `llm-server`.
 - Metrics: per-field precision / recall / F1 on the frozen test set.
 
 **Quality gate rules**
