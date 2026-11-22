@@ -11,6 +11,8 @@ export const queryKeys = {
   segmentation: (search: string) => ["models", "segmentation", search],
   extraction: (search: string) => ["models", "extraction", search],
   fewShot: (version: string) => ["models", "few-shot", version],
+  extractionVersion: (version: string) => ["models", "extraction-version", version],
+  llmModels: ["models", "llm-models"],
   gate: (key: unknown[]) => ["models", "gate", ...key],
   profile: (login: string | undefined) => ["profile", login],
   users: ["users"],

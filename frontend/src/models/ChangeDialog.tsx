@@ -12,7 +12,8 @@ interface Props {
   // a researcher's proposal, or an admin's own change
   proposing: boolean;
   submitLabel: string;
-  gate: { key: unknown[]; load: () => Promise<GateCheck[] | null> };
+  // the quality gate of the version; none where the backend does not compute one yet
+  gate?: { key: unknown[]; load: () => Promise<GateCheck[] | null> };
   pending: boolean;
   error: unknown;
   onSubmit: (reason: string, done: () => void) => void;
@@ -22,7 +23,7 @@ interface Props {
 export default function ChangeDialog({ title, proposing, submitLabel, gate, pending, error, onSubmit, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
-  const checks = useQuery({ queryKey: queryKeys.gate(gate.key), queryFn: gate.load });
+  const checks = useQuery({ queryKey: queryKeys.gate(gate?.key ?? []), queryFn: () => gate!.load(), enabled: !!gate });
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -44,7 +45,7 @@ export default function ChangeDialog({ title, proposing, submitLabel, gate, pend
       >
         <div className="model-dialog__head">{title}</div>
         <div className="model-dialog__body">
-          {checks.isPending ? (
+          {!gate ? null : checks.isPending ? (
             <p className="models__empty">{t("models.loading")}</p>
           ) : checks.isError ? (
             <p className="models__error">{t("models.gate.loadFailed", { why: errorText(checks.error) })}</p>

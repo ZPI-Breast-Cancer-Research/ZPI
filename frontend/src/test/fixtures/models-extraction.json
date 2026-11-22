@@ -3,24 +3,75 @@
   "models": [
     {
       "version": "demo-ext-1.1.0",
-      "status": "candidate",
+      "status": "new",
       "createdAt": "2026-11-14",
-      "activatedAt": null
+      "activatedAt": null,
+      "llmModel": "bielik-4.5b-v3.0-instruct",
+      "promptVersion": "v6",
+      "structuredOutput": true,
+      "fewShot": 1,
+      "f1": null,
+      "restore": false,
+      "editable": true,
+      "periods": [],
+      "proposedBy": null,
+      "proposedAt": null,
+      "decidedBy": null,
+      "reason": null
     },
     {
       "version": "demo-ext-1.0.0",
       "status": "production",
       "createdAt": "2026-10-12",
-      "activatedAt": "2026-10-17"
+      "activatedAt": "2026-10-17",
+      "llmModel": "bielik-4.5b-v3.0-instruct",
+      "promptVersion": "v6",
+      "structuredOutput": true,
+      "fewShot": 1,
+      "f1": null,
+      "restore": false,
+      "editable": false,
+      "periods": [
+        {
+          "from": "2026-10-17",
+          "to": null
+        }
+      ],
+      "proposedBy": null,
+      "proposedAt": null,
+      "decidedBy": {
+        "login": "admin",
+        "name": "Admin"
+      },
+      "reason": null
     },
     {
       "version": "demo-ext-0.9.0",
       "status": "archived",
       "createdAt": "2026-09-07",
-      "activatedAt": "2026-09-07"
+      "activatedAt": "2026-09-07",
+      "llmModel": "bielik-4.5b-v3.0-instruct",
+      "promptVersion": "v6",
+      "structuredOutput": true,
+      "fewShot": 1,
+      "f1": null,
+      "restore": false,
+      "editable": false,
+      "periods": [
+        {
+          "from": "2026-09-07",
+          "to": "2026-10-17"
+        }
+      ],
+      "proposedBy": null,
+      "proposedAt": null,
+      "decidedBy": {
+        "login": "admin",
+        "name": "Admin"
+      },
+      "reason": null
     }
   ],
-  "fewShots": [],
   "since": "2026-10-17",
   "examplePool": 10,
   "verifiedDescriptions": 10,
@@ -57,5 +108,10 @@
       "f1": null,
       "correctedShare": null
     }
-  ]
+  ],
+  "llmModel": "bielik-4.5b-v3.0-instruct",
+  "approvedBy": {
+    "login": "admin",
+    "name": "Admin"
+  }
 }

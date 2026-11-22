@@ -2,23 +2,29 @@ import { api, request } from "../api";
 import { mockDelay, mockScenario, MOCK_API } from "../mock";
 import type { Extraction, WireBiRads, WireLesion, WireObservation, WireSide } from "../review/extraction";
 import { record } from "../settings/audit";
-import type { GateCheck, Person, Proposal, VersionStatus } from "./api";
+import type { Person, VersionStatus } from "./api";
 
-// the language model and the few-shot examples change apart
-export type ExtractionPart = "model" | "few_shot";
-
+// One extraction version is one configuration: the language model, the prompt, structured output
+// and the few-shot examples (backend module_version, module "ext"). A researcher changes a draft,
+// proposes it, an admin puts it in use.
 export interface ExtractionVersion {
-  // a model's name or a few-shot version
-  name: string;
+  version: string;
   status: VersionStatus;
   periods: { from: string; to: string | null }[];
-  // lesions found on the test set (F1), with the other part as it is in use
+  // lesions found on the test set (F1); null until the version is evaluated
   f1: number | null;
-  // few-shot only
-  examples: number | null;
+  llmModel: string;
+  promptVersion: string;
+  structuredOutput: boolean;
+  examples: number;
+  // a draft: the only status in which the configuration may change
+  editable: boolean;
   proposedBy: Person | null;
+  proposedAt: string | null;
   decidedBy: Person | null;
   reason: string | null;
+  // the proposal brings back an archived version
+  restore: boolean;
 }
 
 export interface FieldScore {
@@ -31,21 +37,18 @@ export interface FieldScore {
 }
 
 export interface ExtractionProposal {
-  part: ExtractionPart;
-  name: string;
-  replaces: string;
-  author: Proposal["author"];
-  at: string;
+  version: ExtractionVersion;
+  // the version in use it would replace
+  replaces: ExtractionVersion | null;
+  author: Person;
+  at: string | null;
   reason: string;
-  gate: GateCheck[] | null;
-  fields: { field: string; current: number | null; next: number | null }[] | null;
-  f1: { current: number | null; next: number | null } | null;
 }
 
 export interface ExtractionOverview {
   inUse: {
+    version: string;
     model: string | null;
-    fewShot: string | null;
     since: string | null;
     approvedBy: Person | null;
     verified: number | null;
@@ -56,8 +59,19 @@ export interface ExtractionOverview {
   testReports: number | null;
   fields: FieldScore[];
   proposal: ExtractionProposal | null;
-  models: ExtractionVersion[];
-  fewShots: ExtractionVersion[];
+  versions: ExtractionVersion[];
+}
+
+// what the backend sends for one version (backend/mlops/extraction_versions.py _payload)
+export interface VersionConfig {
+  version: string;
+  name: string;
+  status: string;
+  llmModel: string;
+  promptVersion: string;
+  structuredOutput: boolean;
+  fewShotExamples: { report: string; output: Extraction; report_id?: number }[];
+  editable: boolean;
 }
 
 export interface FewShotExample {
@@ -69,23 +83,42 @@ export interface FewShotExample {
   isNew: boolean;
 }
 
+// what a draft may change (PATCH extraction/versions/<v>/)
+export interface DraftChanges {
+  llm_model?: string;
+  structured_output?: boolean;
+  few_shot_examples?: VersionConfig["fewShotExamples"];
+}
+
+interface BackendVersion {
+  version: string;
+  status: string;
+  createdAt: string | null;
+  activatedAt: string | null;
+  llmModel?: string;
+  promptVersion?: string;
+  structuredOutput?: boolean;
+  fewShot?: number;
+  editable?: boolean;
+  periods?: { from: string | null; to: string | null }[];
+  f1?: number | null;
+  proposedBy?: Person | null;
+  proposedAt?: string | null;
+  decidedBy?: Person | null;
+  reason?: string | null;
+  restore?: boolean;
+}
+
 interface BackendExtractionOverview {
   version: string | null;
+  llmModel?: string | null;
+  approvedBy?: Person | null;
   since: string | null;
   examplePool: number;
   verifiedDescriptions: number;
   failedDescriptions: number;
   correctedDescriptions: number;
-
-  models: {
-    version: string;
-    status: string;
-    createdAt: string | null;
-    activatedAt: string | null;
-  }[];
-
-  fewShots: [];
-
+  models: BackendVersion[];
   fields: {
     field: string;
     f1: number | null;
@@ -93,155 +126,166 @@ interface BackendExtractionOverview {
   }[];
 }
 
-function fromBackend(data: BackendExtractionOverview): ExtractionOverview {
-  const mapStatus = (status: string): VersionStatus => {
-    switch (status) {
-      case "production":
-        return "in_use";
-      case "archived":
-        return "retired";
-      case "rejected":
-        return "rejected";
-      case "candidate":
-        return "new";
-      case "training":
-        return "training";
-      default:
-        return "new";
-    }
-  };
+const STATUS: Record<string, VersionStatus> = {
+  production: "in_use",
+  archived: "retired",
+  rejected: "rejected",
+  candidate: "proposed",
+  training: "training",
+  new: "new",
+};
 
+function versionFromBackend(v: BackendVersion): ExtractionVersion {
+  const periods = (v.periods ?? (v.activatedAt ? [{ from: v.activatedAt, to: null }] : []))
+    .filter((p): p is { from: string; to: string | null } => !!p.from);
+  const status = STATUS[v.status] ?? "new";
+  return {
+    version: v.version,
+    status,
+    periods,
+    f1: v.f1 ?? null,
+    llmModel: v.llmModel ?? "",
+    promptVersion: v.promptVersion ?? "",
+    structuredOutput: v.structuredOutput ?? true,
+    examples: v.fewShot ?? 0,
+    editable: v.editable ?? status === "new",
+    proposedBy: v.proposedBy ?? null,
+    proposedAt: v.proposedAt ?? null,
+    decidedBy: v.decidedBy ?? null,
+    reason: v.reason ?? null,
+    restore: v.restore ?? false,
+  };
+}
+
+function proposalOf(versions: ExtractionVersion[]): ExtractionProposal | null {
+  const proposed = versions.find((v) => v.status === "proposed");
+  if (!proposed) return null;
+  return {
+    version: proposed,
+    replaces: versions.find((v) => v.status === "in_use") ?? null,
+    author: proposed.proposedBy ?? { login: "", name: "—" },
+    at: proposed.proposedAt,
+    reason: proposed.reason ?? "",
+  };
+}
+
+function fromBackend(data: BackendExtractionOverview): ExtractionOverview {
+  const versions = data.models.map(versionFromBackend);
+  const inUse = versions.find((v) => v.version === data.version);
   return {
     inUse: data.version
       ? {
-          model: data.version,
-          fewShot: null,
+          version: data.version,
+          model: data.llmModel ?? inUse?.llmModel ?? null,
           since: data.since,
-          approvedBy: null,
+          approvedBy: data.approvedBy ?? inUse?.decidedBy ?? null,
           verified: data.verifiedDescriptions,
           failed: data.failedDescriptions,
           corrected: data.correctedDescriptions,
         }
       : null,
-
     testReports: null,
-
-    fields: data.fields.map((f) => ({
-      field: f.field,
-      accuracy: f.f1,
-      corrected: f.correctedShare,
-    })),
-
-    proposal: null,
-
-    models: data.models.map((model) => ({
-      name: model.version,
-      status: mapStatus(model.status),
-      periods: model.activatedAt
-        ? [{ from: model.activatedAt, to: null }]
-        : [],
-      f1: null,
-      examples: null,
-      proposedBy: null,
-      decidedBy: null,
-      reason: null,
-    })),
-
-    fewShots: [],
+    fields: data.fields.map((f) => ({ field: f.field, accuracy: f.f1, corrected: f.correctedShare })),
+    proposal: proposalOf(versions),
+    versions,
   };
 }
 
 const KOWALSKA = { login: "j.kowalska", name: "J. Kowalska" };
 const NOWAK = { login: "a.nowak", name: "A. Nowak" };
 
-function me(): Proposal["author"] {
+function me(): Person {
   try {
-    const user = JSON.parse(sessionStorage.getItem("maria.user") ?? "") as Person & { role: string };
-    if (user.login) return { login: user.login, name: user.name, role: user.role === "admin" ? "admin" : "researcher" };
+    const user = JSON.parse(sessionStorage.getItem("maria.user") ?? "") as Person;
+    if (user.login) return { login: user.login, name: user.name };
   } catch {
     // the dev user below
   }
-  return { login: "dev", name: "Dev", role: import.meta.env.VITE_SKIP_LOGIN === "admin" ? "admin" : "researcher" };
+  return { login: "dev", name: "Dev" };
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 const FIELDS_NOW = { side: 0.96, birads: 0.58, clock: 0.79, size: 0.88, shape: 0.71, margin: 0.67, echo: 0.75 };
-const FIELDS_V7 = { side: 0.96, birads: 0.83, clock: 0.79, size: 0.92, shape: 0.71, margin: 0.65, echo: 0.75 };
 const CORRECTED = { side: 0.02, birads: 0.22, clock: 0.09, size: 0.12, shape: 0.14, margin: 0.27, echo: 0.11 };
 
-function fewShotProposal(author: Proposal["author"]): ExtractionProposal {
+// ?mock=proposal (a researcher's proposal waits), ?mock=mine (your own), ?mock=empty (nothing computed yet)
+interface MockState {
+  overview: ExtractionOverview;
+  // the examples of each version, by the ids of the mock examples below
+  sets: Record<string, string[]>;
+}
+let mockState: MockState | null = null;
+
+function mockVersion(v: Partial<ExtractionVersion> & Pick<ExtractionVersion, "version" | "status">): ExtractionVersion {
   return {
-    part: "few_shot",
-    name: "v7",
-    replaces: "v6",
-    author,
-    at: "2026-11-10",
-    reason: "Model pomijał BI-RADS zmiany, gdy był tylko we wniosku.",
-    gate: [
-      { rule: "no_field_drop", threshold: 5, value: 2, baseline: null, studyNumber: null, field: "margin", passed: true },
-      { rule: "failed_not_more", threshold: null, value: 0, baseline: 0, studyNumber: null, passed: true },
-    ],
-    fields: Object.entries(FIELDS_NOW).map(([field, current]) => ({ field, current, next: FIELDS_V7[field as keyof typeof FIELDS_V7] })),
-    f1: { current: 0.86, next: 0.88 },
+    periods: [],
+    f1: null,
+    llmModel: "bielik-4.5b-v3.0-instruct",
+    promptVersion: "v6",
+    structuredOutput: true,
+    examples: 1,
+    editable: v.status === "new",
+    proposedBy: null,
+    proposedAt: null,
+    decidedBy: null,
+    reason: null,
+    restore: false,
+    ...v,
   };
 }
 
-// ?mock=proposal (a researcher's few-shot proposal waits), ?mock=mine (your own), ?mock=empty (nothing computed yet)
-let mockState: ExtractionOverview | null = null;
-
-function mockOverview(): ExtractionOverview {
+function mockOverview(): MockState {
   const scenario = mockScenario();
   const proposed = scenario === "proposal" || scenario === "mine";
   const empty = scenario === "empty";
-  const version = (v: Partial<ExtractionVersion> & Pick<ExtractionVersion, "name" | "status">): ExtractionVersion => ({
-    periods: [],
-    f1: null,
-    examples: null,
-    proposedBy: null,
-    decidedBy: null,
-    reason: null,
-    ...v,
-  });
+  const author = scenario === "mine" ? me() : KOWALSKA;
+  const versions = empty
+    ? [mockVersion({ version: "1", status: "in_use", periods: [{ from: "2026-10-06", to: null }] })]
+    : [
+        mockVersion({
+          version: "3",
+          status: proposed ? "proposed" : "new",
+          examples: 3,
+          f1: 0.88,
+          proposedBy: proposed ? author : null,
+          proposedAt: proposed ? "2026-11-10" : null,
+          reason: proposed ? "Model pomijał BI-RADS zmiany, gdy był tylko we wniosku." : null,
+        }),
+        mockVersion({ version: "2", status: "in_use", periods: [{ from: "2026-10-06", to: null }], f1: 0.86, proposedBy: KOWALSKA, decidedBy: NOWAK }),
+        mockVersion({ version: "1", status: "retired", llmModel: "bielik-4.5b-q4_k_m", periods: [{ from: "2026-09-01", to: "2026-10-06" }], f1: 0.81, proposedBy: NOWAK, decidedBy: NOWAK }),
+      ];
   return {
-    inUse: {
-      model: "Bielik 4.5B q8_0",
-      fewShot: "v6",
-      since: "2026-10-06",
-      approvedBy: NOWAK,
-      verified: empty ? null : 146,
-      failed: empty ? null : 3,
-      corrected: empty ? null : 41,
+    overview: {
+      inUse: {
+        version: empty ? "1" : "2",
+        model: "bielik-4.5b-v3.0-instruct",
+        since: "2026-10-06",
+        approvedBy: NOWAK,
+        verified: empty ? null : 146,
+        failed: empty ? null : 3,
+        corrected: empty ? null : 41,
+      },
+      testReports: empty ? null : 12,
+      fields: Object.entries(FIELDS_NOW).map(([field, accuracy]) => ({
+        field,
+        accuracy: empty ? null : accuracy,
+        corrected: empty ? null : CORRECTED[field as keyof typeof CORRECTED],
+      })),
+      proposal: proposalOf(versions),
+      versions,
     },
-    testReports: empty ? null : 12,
-    fields: Object.entries(FIELDS_NOW).map(([field, accuracy]) => ({
-      field,
-      accuracy: empty ? null : accuracy,
-      corrected: empty ? null : CORRECTED[field as keyof typeof CORRECTED],
-    })),
-    proposal: proposed ? fewShotProposal(scenario === "mine" ? me() : { ...KOWALSKA, role: "researcher" }) : null,
-    models: empty
-      ? [version({ name: "Bielik 4.5B q8_0", status: "in_use", periods: [{ from: "2026-10-06", to: null }] })]
-      : [
-          version({ name: "Bielik 11B q4_k_m", status: "new", f1: 0.9 }),
-          version({ name: "Bielik 4.5B q8_0", status: "in_use", periods: [{ from: "2026-10-06", to: null }], f1: 0.86, proposedBy: KOWALSKA, decidedBy: NOWAK }),
-          version({ name: "Bielik 4.5B q4_k_m", status: "retired", periods: [{ from: "2026-09-01", to: "2026-10-06" }], f1: 0.81, proposedBy: NOWAK, decidedBy: NOWAK }),
-        ],
-    fewShots: empty
-      ? [version({ name: "v6", status: "in_use", examples: 1, periods: [{ from: "2026-10-06", to: null }] })]
-      : [
-          version({ name: "v7", status: proposed ? "proposed" : "new", examples: 3, f1: 0.88, proposedBy: proposed ? KOWALSKA : null }),
-          version({ name: "v6", status: "in_use", examples: 1, periods: [{ from: "2026-10-06", to: null }], f1: 0.86, proposedBy: KOWALSKA, decidedBy: NOWAK }),
-          version({ name: "v5", status: "retired", examples: 1, periods: [{ from: "2026-09-01", to: "2026-10-06" }], f1: 0.84, proposedBy: NOWAK, decidedBy: NOWAK }),
-        ],
+    sets: empty ? { "1": ["01"] } : { "1": ["03"], "2": ["01"], "3": ["01", "02", "03"] },
   };
 }
 
+function mock(): MockState {
+  mockState ??= mockOverview();
+  return mockState;
+}
+
 export async function fetchExtraction(): Promise<ExtractionOverview> {
-  if (MOCK_API) {
-    mockState ??= mockOverview();
-    return mockDelay(structuredClone(mockState));
-  }
+  if (MOCK_API) return mockDelay(structuredClone(mock().overview));
   const { data } = await request(api.get<BackendExtractionOverview>("/api/models/extraction/"));
   return fromBackend(data);
 }
@@ -357,105 +401,145 @@ const examples = (): Record<string, Omit<FewShotExample, "isNew">> => ({
   },
 });
 
-const SETS: Record<string, string[]> = { v5: ["03"], v6: ["01"], v7: ["01", "02", "03"] };
+function mockConfig(version: string): VersionConfig {
+  const state = mock();
+  const v = state.overview.versions.find((item) => item.version === version);
+  const all = examples();
+  return {
+    version,
+    name: "extraction",
+    status: Object.entries(STATUS).find(([, mapped]) => mapped === v?.status)?.[0] ?? "new",
+    llmModel: v?.llmModel ?? "",
+    promptVersion: v?.promptVersion ?? "",
+    structuredOutput: v?.structuredOutput ?? true,
+    fewShotExamples: (state.sets[version] ?? []).map((id) => ({ report: all[id].report, output: all[id].output })),
+    editable: v?.editable ?? false,
+  };
+}
 
 export async function fetchFewShot(version: string): Promise<FewShotExample[]> {
   if (MOCK_API) {
-    const inUse = SETS[mockState?.inUse?.fewShot ?? "v6"] ?? [];
+    const state = mock();
+    const inUse = state.sets[state.overview.inUse?.version ?? ""] ?? [];
     const all = examples();
-    return mockDelay((SETS[version] ?? []).map((id) => ({ ...all[id], isNew: !inUse.includes(id) })));
+    return mockDelay((state.sets[version] ?? []).map((id) => ({ ...all[id], isNew: !inUse.includes(id) })));
   }
   const { data } = await request(api.get<FewShotExample[]>(`/api/models/extraction/few-shot/${encodeURIComponent(version)}/`));
   return data;
 }
 
-export async function fetchExtractionGate(part: ExtractionPart, name: string): Promise<GateCheck[] | null> {
-  if (MOCK_API) return mockDelay(part === "few_shot" && name === "v7" ? fewShotProposal(me()).gate : null);
-  const { data } = await request(api.get<GateCheck[] | null>(`/api/models/extraction/${part}/${encodeURIComponent(name)}/gate/`));
+export async function fetchVersion(version: string): Promise<VersionConfig> {
+  if (MOCK_API) return mockDelay(mockConfig(version));
+  const { data } = await request(api.get<VersionConfig>(versionPath(version)));
+  return data;
+}
+
+// the models the LLM server offers; empty when the server can't be asked
+export async function fetchLlmModels(): Promise<string[]> {
+  if (MOCK_API) return mockDelay(["bielik-4.5b-v3.0-instruct", "bielik-11b-v2.6-instruct"]);
+  const { data } = await request(api.get<string[]>("/api/models/extraction/llm-models/"));
+  return data;
+}
+
+const versionPath = (version: string, action?: string) =>
+  `/api/models/extraction/versions/${encodeURIComponent(version)}/${action ? `${action}/` : ""}`;
+
+// a new draft with the configuration of the version in use
+export async function createVersion(): Promise<string> {
+  if (MOCK_API) {
+    const state = mock();
+    const base = state.overview.versions.find((v) => v.status === "in_use");
+    const next = String(Math.max(0, ...state.overview.versions.map((v) => Number(v.version) || 0)) + 1);
+    state.overview.versions.unshift(
+      mockVersion({ version: next, status: "new", llmModel: base?.llmModel ?? "", structuredOutput: base?.structuredOutput ?? true, examples: base?.examples ?? 0 }),
+    );
+    state.sets[next] = [...(state.sets[base?.version ?? ""] ?? [])];
+    record("version_created", `ext ${next}`, base ? `z wersji ${base.version}` : null);
+    return mockDelay(next, 300);
+  }
+  const { data } = await request(api.post<VersionConfig>("/api/models/extraction/versions/"));
+  return data.version;
+}
+
+export async function updateDraft(version: string, changes: DraftChanges): Promise<VersionConfig> {
+  if (MOCK_API) {
+    const state = mock();
+    const v = state.overview.versions.find((item) => item.version === version);
+    if (v) {
+      if (changes.llm_model !== undefined) v.llmModel = changes.llm_model;
+      if (changes.structured_output !== undefined) v.structuredOutput = changes.structured_output;
+      if (changes.few_shot_examples !== undefined) {
+        const all = examples();
+        state.sets[version] = changes.few_shot_examples.map((e) => Object.keys(all).find((id) => all[id].report === e.report)).filter((id): id is string => !!id);
+        v.examples = state.sets[version].length;
+      }
+    }
+    record("version_changed", `ext ${version}`, Object.keys(changes).join(", "));
+    return mockDelay(mockConfig(version), 300);
+  }
+  const { data } = await request(api.patch<VersionConfig>(versionPath(version), changes));
+  return data;
+}
+
+// a verified report (its text and accepted form) as a new example of the draft
+export async function addExample(version: string, reportId: number): Promise<VersionConfig> {
+  if (MOCK_API) return mockDelay(mockConfig(version), 300);
+  const { data } = await request(api.post<VersionConfig>(versionPath(version, "examples"), { report_id: reportId }));
   return data;
 }
 
 // mock decisions update the mock state
-function updateMock(change: (state: ExtractionOverview) => void) {
-  mockState ??= mockOverview();
-  change(mockState);
+function decide(version: string, change: (v: ExtractionVersion, state: MockState) => void) {
+  const state = mock();
+  const v = state.overview.versions.find((item) => item.version === version);
+  if (v) change(v, state);
+  state.overview.proposal = proposalOf(state.overview.versions);
 }
 
-const listOf = (state: ExtractionOverview, part: ExtractionPart) => (part === "model" ? state.models : state.fewShots);
-
-function putInUse(state: ExtractionOverview, part: ExtractionPart, name: string, reason: string | null) {
-  const since = today();
-  const { login, name: who } = me();
-  for (const v of listOf(state, part)) {
-    if (v.status === "in_use") Object.assign(v, { status: "retired", periods: v.periods.map((p) => (p.to ? p : { ...p, to: since })) });
-    if (v.name === name) {
-      Object.assign(v, { status: "in_use", periods: [...v.periods, { from: since, to: null }], decidedBy: { login, name: who } });
-      v.reason = state.proposal?.reason ?? reason;
-      if (!state.proposal) v.proposedBy = { login, name: who };
-    }
-  }
-  if (state.inUse) Object.assign(state.inUse, part === "model" ? { model: name } : { fewShot: name }, { since, approvedBy: { login, name: who } });
-  state.proposal = null;
-}
-
-const path = (part: ExtractionPart, name: string, action: string) => `/api/models/extraction/${part}/${encodeURIComponent(name)}/${action}/`;
-
-export async function proposeExtraction(part: ExtractionPart, name: string, reason: string): Promise<string> {
+export async function proposeExtraction(version: string, reason: string): Promise<string> {
   if (MOCK_API) {
-    updateMock((state) => {
-      const v = listOf(state, part).find((item) => item.name === name);
-      const current = part === "model" ? state.inUse?.model : state.inUse?.fewShot;
-      if (!v || !current) return;
-      const author = me();
-      const restore = v.status === "retired";
-      v.status = "proposed";
-      if (!restore) Object.assign(v, { proposedBy: { login: author.login, name: author.name }, reason });
-      const inUse = listOf(state, part).find((item) => item.status === "in_use");
-      state.proposal = { part, name, replaces: current, author, at: today(), reason, gate: null, fields: null, f1: { current: inUse?.f1 ?? null, next: v.f1 } };
+    decide(version, (v) => Object.assign(v, { restore: v.status === "retired", status: "proposed", editable: false, proposedBy: me(), proposedAt: today(), reason }));
+    record("model_proposed", `ext ${version}`, reason);
+    return mockDelay(version, 400);
+  }
+  await request(api.post(versionPath(version, "propose"), { reason }));
+  return version;
+}
+
+export async function withdrawExtraction(version: string): Promise<string> {
+  if (MOCK_API) {
+    decide(version, (v) => Object.assign(v, { status: v.restore ? "retired" : "new", editable: !v.restore, restore: false, proposedBy: null, proposedAt: null, reason: null }));
+    record("proposal_withdrawn", `ext ${version}`);
+    return mockDelay(version);
+  }
+  await request(api.post(versionPath(version, "withdraw")));
+  return version;
+}
+
+// an admin puts the proposal in use
+export async function applyExtraction(version: string): Promise<string> {
+  if (MOCK_API) {
+    decide(version, (v, state) => {
+      const since = today();
+      for (const other of state.overview.versions) {
+        if (other.status === "in_use") Object.assign(other, { status: "retired", periods: other.periods.map((p) => (p.to ? p : { ...p, to: since })) });
+      }
+      Object.assign(v, { status: "in_use", restore: false, decidedBy: me(), periods: [...v.periods, { from: since, to: null }] });
+      if (state.overview.inUse) Object.assign(state.overview.inUse, { version, model: v.llmModel, since, approvedBy: me() });
     });
-    record("model_proposed", name, reason);
-    return mockDelay(name, 400);
+    record("model_promoted", `ext ${version}`);
+    return mockDelay(version);
   }
-  await request(api.post("/api/models/extraction/proposals/", { part, name, reason }));
-  return name;
+  await request(api.post(versionPath(version, "promote")));
+  return version;
 }
 
-export async function withdrawExtraction(part: ExtractionPart, name: string): Promise<string> {
+export async function rejectExtraction(version: string, reason: string): Promise<string> {
   if (MOCK_API) {
-    updateMock((state) => {
-      const v = listOf(state, part).find((item) => item.name === name);
-      if (v) Object.assign(v, v.periods.length ? { status: "retired" } : { status: "new", proposedBy: null, reason: null });
-      state.proposal = null;
-    });
-    record("proposal_withdrawn", name);
-  } else {
-    await request(api.post(path(part, name, "withdraw")));
+    decide(version, (v) => Object.assign(v, { status: v.restore ? "retired" : "rejected", restore: false, decidedBy: me(), reason }));
+    record("model_rejected", `ext ${version}`, reason);
+    return mockDelay(version);
   }
-  return name;
-}
-
-// reason only for an admin's own change
-export async function applyExtraction(part: ExtractionPart, name: string, reason: string | null = null): Promise<string> {
-  if (MOCK_API) {
-    updateMock((state) => putInUse(state, part, name, reason));
-    record("model_promoted", name, reason);
-  } else {
-    await request(api.post(path(part, name, "promote"), { reason }));
-  }
-  return name;
-}
-
-export async function rejectExtraction(part: ExtractionPart, name: string, reason: string): Promise<string> {
-  if (MOCK_API) {
-    updateMock((state) => {
-      const v = listOf(state, part).find((item) => item.name === name);
-      const { login, name: who } = me();
-      if (v) Object.assign(v, { status: v.periods.length ? "retired" : "rejected", decidedBy: { login, name: who }, reason });
-      state.proposal = null;
-    });
-    record("model_rejected", name, reason);
-  } else {
-    await request(api.post(path(part, name, "reject"), { reason }));
-  }
-  return name;
+  await request(api.post(versionPath(version, "reject"), { reason }));
+  return version;
 }

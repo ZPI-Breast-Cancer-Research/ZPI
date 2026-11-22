@@ -22,10 +22,14 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
   const toast = useToast();
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
-  const canDelete = useCan()("addStudies");
+  const can = useCan();
+  const canDelete = can("addStudies");
+  // the backend lets the roles that add studies or propose models order the processing
+  const canProcess = can("addStudies") || can("proposeModels");
   const { user } = useAuth();
   // the first run is for anyone here; again: a researcher or an admin, a radiologist after a failure
   const processLabel = (report: UnassignedReport) => {
+    if (!canProcess) return null;
     if (report.reading === "uploaded") return t("studies.unassigned.process");
     const again = report.reading === "failed" || (report.reading === "read" && (user?.role === "researcher" || user?.role === "admin"));
     return again ? t("studies.unassigned.processAgain") : null;

@@ -7,7 +7,8 @@ import { formatDate, formatMetric, formatPercent } from "../format";
 import { t } from "../i18n";
 import { anyFieldLabel } from "../review/fields";
 import ChangeDialog from "./ChangeDialog";
-import { fetchExtractionGate, type ExtractionOverview, type ExtractionPart, type ExtractionProposal, type ExtractionVersion } from "./extraction";
+import DraftDialog from "./DraftDialog";
+import type { ExtractionOverview, ExtractionProposal, ExtractionVersion } from "./extraction";
 import FewShotDialog from "./FewShotDialog";
 import GateList from "./GateList";
 import ProposalActions from "./ProposalActions";
@@ -22,24 +23,34 @@ const STATUS_CLASS: Record<ExtractionVersion["status"], string> = {
   rejected: "status status--warning",
 };
 
-
 function periods(v: ExtractionVersion): string {
   if (!v.periods.length) return "—";
   return v.periods.map((p) => (p.to ? `${formatDate(p.from)} – ${formatDate(p.to)}` : `${t("models.since")} ${formatDate(p.from)}`)).join(", ");
 }
 
-function ProposalPanel({ data, proposal }: { data: ExtractionOverview; proposal: ExtractionProposal }) {
+const yesNo = (value: boolean) => t(value ? "models.ext.yes" : "models.ext.no");
+
+// "old → new", or the value and "bez zmian" when the proposal keeps it
+function change(current: string | undefined, next: string): string {
+  if (current === undefined) return next || "—";
+  return current === next ? `${next || "—"} (${t("models.ext.same")})` : `${current || "—"} → ${next || "—"}`;
+}
+
+function ProposalPanel({ proposal }: { proposal: ExtractionProposal }) {
   const actions = useExtractionActions();
   const mine = useAuth().user?.login === proposal.author.login;
   const [examples, setExamples] = useState(false);
-  const target = { part: proposal.part, name: proposal.name };
-  const fewShot = data.fewShots.find((v) => v.name === proposal.name);
-  const model = proposal.part === "model";
+  const { version: next, replaces } = proposal;
+  const target = { version: next.version };
 
   return (
     <Panel
-      title={t(model ? "models.ext.proposal.model" : "models.ext.proposal.fewShot", { v: proposal.name })}
-      aux={`${mine ? t("models.proposal.mine") : `${proposal.author.name} (${t(`role.${proposal.author.role}`)})`} · ${formatDate(proposal.at)}`}
+      title={
+        next.restore && replaces
+          ? t("models.proposal.restoreTitle", { v: next.version, old: replaces.version })
+          : t("models.ext.proposal", { v: next.version })
+      }
+      aux={[mine ? t("models.proposal.mine") : proposal.author.name, proposal.at && formatDate(proposal.at)].filter(Boolean).join(" · ")}
     >
       <div className="models__two">
         <div className="models__pad">
@@ -47,55 +58,46 @@ function ProposalPanel({ data, proposal }: { data: ExtractionOverview; proposal:
             <tbody>
               <tr>
                 <th>{t("models.ext.llm")}</th>
-                <td className="cell-right">{model ? `${proposal.replaces} → ${proposal.name}` : `${data.inUse?.model ?? "—"} (${t("models.ext.same")})`}</td>
+                <td className="cell-right">{change(replaces?.llmModel, next.llmModel)}</td>
+              </tr>
+              <tr>
+                <th>{t("models.ext.structured")}</th>
+                <td className="cell-right">{change(replaces ? yesNo(replaces.structuredOutput) : undefined, yesNo(next.structuredOutput))}</td>
               </tr>
               <tr>
                 <th>{t("models.ext.fewShot")}</th>
                 <td className="cell-right">
-                  {model ? `${data.inUse?.fewShot ?? "—"} (${t("models.ext.same")})` : `${proposal.replaces} → ${proposal.name}`}
-                  {!model && fewShot?.examples != null && (
-                    <>
-                      {" · "}
-                      <button type="button" className="link" onClick={() => setExamples(true)}>
-                        {t("models.ext.examples", { n: fewShot.examples })}
-                      </button>
-                    </>
-                  )}
+                  {replaces ? `${replaces.examples} → ${next.examples}` : next.examples}
+                  {" · "}
+                  <button type="button" className="link" onClick={() => setExamples(true)}>
+                    {t("models.ext.examples")}
+                  </button>
                 </td>
               </tr>
             </tbody>
           </table>
           <p className="models__label">{t("models.proposal.reason")}</p>
           <blockquote className="models__quote">{proposal.reason}</blockquote>
-          <GateList gate={proposal.gate} />
+          <GateList gate={null} />
         </div>
         <div className="models__pad">
-          {proposal.fields || proposal.f1 ? (
+          {next.f1 !== null || replaces?.f1 != null ? (
             <table className="kv">
               <thead>
                 <tr>
-                  <th>{data.testReports !== null ? t("models.ext.accuracyOn", { n: data.testReports }) : t("models.ext.accuracy")}</th>
+                  <th />
                   <th className="cell-right">
-                    {proposal.replaces} ({t("models.inUse.short")})
+                    {replaces?.version ?? "—"} ({t("models.inUse.short")})
                   </th>
-                  <th className="cell-right">{proposal.name}</th>
+                  <th className="cell-right">{next.version}</th>
                 </tr>
               </thead>
               <tbody>
-                {(proposal.fields ?? []).map((f) => (
-                  <tr key={f.field}>
-                    <th>{anyFieldLabel(f.field)}</th>
-                    <td className="cell-right">{formatPercent(f.current)}</td>
-                    <td className="cell-right cell-strong">{formatPercent(f.next)}</td>
-                  </tr>
-                ))}
-                {proposal.f1 && (
-                  <tr>
-                    <th>{t("models.ext.f1")}</th>
-                    <td className="cell-right">{formatMetric(proposal.f1.current)}</td>
-                    <td className="cell-right cell-strong">{formatMetric(proposal.f1.next)}</td>
-                  </tr>
-                )}
+                <tr>
+                  <th>{t("models.ext.f1")}</th>
+                  <td className="cell-right">{formatMetric(replaces?.f1 ?? null)}</td>
+                  <td className="cell-right cell-strong">{formatMetric(next.f1)}</td>
+                </tr>
               </tbody>
             </table>
           ) : (
@@ -104,15 +106,15 @@ function ProposalPanel({ data, proposal }: { data: ExtractionOverview; proposal:
         </div>
       </div>
       <ProposalActions
-        name={proposal.name}
-        approveLabel={t(model ? "models.ext.approveModel" : "models.ext.approveFewShot", { v: proposal.name })}
+        name={next.version}
+        approveLabel={t("models.ext.approve", { v: next.version })}
         mine={mine}
         pending={actions.apply.isPending || actions.reject.isPending || actions.withdraw.isPending}
         onApprove={() => actions.apply.mutate(target)}
         onReject={(reason) => actions.reject.mutate({ ...target, reason })}
         onWithdraw={() => actions.withdraw.mutate(target)}
       />
-      {examples && <FewShotDialog version={proposal.name} onClose={() => setExamples(false)} />}
+      {examples && <FewShotDialog version={next.version} onClose={() => setExamples(false)} />}
     </Panel>
   );
 }
@@ -126,7 +128,7 @@ function InUsePanel({ data }: { data: ExtractionOverview }) {
   ];
   return (
     <Panel
-      title={inUse.fewShot ? t("models.ext.inUse", { model: inUse.model ?? "—", v: inUse.fewShot }) : t("models.inUse.title", { v: inUse.model ?? "—" })}
+      title={inUse.model ? t("models.ext.inUse", { v: inUse.version, model: inUse.model }) : t("models.inUse.title", { v: inUse.version })}
       aux={[inUse.since && `${t("models.since")} ${formatDate(inUse.since)}`, inUse.approvedBy && `${t("models.approvedBy")} ${inUse.approvedBy.name}`]
         .filter(Boolean)
         .join(" · ")}
@@ -169,45 +171,55 @@ function InUsePanel({ data }: { data: ExtractionOverview }) {
   );
 }
 
-function ExtractionChange({ part, name, replaces, proposing, onClose }: { part: ExtractionPart; name: string; replaces: string; proposing: boolean; onClose: () => void }) {
+function ProposeDialog({ version, replaces, onClose }: { version: ExtractionVersion; replaces: string | null; onClose: () => void }) {
   const actions = useExtractionActions();
-  const key = part === "model" ? "model" : "fewShot";
+  const restore = version.status === "retired";
   return (
     <ChangeDialog
-      title={t(proposing ? `models.ext.dialog.propose.${key}` : `models.ext.dialog.change.${key}`, { v: name, old: replaces })}
-      proposing={proposing}
-      submitLabel={t(proposing ? "models.dialog.send" : "models.dialog.changeButton")}
-      gate={{ key: ["extraction", part, name], load: () => fetchExtractionGate(part, name) }}
-      pending={actions.propose.isPending || actions.apply.isPending}
-      error={actions.propose.error ?? actions.apply.error}
-      onSubmit={(reason, done) => (proposing ? actions.propose : actions.apply).mutate({ part, name, reason }, { onSuccess: done })}
+      title={
+        replaces
+          ? t(restore ? "models.dialog.proposeRestore" : "models.dialog.propose", { v: version.version, old: replaces })
+          : t("models.ext.dialog.propose", { v: version.version })
+      }
+      proposing
+      submitLabel={t("models.dialog.send")}
+      pending={actions.propose.isPending}
+      error={actions.propose.error}
+      onSubmit={(reason, done) => actions.propose.mutate({ version: version.version, reason }, { onSuccess: done })}
       onClose={onClose}
     />
   );
 }
 
-function Registry({ data, part }: { data: ExtractionOverview; part: ExtractionPart }) {
-  const can = useCan();
-  const manages = can("manageModels");
-  const proposes = can("proposeModels");
-  const [change, setChange] = useState<string | null>(null);
+function Registry({ data }: { data: ExtractionOverview }) {
+  const proposes = useCan()("proposeModels");
+  const actions = useExtractionActions();
+  const [proposing, setProposing] = useState<ExtractionVersion | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [examples, setExamples] = useState<string | null>(null);
-  const fewShot = part === "few_shot";
-  const versions = fewShot ? data.fewShots : data.models;
-  const current = fewShot ? data.inUse?.fewShot : data.inUse?.model;
   // one proposal at a time
-  const open = !data.proposal && !!current && proposes;
+  const open = !data.proposal && proposes;
 
   return (
-    <Panel title={t(fewShot ? "models.ext.fewShots" : "models.ext.models")}>
-      {versions.length === 0 ? (
+    <Panel
+      title={t("models.ext.versions")}
+      aux={
+        proposes ? (
+          <button type="button" className="btn btn--small" disabled={actions.create.isPending} onClick={() => actions.create.mutate()}>
+            {t("models.ext.new")}
+          </button>
+        ) : undefined
+      }
+    >
+      {data.versions.length === 0 ? (
         <EmptyState title={t("models.versions.empty")} />
       ) : (
         <table className="table">
           <thead>
             <tr>
-              <th>{t(fewShot ? "models.col.version" : "models.ext.col.model")}</th>
-              {fewShot && <th>{t("models.ext.col.examples")}</th>}
+              <th>{t("models.col.version")}</th>
+              <th>{t("models.ext.col.model")}</th>
+              <th>{t("models.ext.col.examples")}</th>
               <th>{t("models.col.status")}</th>
               <th>{t("models.col.inUse")}</th>
               <th className="cell-right">F1</th>
@@ -215,29 +227,35 @@ function Registry({ data, part }: { data: ExtractionOverview; part: ExtractionPa
             </tr>
           </thead>
           <tbody>
-            {versions.map((v) => (
-              <tr key={v.name}>
-                <td className="cell-strong">{v.name}</td>
-                {fewShot && (
-                  <td>
-                    {v.examples === null ? (
-                      "—"
-                    ) : (
-                      <button type="button" className="link" onClick={() => setExamples(v.name)}>
-                        {t("models.ext.show", { n: v.examples })}
-                      </button>
-                    )}
-                  </td>
-                )}
+            {data.versions.map((v) => (
+              <tr key={v.version}>
+                <td className="cell-strong">{v.version}</td>
+                <td>{v.llmModel || "—"}</td>
                 <td>
-                  <span className={STATUS_CLASS[v.status]}>{t(fewShot ? `models.status.${v.status}` : `models.ext.status.${v.status}`)}</span>
+                  <button type="button" className="link" onClick={() => setExamples(v.version)}>
+                    {t("models.ext.show", { n: v.examples })}
+                  </button>
+                </td>
+                <td>
+                  <span className={STATUS_CLASS[v.status]}>{t(`models.status.${v.status}`)}</span>
                 </td>
                 <td>{periods(v)}</td>
                 <td className="cell-right">{formatMetric(v.f1)}</td>
                 <td className="cell-right">
+                  {proposes && v.editable && (
+                    <button type="button" className="btn btn--small" onClick={() => setEditing(v.version)}>
+                      {t("models.ext.edit")}
+                    </button>
+                  )}
                   {open && (v.status === "new" || v.status === "retired") && (
-                    <button type="button" className={v.status === "new" ? "btn btn--small btn--primary" : "btn btn--small"} onClick={() => setChange(v.name)}>
-                      {t(manages ? "models.use" : "models.propose")}
+                    <button
+                      type="button"
+                      className={v.status === "new" ? "btn btn--small btn--primary" : "btn btn--small"}
+                      disabled={!v.llmModel}
+                      title={v.llmModel ? undefined : t("models.ext.needsModel")}
+                      onClick={() => setProposing(v)}
+                    >
+                      {t(v.status === "retired" ? "models.ext.restore" : "models.propose")}
                     </button>
                   )}
                 </td>
@@ -246,7 +264,8 @@ function Registry({ data, part }: { data: ExtractionOverview; part: ExtractionPa
           </tbody>
         </table>
       )}
-      {change && current && <ExtractionChange part={part} name={change} replaces={current} proposing={!manages} onClose={() => setChange(null)} />}
+      {proposing && <ProposeDialog version={proposing} replaces={data.inUse?.version ?? null} onClose={() => setProposing(null)} />}
+      {editing && <DraftDialog version={editing} onClose={() => setEditing(null)} />}
       {examples && <FewShotDialog version={examples} onClose={() => setExamples(null)} />}
     </Panel>
   );
@@ -255,7 +274,7 @@ function Registry({ data, part }: { data: ExtractionOverview; part: ExtractionPa
 export default function ExtractionView({ data }: { data: ExtractionOverview }) {
   return (
     <div className="models">
-      {data.proposal && <ProposalPanel data={data} proposal={data.proposal} />}
+      {data.proposal && <ProposalPanel proposal={data.proposal} />}
       {data.inUse ? (
         <InUsePanel data={data} />
       ) : (
@@ -263,10 +282,7 @@ export default function ExtractionView({ data }: { data: ExtractionOverview }) {
           <EmptyState title={t("models.inUse.none")} />
         </Panel>
       )}
-      <div className="models__two models__registries">
-        <Registry data={data} part="model" />
-        <Registry data={data} part="few_shot" />
-      </div>
+      <Registry data={data} />
       <p className="note">{t("models.ext.f1Note")}</p>
     </div>
   );
