@@ -5,14 +5,15 @@ import { errorText } from "../api";
 import Page from "../components/layout/Page";
 import { ErrorState, LoadingState } from "../components/State";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { fetchCase, fetchQueue } from "../review/api";
 import CaseReview from "../review/CaseReview";
 import "../review/review.css";
 
 export default function ReviewPage() {
   const { studyId } = useParams();
-  const queue = useQuery({ queryKey: ["review-queue"], queryFn: fetchQueue });
-  const current = useQuery({ queryKey: ["review-case", studyId], queryFn: () => fetchCase(studyId!), enabled: !!studyId });
+  const queue = useQuery({ queryKey: queryKeys.reviewQueue, queryFn: fetchQueue });
+  const current = useQuery({ queryKey: queryKeys.reviewCase(studyId), queryFn: () => fetchCase(studyId!), enabled: !!studyId });
 
   if (!studyId && queue.data) {
     const first = queue.data[0];

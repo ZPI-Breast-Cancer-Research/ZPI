@@ -5,9 +5,11 @@ import { ApiError, errorText } from "../api";
 import type { Role } from "../auth/api";
 import { useAuth } from "../auth/AuthProvider";
 import Panel from "../components/layout/Panel";
+import Select from "../components/Select";
 import { useToast } from "../components/Toast";
 import { formatDate } from "../format";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { createUser, fetchUsers, resetPassword, setBlocked, updateUser, type UserDraft, type UserRow, type UserState } from "./api";
 
 const ROLES: Role[] = ["radiologist", "researcher", "admin"];
@@ -66,8 +68,8 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
   const wrong = problems(draft);
   const set = (change: Partial<UserDraft>) => setDraft({ ...draft, ...change });
   const refresh = () => {
-    client.invalidateQueries({ queryKey: ["users"] });
-    client.invalidateQueries({ queryKey: ["audit"] });
+    client.invalidateQueries({ queryKey: queryKeys.users });
+    client.invalidateQueries({ queryKey: queryKeys.audit });
   };
   // the only admin keeps the role, or nobody could manage accounts
   const roleLocked = self && lastAdmin;
@@ -137,17 +139,20 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
           <span>{t("settings.email")}</span>
           <input className="input" type="email" value={draft.email} onChange={(e) => set({ email: e.target.value })} />
         </label>
-        <label className="field">
+        <div className="field">
           <span>{t("settings.role")}</span>
-          <select className="select" value={draft.role} disabled={roleLocked} onChange={(e) => set({ role: e.target.value as Role })}>
-            {ROLES.map((role) => (
-              <option key={role} value={role}>
-                {t(`role.${role}`)}
-              </option>
-            ))}
-          </select>
+          <Select
+            id="user-role"
+            className="field-select--form"
+            ariaLabel={t("settings.role")}
+            value={draft.role}
+            options={ROLES}
+            label={(role) => t(`role.${role as Role}`)}
+            disabled={roleLocked}
+            onChange={(role) => set({ role: role as Role })}
+          />
           {roleLocked && <span className="field__help">{t("users.lastAdmin")}</span>}
-        </label>
+        </div>
         {draft.role === "radiologist" && (
           <label className={field(wrong.pwz)}>
             <span>{t("settings.pwz")}</span>
@@ -192,7 +197,7 @@ function UserForm({ user, self, lastAdmin, onClose, onIssued }: FormProps) {
 // accounts are blocked, never deleted: their history stays in the audit log
 export default function UsersSection() {
   const me = useAuth().user?.login;
-  const { data } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
+  const { data } = useQuery({ queryKey: queryKeys.users, queryFn: fetchUsers });
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
   const [issued, setIssued] = useState<{ login: string; password: string } | null>(null);
   const admins = data?.filter((user) => user.role === "admin" && user.state !== "blocked").length ?? 0;

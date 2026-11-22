@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { errorText } from "../api";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import type { GateCheck } from "./api";
 import GateList from "./GateList";
 
@@ -21,7 +22,7 @@ interface Props {
 export default function ChangeDialog({ title, proposing, submitLabel, gate, pending, error, onSubmit, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
-  const checks = useQuery({ queryKey: ["models", "gate", ...gate.key], queryFn: gate.load });
+  const checks = useQuery({ queryKey: queryKeys.gate(gate.key), queryFn: gate.load });
 
   useEffect(() => {
     dialog.current?.showModal();
@@ -43,7 +44,13 @@ export default function ChangeDialog({ title, proposing, submitLabel, gate, pend
       >
         <div className="model-dialog__head">{title}</div>
         <div className="model-dialog__body">
-          {checks.isPending ? <p className="models__empty">{t("models.loading")}</p> : <GateList gate={checks.data ?? null} />}
+          {checks.isPending ? (
+            <p className="models__empty">{t("models.loading")}</p>
+          ) : checks.isError ? (
+            <p className="models__error">{t("models.gate.loadFailed", { why: errorText(checks.error) })}</p>
+          ) : (
+            <GateList gate={checks.data} />
+          )}
           <label className="models__label" htmlFor="change-reason">
             {t(proposing ? "models.dialog.reason" : "models.dialog.adminReason")}
           </label>

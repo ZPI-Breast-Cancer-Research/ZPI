@@ -81,6 +81,10 @@ export function handleApiError(error: unknown, fallbackUrl?: string): never {
     if (!error.response) {
       throw new ApiError(t("api.unreachable", { url: fallbackUrl || API_URL || window.location.origin }), "backend_unreachable");
     }
+    // the router's own 404 page, not an answer from a view: the endpoint isn't there yet
+    if (status === 404 && typeof error.response.data !== "object") {
+      throw new ApiError(t("api.notAvailable"), "unknown", status);
+    }
     throw new ApiError(t("api.http", { status: error.response.status }), "unknown", status);
   }
 
@@ -88,11 +92,11 @@ export function handleApiError(error: unknown, fallbackUrl?: string): never {
 }
 
 // a request whose errors always come out as ApiError
-export async function request<T>(sent: Promise<T>): Promise<T> {
+export async function request<T>(sent: Promise<T>, fallbackUrl?: string): Promise<T> {
   try {
     return await sent;
   } catch (error) {
-    handleApiError(error);
+    handleApiError(error, fallbackUrl);
   }
 }
 

@@ -4,6 +4,15 @@ import { afterAll, afterEach, beforeAll } from "vitest";
 
 import { server } from "./server";
 
+// jsdom has <dialog> without its methods
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  this.open = true;
+};
+HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+  this.open = false;
+  this.dispatchEvent(new Event("close"));
+};
+
 // a request the test didn't plan for fails the test, not just the request
 const unhandled: string[] = [];
 

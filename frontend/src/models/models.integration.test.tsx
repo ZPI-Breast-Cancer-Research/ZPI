@@ -93,9 +93,20 @@ describe("a proposed version", () => {
   });
 
   it("says why a decision didn't go through", async () => {
-    server.use(http.post(`/api/models/${proposal.version}/promote/`, () => HttpResponse.json({ detail: "Not found." }, { status: 404 })));
+    server.use(http.post(`/api/models/${proposal.version}/promote/`, () => HttpResponse.json({ detail: "Wersja jest już w użyciu." }, { status: 409 })));
     renderModels(admin, { withProposal: true });
     await userEvent.click(await screen.findByRole("button", { name: t("models.promote", { v: proposal.version }) }));
-    expect(await screen.findByRole("status")).toHaveTextContent(t("models.action.failed", { why: t("api.http", { status: 404 }) }));
+    expect(await screen.findByRole("status")).toHaveTextContent(t("models.action.failed", { why: "Wersja jest już w użyciu." }));
+  });
+});
+
+describe("an endpoint the backend doesn't have yet", () => {
+  it("says so instead of claiming the gate wasn't computed", async () => {
+    server.use(http.get("/api/models/:version/gate/", () => new HttpResponse("<!doctype html><title>Not Found</title>", { status: 404, headers: { "Content-Type": "text/html" } })));
+    renderModels(admin);
+    const [restore] = await screen.findAllByRole("button", { name: t("models.use") });
+    await userEvent.click(restore);
+    expect(await screen.findByText(t("models.gate.loadFailed", { why: t("api.notAvailable") }))).toBeInTheDocument();
+    expect(screen.queryByText(t("models.gate.pending"))).not.toBeInTheDocument();
   });
 });

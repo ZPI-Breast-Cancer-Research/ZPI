@@ -1,5 +1,4 @@
-import { api, handleApiError } from "../api";
-import { fetchPacsStatus } from "../api";
+import { api, fetchPacsStatus, request } from "../api";
 import { mockDelay, mockScenario, MOCK_API } from "../mock";
 
 export type Component = "orthanc" | "pacs" | "segmentation" | "extraction" | "training" | "llm" | "registry";
@@ -42,10 +41,6 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
     return mockDelay({ checkedAt: new Date().toISOString(), components, profile: "gpu1", retraining: true }, 300);
   }
 
-  try {
-    const { data } = await api.get<SystemStatus>("/api/health");
-    return data;
-  } catch (error) {
-    handleApiError(error);
-  }
+  const { data } = await request(api.get<SystemStatus>("/api/health"));
+  return data;
 }

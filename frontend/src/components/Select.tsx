@@ -15,11 +15,12 @@ interface Props {
   className?: string;
   // opened in place of a value that was just clicked
   startOpen?: boolean;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }
 
 // a list in the app's own look instead of the system one; arrows, Enter and Esc work as in a select
-export default function Select({ id, value, options, mark, placeholder = "—", ariaLabel, className, startOpen, onChange, label = (v) => v }: Props) {
+export default function Select({ id, value, options, mark, placeholder = "—", ariaLabel, className, startOpen, disabled, onChange, label = (v) => v }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -69,6 +70,7 @@ export default function Select({ id, value, options, mark, placeholder = "—", 
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
+        disabled={disabled}
         onClick={() => (open ? setOpen(false) : show())}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {

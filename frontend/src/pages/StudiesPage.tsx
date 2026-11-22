@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/State";
 import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { t, type MessageKey } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import AttachReport from "../studies/AttachReport";
 import DropZone from "../studies/DropZone";
 import { ImportTable, UnpairedReports } from "../studies/ImportReview";
@@ -41,8 +42,8 @@ export default function StudiesPage() {
     if (notice) toast(t(notice));
   }, [notice, toast]);
 
-  const studies = useQuery({ queryKey: ["studies"], queryFn: listStudies, retry: false });
-  const unassigned = useQuery({ queryKey: ["unassigned-reports"], queryFn: listUnassignedReports });
+  const studies = useQuery({ queryKey: queryKeys.studies, queryFn: listStudies, retry: false });
+  const unassigned = useQuery({ queryKey: queryKeys.unassignedReports, queryFn: listUnassignedReports });
 
   const selectedId = params.get("badanie");
   const selected = studies.data?.find((row) => row.id === selectedId) ?? null;
@@ -62,10 +63,10 @@ export default function StudiesPage() {
       const rest = new URLSearchParams(params);
       rest.delete("badanie");
       setParams(rest);
-      queryClient.invalidateQueries({ queryKey: ["studies"] });
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
-      queryClient.invalidateQueries({ queryKey: ["review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.studies });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
+      queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard });
     },
     onError: (error: Error) => toast(error.message || t("api.unknown")),
   });

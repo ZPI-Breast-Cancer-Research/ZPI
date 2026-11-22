@@ -10,13 +10,14 @@ import SegmentationView from "../models/SegmentationView";
 import { fetchSegmentation } from "../models/api";
 import { fetchExtraction } from "../models/extraction";
 import "../models/models.css";
+import { queryKeys } from "../queryKeys";
 
 export default function ModelsPage({ module }: { module: "segmentation" | "extraction" }) {
   const { search } = useLocation();
 
   // both always load, a tab says when a version waits for a decision
-  const segmentation = useQuery({ queryKey: ["models", "segmentation", search], queryFn: fetchSegmentation });
-  const extraction = useQuery({ queryKey: ["models", "extraction", search], queryFn: fetchExtraction });
+  const segmentation = useQuery({ queryKey: queryKeys.segmentation(search), queryFn: fetchSegmentation });
+  const extraction = useQuery({ queryKey: queryKeys.extraction(search), queryFn: fetchExtraction });
   const query = module === "segmentation" ? segmentation : extraction;
   const seg = segmentation.data;
   const ext = extraction.data;

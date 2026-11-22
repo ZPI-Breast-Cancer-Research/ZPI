@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { errorText } from "../api";
 import { useToast } from "../components/Toast";
 import { useAuth, useCan } from "../auth/AuthProvider";
 import { formatDate } from "../format";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { attachReport, deleteReport, processReport, type StudyRow, type UnassignedReport } from "./api";
 import ReportCard from "./ReportCard";
 
@@ -24,8 +26,8 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
   const { user } = useAuth();
   // the first run is for anyone here; again: a researcher or an admin, a radiologist after a failure
   const processLabel = (report: UnassignedReport) => {
-    if (report.status === "UPLOADED") return t("studies.unassigned.process");
-    const again = report.status === "FAILED" || (["COMPLETED", "REJECTED"].includes(report.status) && (user?.role === "researcher" || user?.role === "admin"));
+    if (report.reading === "uploaded") return t("studies.unassigned.process");
+    const again = report.reading === "failed" || (report.reading === "read" && (user?.role === "researcher" || user?.role === "admin"));
     return again ? t("studies.unassigned.processAgain") : null;
   };
 
@@ -37,9 +39,10 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     onSuccess: () => {
       toast(t("studies.attach.done"));
       setOpenId(null);
-      queryClient.invalidateQueries({ queryKey: ["studies"] });
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.studies });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
     },
+    onError: (error) => toast(t("studies.attach.failed", { why: errorText(error) })),
   });
 
   const remove = useMutation({
@@ -47,7 +50,7 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     onSuccess: (_, report) => {
       toast(t("studies.unassigned.delete.done", { name: report.fileName }));
       setOpenId(null);
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
     },
     onError: (error: Error) => toast(error.message || t("api.unknown")),
   });
@@ -55,7 +58,7 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
     mutationFn: (report: UnassignedReport) => processReport(report.id),
     onSuccess: () => {
       toast(t("studies.unassigned.process.done"));
-      queryClient.invalidateQueries({ queryKey: ["unassigned-reports"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unassignedReports });
     },
     onError: (error: Error) => toast(error.message || t("api.unknown")),
   });
@@ -96,7 +99,6 @@ export default function UnassignedReports({ reports, studies, selected }: Props)
                 {processLabel(report)}
               </button>
             )}
-            {report.status === "FAILED" && report.error && <p className="note">{report.error}</p>}
             {canDelete && (
               <button type="button" className="btn btn--small" disabled={remove.isPending} onClick={() => askDelete(report)}>
                 {t("studies.unassigned.delete")}

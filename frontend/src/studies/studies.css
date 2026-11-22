@@ -130,8 +130,7 @@
 }
 
 .pick__select {
-  width: auto;
-  height: 30px;
+  min-width: 180px;
   margin-left: auto;
 }
 
@@ -257,6 +256,10 @@
 .report-card__meta {
   color: var(--color-ink-faint);
   font-size: var(--text-sm);
+}
+
+.report-card__failed {
+  color: var(--color-warning);
 }
 
 .report-card__open {

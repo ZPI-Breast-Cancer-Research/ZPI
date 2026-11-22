@@ -8,6 +8,7 @@ import Panel from "../components/layout/Panel";
 import { useToast } from "../components/Toast";
 import { formatDate, formatDecimal, formatWhen } from "../format";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import ToolOptions, { RADIUS_MAX, RADIUS_MIN } from "../viewer/ToolOptions";
 import Viewer, { type MaskInfo } from "../viewer/Viewer";
 import Icon from "../viewer/icons";
@@ -192,7 +193,7 @@ export default function CaseReview({ data, queue }: Props) {
       () => {
         setFailed(null);
         done?.();
-        queryClient.invalidateQueries({ queryKey: ["studies"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.studies });
       },
       (error: unknown) => fail(error, () => save(send, done)),
     );
@@ -205,7 +206,7 @@ export default function CaseReview({ data, queue }: Props) {
       touch();
       setMaskApproved(corrected ? "corrected" : "confirmed");
       setTool((current) => (current === "pan" || current === "window" ? current : "pan"));
-      queryClient.invalidateQueries({ queryKey: ["studies"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.studies });
       // when the form is done too, the case is verified and that toast says it
       setFailed(null);
       if (openFields.length) toast(t("review.mask.approvedToast", { n: data.studyNumber }));
@@ -218,7 +219,7 @@ export default function CaseReview({ data, queue }: Props) {
       touch();
       setMaskApproved(null);
       setFailed(null);
-      queryClient.invalidateQueries({ queryKey: ["studies"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.studies });
     },
     onError: (error) => fail(error, () => unapproveMaskNow.mutate()),
   });

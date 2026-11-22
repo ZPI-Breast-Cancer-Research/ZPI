@@ -68,6 +68,21 @@ describe("adding a study", () => {
   });
 });
 
+describe("a report outside the study folders", () => {
+  it("is assigned to a study from the list", async () => {
+    backend();
+    renderScreen(<StudiesPage />, { route: "/badania", user: radiologist });
+    await screen.findByRole("table");
+    pickFolder([picked("badania/P0042/IM0001"), picked("badania/opis_luzem.txt")]);
+
+    await userEvent.click(await screen.findByRole("button", { name: t("studies.import.assignTo") }));
+    await userEvent.click(screen.getByRole("option", { name: "badania/P0042" }));
+
+    expect(screen.queryByRole("button", { name: t("studies.import.assignTo") })).not.toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /P0042/ })).toHaveTextContent("opis_luzem.txt");
+  });
+});
+
 describe("attaching a report", () => {
   it("pairs a study without a report with one already uploaded", async () => {
     const study = { ...studies[0], extraction_status: "missing" };
@@ -82,5 +97,21 @@ describe("attaching a report", () => {
 
     await waitFor(() => expect(sent[0]?.body).toEqual({ report_id: unassigned[1].id }));
     expect(await screen.findByRole("status")).toHaveTextContent(t("studies.attach.done"));
+  });
+
+  it("says why a report wasn't attached", async () => {
+    const study = { ...studies[0], extraction_status: "missing" };
+    backend([study]);
+    server.use(
+      http.post(`/api/studies/${study.orthanc_id}/attach-existing-report/`, () => HttpResponse.json({ detail: "Opis jest już przypisany." }, { status: 400 })),
+    );
+    const user = userEvent.setup();
+    renderScreen(<StudiesPage />, { route: "/badania?dzis=0", user: radiologist });
+
+    await user.click(await screen.findByRole("button", { name: t("studies.action.attach") }));
+    await user.click(screen.getByRole("button", { name: new RegExp(unassigned[1].fileName) }));
+    await user.click(screen.getByRole("button", { name: t("studies.attach.submit") }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(t("studies.attach.failed", { why: "Opis jest już przypisany." }));
   });
 });

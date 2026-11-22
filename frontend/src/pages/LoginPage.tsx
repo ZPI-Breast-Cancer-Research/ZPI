@@ -2,12 +2,13 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
-import { fetchPacsStatus } from "../api";
+import { canRetry, errorText, fetchPacsStatus } from "../api";
 import logo from "../assets/logo.png";
 import { setFirstPassword, signIn, AuthError, type User } from "../auth/api";
 import { useAuth } from "../auth/AuthProvider";
 import "../auth/login.css";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 
 const MIN_PASSWORD = 12;
 
@@ -98,7 +99,7 @@ function FirstLoginForm({ login, onCancel, onSignedIn }: { login: string; onCanc
       <form className="login__form" onSubmit={onSubmit} noValidate>
         {submit.error && (
           <p className="login__error" role="alert">
-            {t("login.unavailable")}
+            {canRetry(submit.error) ? t("login.unavailable") : errorText(submit.error)}
           </p>
         )}
         <label className="field">
@@ -159,7 +160,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [firstLogin, setFirstLogin] = useState<string | null>(null);
-  const { data: pacs = "unknown" } = useQuery({ queryKey: ["pacs-status"], queryFn: fetchPacsStatus });
+  const { data: pacs = "unknown" } = useQuery({ queryKey: queryKeys.pacsStatus, queryFn: fetchPacsStatus });
 
   const state = location.state as { from?: string; expired?: boolean } | null;
   const from = state?.from ?? "/pulpit";

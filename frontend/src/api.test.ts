@@ -45,6 +45,11 @@ describe("handleApiError", () => {
     });
   });
 
+  it("says the server doesn't have an endpoint when the router answers 404", () => {
+    expect(thrown(httpError(404, "<!doctype html><title>Not Found</title>"))).toMatchObject({ message: t("api.notAvailable"), status: 404 });
+    expect(thrown(httpError(404, { detail: "Nie znaleziono badania." }))).toMatchObject({ message: "Nie znaleziono badania.", status: 404 });
+  });
+
   it("falls back to the status code, then to a generic message", () => {
     expect(thrown(httpError(500))).toMatchObject({ message: t("api.http", { status: 500 }), kind: "unknown" });
     expect(thrown(new TypeError("x is undefined"))).toMatchObject({ message: t("api.unknown"), kind: "unknown" });

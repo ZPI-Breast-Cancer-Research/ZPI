@@ -49,12 +49,13 @@ export interface ApprovalPayload extends Partial<FormPayload> {
   edits: number;
 }
 
-const QUEUE: QueueEntry[] = [0.71, 0.66, 0.62, 0.58, 0.55].map((uncertainty, i) => ({
-  studyId: `s${i + 1}`,
-  studyNumber: String(i + 1).padStart(4, "0"),
-  studyDate: `2026-10-${String(26 - i).padStart(2, "0")}`,
-  uncertainty,
-}));
+const mockQueue = (): QueueEntry[] =>
+  [0.71, 0.66, 0.62, 0.58, 0.55].map((uncertainty, i) => ({
+    studyId: `s${i + 1}`,
+    studyNumber: String(i + 1).padStart(4, "0"),
+    studyDate: `2026-10-${String(26 - i).padStart(2, "0")}`,
+    uncertainty,
+  }));
 
 
 const approved = new Set<string>();
@@ -62,7 +63,7 @@ const masksApproved = new Map<string, "confirmed" | "corrected">();
 const formsApproved = new Set<string>();
 
 function label(studyId: string) {
-  return `#${QUEUE.find((entry) => entry.studyId === studyId)?.studyNumber ?? studyId}`;
+  return `#${mockQueue().find((entry) => entry.studyId === studyId)?.studyNumber ?? studyId}`;
 }
 
 export function reviewProgress(studyId: string) {
@@ -75,7 +76,7 @@ export function reviewProgress(studyId: string) {
 // least certain first, the order verification follows
 export async function fetchQueue(): Promise<QueueEntry[]> {
   if (MOCK_API) {
-    return mockDelay(QUEUE.filter((entry) => !approved.has(entry.studyId)).sort((a, b) => (b.uncertainty ?? 0) - (a.uncertainty ?? 0)));
+    return mockDelay(mockQueue().filter((entry) => !approved.has(entry.studyId)).sort((a, b) => (b.uncertainty ?? 0) - (a.uncertainty ?? 0)));
   }
   const { data } = await request(api.get<QueueEntry[]>("/api/review/queue/"));
   return data;
@@ -83,8 +84,9 @@ export async function fetchQueue(): Promise<QueueEntry[]> {
 
 export async function fetchCase(studyId: string): Promise<ReviewCase> {
   if (MOCK_API) {
-    const index = Math.max(0, QUEUE.findIndex((q) => q.studyId === studyId));
-    const entry = QUEUE[index];
+    const queue = mockQueue();
+    const index = Math.max(0, queue.findIndex((q) => q.studyId === studyId));
+    const entry = queue[index];
     const studyUid = await mockStudyUid(index);
     const noReport = studyId === "s5";
     return mockDelay({
@@ -121,8 +123,6 @@ export async function approveCase(studyId: string, payload: ApprovalPayload): Pr
     return mockDelay(undefined, 400);
   }
   await request(api.post(`/api/review/cases/${studyId}/approve/`, payload));
-  record("mask_approved", `#${studyId}`);
-  record("form_approved", `#${studyId}`);
 }
 
 // the mask on its own; the case stays in the queue for its form
@@ -133,7 +133,6 @@ export async function approveMask(studyId: string, payload: Pick<ApprovalPayload
     return mockDelay(undefined, 300);
   }
   await request(api.post(`/api/review/cases/${studyId}/approve-mask/`, payload));
-  record("mask_approved", `#${studyId}`);
 }
 
 // back in the queue when its mask approval is taken back
@@ -152,7 +151,6 @@ export async function unapproveMask(studyId: string): Promise<void> {
     return mockDelay(undefined, 200);
   }
   await request(api.post(`/api/review/cases/${studyId}/unapprove-mask/`));
-  record("mask_unapproved", `#${studyId}`);
 }
 
 // called when every field is confirmed or corrected; the form needs no button of its own
@@ -163,7 +161,6 @@ export async function approveForm(studyId: string, payload: FormPayload): Promis
     return mockDelay(undefined, 200);
   }
   await request(api.post(`/api/review/cases/${studyId}/approve-form/`, payload));
-  record("form_approved", `#${studyId}`);
 }
 
 export async function unapproveForm(studyId: string): Promise<void> {
@@ -173,5 +170,4 @@ export async function unapproveForm(studyId: string): Promise<void> {
     return mockDelay(undefined, 200);
   }
   await request(api.post(`/api/review/cases/${studyId}/unapprove-form/`));
-  record("form_unapproved", `#${studyId}`);
 }

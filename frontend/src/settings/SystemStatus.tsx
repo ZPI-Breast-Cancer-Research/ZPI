@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import Panel from "../components/layout/Panel";
 import { t } from "../i18n";
+import { queryKeys } from "../queryKeys";
 import { fetchSystemStatus, type ComponentStatus } from "./status";
 
 const STATE_CLASS = {
@@ -21,7 +22,7 @@ function stateText({ state, since }: ComponentStatus) {
 
 // read only; checked every minute so a stuck stage shows well within the 5 minutes of Q3
 export default function SystemStatus() {
-  const { data, refetch, isFetching } = useQuery({ queryKey: ["system-status"], queryFn: fetchSystemStatus, refetchInterval: 60_000 });
+  const { data, refetch, isFetching } = useQuery({ queryKey: queryKeys.systemStatus, queryFn: fetchSystemStatus, refetchInterval: 60_000 });
 
   return (
     <Panel
