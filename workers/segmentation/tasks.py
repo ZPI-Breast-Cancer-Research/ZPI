@@ -5,6 +5,7 @@ from pathlib import Path
 
 import nibabel as nib
 import numpy as np
+import pydicom
 from common.errors import StorageError
 from common.storage import BUCKET_MASKS, delete_object, download_file, upload_file
 from config.celery import app
@@ -13,12 +14,14 @@ from mlops.models import ModelVersion
 from patients.errors import OrthancUnauthorized, OrthancUnavailable, StudyNotFound
 from patients.models import Study
 from patients.orthanc_client import OrthancClient
+from pydicom.errors import InvalidDicomError
 from segmentation.models import SegmentationResult, StatusChoices
 
 from workers.segmentation.channels import CHANNELS
 from workers.segmentation.conversion import (
     Algorithm,
     Status,
+    convert_dicom_seg_to_nifti,
     convert_nifti_to_dicom_seg,
     convert_study,
 )
@@ -291,3 +294,79 @@ def correction_to_dicom_seg(
     except Exception:
         logger.exception("Unexpected error during DICOM SEG conversion of %s", mask_key)
         raise
+
+
+def _corrected_key(study: Study) -> str:
+    # One corrected mask per study, so a repeated run overwrites it instead of adding a file.
+    return f"{study.id}/study_{study.id}_corrected.nii.gz"
+
+
+def _series_file(study_dir: Path, series_uid: str) -> Path:
+    """The file of a single-instance series (a SEG) among the downloaded study."""
+    for path in sorted(study_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            dataset = pydicom.dcmread(path, stop_before_pixels=True)
+        except InvalidDicomError:
+            continue
+        if dataset.get("SeriesInstanceUID") == series_uid:
+            return path
+    raise FileNotFoundError(f"Series {series_uid} is not in the study downloaded from Orthanc")
+
+
+@app.task(name="segmentation.correction_from_dicom_seg", queue="segmentation-convert")
+def correction_from_dicom_seg(result_id: int) -> None:
+    """Turn the radiologist's corrected mask into the model's format (CPU queue, ADR 0004).
+
+    The SEG drawn in the viewer is already in Orthanc (``approved_seg_series_uid``); it becomes a
+    NIfTI on the grid of the model's mask in the masks bucket (``accepted_path``), and the
+    measurements are taken from it. The status stays CORRECTED; a failure is kept in ``error``.
+    """
+    result = SegmentationResult.objects.select_related("study").filter(pk=result_id).first()
+    if result is None:
+        logger.warning("correction_from_dicom_seg: result %s does not exist, skipped", result_id)
+        return
+    seg_uid = result.approved_seg_series_uid
+    if result.status != StatusChoices.CORRECTED or not seg_uid:
+        logger.info(
+            "correction_from_dicom_seg: result %s is %s without a corrected SEG, skipped",
+            result_id,
+            result.status,
+        )
+        return
+    study = result.study
+
+    try:
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            dicom_dir, nifti_path = root / "dicom", root / "corrected.nii.gz"
+            OrthancClient().download_study(study.orthanc_path, dicom_dir)
+            convert_dicom_seg_to_nifti(_series_file(dicom_dir, seg_uid), dicom_dir, nifti_path)
+            measurements = measure_file(nifti_path)
+            key = _corrected_key(study)
+            upload_file(nifti_path, BUCKET_MASKS, key)
+    except Exception as exc:
+        _correction_failed(result_id, seg_uid, f"{type(exc).__name__}: {exc}")
+        logger.exception("correction_from_dicom_seg failed for result %s", result_id)
+        raise
+
+    with transaction.atomic():
+        current = SegmentationResult.objects.select_for_update().filter(pk=result_id).first()
+        # reopened or corrected again meanwhile: this conversion is no longer the one wanted
+        if current is None or current.approved_seg_series_uid != seg_uid:
+            logger.info(
+                "correction_from_dicom_seg: result %s changed meanwhile, not saved", result_id
+            )
+            return
+        current.accepted_path = key
+        current.measurements = measurements
+        current.error = ""
+        current.save(update_fields=["accepted_path", "measurements", "error", "updated_at"])
+    logger.info("correction_from_dicom_seg: result %s stored as %s", result_id, key)
+
+
+def _correction_failed(result_id: int, seg_uid: str, reason: str) -> None:
+    SegmentationResult.objects.filter(pk=result_id, approved_seg_series_uid=seg_uid).update(
+        error=reason
+    )
