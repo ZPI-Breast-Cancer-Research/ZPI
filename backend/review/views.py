@@ -316,10 +316,10 @@ def _result_shape(extraction, *, outcome, data, error, source) -> dict:
             "ocr_mean_confidence": extraction.ocr_confidence,
             "orientation_detector": ocr_settings.get("orientation"),
             "page_rotations": extraction.page_rotations or [],
-            # the LLM and the prompt belong to the extraction version (#118)
+            # the LLM and the prompt belong to the extraction version the report was run with
             "llm_provider": "",
-            "llm_model": model.name if model else "",
-            "prompt_version": "",
+            "llm_model": model.llm_model if model else "",
+            "prompt_version": model.prompt_version if model else "",
             "schema_version": extraction.schema_version or "",
         },
         "attempts": extraction.attempts or 0,

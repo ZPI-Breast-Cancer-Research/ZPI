@@ -89,10 +89,10 @@ radiologist. A report has one result; processing it again overwrites the result 
 | `id` | integer (PK) | |
 | `study_id` | integer (FK → `studies`), nullable | Empty for a report without a study. Set to empty when the study is deleted. |
 | `report_path` | varchar, nullable | Key of the file in the MinIO `reports` bucket. Empty for a manual report. |
-| `source` | varchar | `scan` (image or PDF, read by OCR), `text` (.txt, no OCR), `manual` (form filled in by the radiologist, no file). Set by the backend. |
+| `source` | varchar | `scan` (image: .jpg, .jpeg, .png, read by OCR), `text` (.txt, no OCR), `manual` (form filled in by the radiologist, no file). Set by the backend. |
 | `assigned_at` | datetime | When the report was assigned to its study. The active report of a study is the one assigned last. |
 | `status` | varchar | `UPLOADED` → `PENDING` → `PROCESSING` → `COMPLETED` or `FAILED`; after review `APPROVED`, `CORRECTED` or `REJECTED`. |
-| `failed_step` | varchar | `ocr` or `llm`: the step that failed. |
+| `failed_step` | varchar | `ocr` or `llm`: the step that failed. Empty when the run failed before OCR (download, a version the worker cannot run). |
 | `error` | text | Why the processing failed; never contains report text. |
 | `ocr_model_id` | integer (FK → `module_version`, module `ocr`) | Empty for `text` and `manual`. |
 | `ocr_text` | text | The normalised report text that was sent to the LLM. |
@@ -143,7 +143,7 @@ The mask of a study. A study has at most one.
 ### `module_version`
 
 A version of one processing module. Three kinds of version share the table; the columns of the
-other kinds stay empty. A version can be edited only in status `new`; once proposed it does not change.
+other kinds stay empty. A version can be edited only in status `new`; once proposed it does not change. An `ext` version goes `new` → `candidate` (proposed) → `production` or `rejected`; a proposal brings back an `archived` version with `restore`. One proposal per module waits at a time.
 
 | Column | Type | Module | Description |
 | :--- | :--- | :--- | :--- |
@@ -159,7 +159,7 @@ other kinds stay empty. A version can be edited only in status `new`; once propo
 | `decided_by_id` | integer (FK → `users_user`) | all | Who promoted or rejected the version. |
 | `ocr_engine` | varchar | `ocr` | |
 | `ocr_settings` | json | `ocr` | `{"lang", "orientation", "unwarp", "detect_orientation"}`. |
-| `llm_model` | varchar | `ext` | |
+| `llm_model` | varchar | `ext` | Model id on the LLM server; required to propose a version. |
 | `prompt_version` | varchar | `ext` | |
 | `structured_output` | boolean | `ext` | Whether the LLM is forced to answer in the form schema. |
 | `few_shot_examples` | json | `ext` | List of `{report, output, report_id?}`; the whole set is one value, as it goes into the prompt. `report_id` marks an example taken from a verified report, which the evaluation of the version leaves out. |

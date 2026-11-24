@@ -236,3 +236,162 @@ def test_an_unreachable_llm_server_is_503(client_as, settings):
 
     assert response.status_code == 503
     assert response.data["code"] == "llm_unavailable"
+
+
+# ---------------------------------------------------------------- what may be stored
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("version", ["a/b", "x" * 51, "  "])
+def test_a_version_number_that_cannot_be_used_is_refused(client_as, in_use, version):
+    response = client_as("researcher").post(
+        reverse("extraction-version-create"), {"version": version}
+    )
+
+    assert response.status_code == 400
+    assert not ModelVersion.objects.filter(module="ext", version=version).exists()
+
+
+@pytest.mark.django_db
+def test_a_draft_cannot_drop_its_language_model(client_as, in_use):
+    client = client_as("researcher")
+    client.post(reverse("extraction-version-create"))
+
+    response = client.patch(_detail("2"), {"llm_model": " "}, format="json")
+
+    assert response.status_code == 400
+    assert ModelVersion.objects.get(module="ext", version="2").llm_model == "bielik"
+
+
+@pytest.mark.django_db
+def test_an_example_of_blank_lines_has_an_empty_title(client_as, in_use):
+    in_use.few_shot_examples = [{"report": "\n \n", "output": {}}]
+    in_use.save()
+
+    response = client_as("researcher").get(reverse("extraction-few-shot", kwargs={"version": "1"}))
+
+    assert response.status_code == 200
+    assert response.data[0]["title"] == ""
+
+
+# ---------------------------------------------------------------- decisions
+
+
+def _act(client, version, action, **data):
+    return client.post(
+        reverse(f"extraction-version-{action}", kwargs={"version": version}), data, format="json"
+    )
+
+
+@pytest.fixture
+def researcher(client_as):
+    return client_as("researcher")
+
+
+@pytest.fixture
+def admin(client_as):
+    return client_as("admin")
+
+
+@pytest.fixture
+def draft(researcher, in_use):
+    researcher.post(reverse("extraction-version-create"))
+    return ModelVersion.objects.get(module="ext", version="2")
+
+
+@pytest.mark.django_db
+def test_a_proposed_draft_put_in_use_retires_the_previous_version(researcher, admin, in_use, draft):
+    # Act
+    proposed = _act(researcher, "2", "propose", reason="Lepszy BI-RADS")
+    promoted = _act(admin, "2", "promote")
+
+    # Assert
+    assert (proposed.status_code, proposed.data["status"]) == (200, "candidate")
+    assert proposed.data["proposedBy"]["login"] == "researcher"
+    assert proposed.data["editable"] is False
+    assert (promoted.status_code, promoted.data["status"]) == (200, "production")
+    in_use.refresh_from_db()
+    assert in_use.status == "archived"
+    assert draft.periods.filter(ended_at__isnull=True).exists()
+    assert not in_use.periods.filter(ended_at__isnull=True).exists()
+    kinds = set(AuditLog.objects.values_list("kind", flat=True))
+    assert {"model_proposed", "model_promoted"} <= kinds
+
+
+@pytest.mark.django_db
+def test_a_proposal_needs_a_reason_and_a_language_model(researcher, admin, in_use, draft):
+    draft.llm_model = ""
+    draft.save()
+    client = researcher
+
+    without_reason = _act(client, "2", "propose")
+    without_model = _act(client, "2", "propose", reason="test")
+
+    assert without_reason.status_code == 400
+    assert without_model.status_code == 400
+    draft.refresh_from_db()
+    assert draft.status == "new"
+
+
+@pytest.mark.django_db
+def test_only_one_proposal_waits_at_a_time(researcher, admin, in_use, draft):
+    client = researcher
+    _act(client, "2", "propose", reason="pierwsza")
+    client.post(reverse("extraction-version-create"))
+
+    response = _act(client, "3", "propose", reason="druga")
+
+    assert (response.status_code, response.data["code"]) == (409, "proposal_pending")
+
+
+@pytest.mark.django_db
+def test_a_withdrawn_proposal_is_a_draft_again(researcher, admin, in_use, draft):
+    client = researcher
+    _act(client, "2", "propose", reason="test")
+
+    response = _act(client, "2", "withdraw")
+
+    assert (response.status_code, response.data["status"]) == (200, "new")
+    assert response.data["proposedBy"] is None
+    assert (
+        client.patch(_detail("2"), {"structured_output": False}, format="json").status_code == 200
+    )
+
+
+@pytest.mark.django_db
+def test_a_rejected_restore_leaves_the_version_archived(researcher, admin, in_use, draft):
+    # Arrange: version 1 is archived after version 2 was put in use
+    _act(researcher, "2", "propose", reason="test")
+    _act(admin, "2", "promote")
+
+    # Act
+    restore = _act(researcher, "1", "propose", reason="powrót")
+    rejected = _act(admin, "1", "reject", reason="nie teraz")
+
+    # Assert
+    assert restore.data["restore"] is True
+    assert (rejected.status_code, rejected.data["status"]) == (200, "archived")
+
+
+@pytest.mark.django_db
+def test_a_researcher_cannot_decide_and_a_draft_cannot_be_promoted(
+    researcher, admin, in_use, draft
+):
+    by_researcher = _act(researcher, "2", "promote")
+    not_proposed = _act(admin, "2", "promote")
+
+    assert by_researcher.status_code == 403
+    assert (not_proposed.status_code, not_proposed.data["code"]) == (409, "wrong_status")
+
+
+@pytest.mark.django_db
+def test_the_overview_lists_who_proposed_a_version(researcher, admin, in_use, draft):
+    _act(researcher, "2", "propose", reason="Lepszy BI-RADS")
+
+    response = researcher.get(reverse("extraction-overview"))
+
+    proposed = next(v for v in response.data["models"] if v["version"] == "2")
+    assert proposed["status"] == "candidate"
+    assert proposed["proposedBy"]["login"] == "researcher"
+    assert proposed["reason"] == "Lepszy BI-RADS"
+    assert response.data["llmModel"] == "bielik"

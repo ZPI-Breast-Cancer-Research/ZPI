@@ -64,7 +64,8 @@ python -m workers.extraction extract opis.txt              # LLM only, from a te
 `run` prints one JSON per document to stdout (or `--out`, one line each) and a summary to stderr,
 e.g. `ok – 1 lesions, 2 lymph nodes, LLM 34s, OCR 66s, 2 warnings`. Check `warnings` first: they point
 at fields that do not follow from the report. `provenance` says which model, prompt and rotation
-produced the result.
+produced the result (the CLI output; the backend keeps these in columns of the report row and
+in the versions it points at).
 
 Input: a single file, or a directory where every `.jpg`/`.png`/`.txt` file is one document and
 every subdirectory is one multi-page document (pages = images sorted by name). A failed document
@@ -234,6 +235,12 @@ Environment variables; the CLI flags `--ocr`, `--orientation`, `--base-url`, `--
 | `LLM_STRUCTURED_OUTPUT` | `true` | the server constrains output to the JSON Schema |
 | `EXTRACTION_FEW_SHOT` | `1` | few-shot examples per request |
 
+The Celery worker takes the LLM model, structured output and the few-shot examples from the
+extraction version in use (`module_version`, module `ext`) and the OCR engine and its settings
+from the OCR version in use; the variables above decide only for the CLI and for a database
+without versions. A version with another `prompt_version` than `PROMPT_VERSION` fails the
+report instead of running with the wrong prompt.
+
 ## Swapping components
 
 - **Another model:** load it on the server and pass `--model`.
@@ -254,7 +261,9 @@ Environment variables; the CLI flags `--ocr`, `--orientation`, `--base-url`, `--
   not a usable orientation signal: PaddleOCR reads rotated text with full confidence.
 
 Every result stores what produced it (`provenance`: OCR engine + version, OCR confidence,
-orientation detector and per-page rotation, LLM model, prompt version, schema version), so runs with different components can be compared.
+orientation detector and per-page rotation, LLM model, prompt version, schema version), so runs with different components can be compared. In the backend there is no `provenance` column: the
+per-run values are columns of the report row, the rest comes from the `ocr` and `ext` versions
+the row points at (`docs/database.md`).
 
 ## Layout
 
@@ -275,7 +284,7 @@ orientation detector and per-page rotation, LLM model, prompt version, schema ve
 | `evaluation/` | scoring predictions against gold files (`eval`): `scoring.py` `evaluate` – which documents are scored (skipped, few-shot leak) and run-level data; `comparison.py` `Comparison` of one document – entity matching, per-field comparison; `scores.py` counters and metrics of one field (`FieldScore`), entity type (`EntityScore`) or OCR text (`OCRScore`: character error rate against the transcripts); `report.py` `Report` – all scores of a run, summary, JSON export; `loading.py` gold, transcript and prediction files; `formatting.py` text tables of a report and of the experiment history; `tracking.py` experiment history – records with configuration fingerprints and scores, journal (`experiment`, `experiments`) |
 | `experiments/` | experiment records (`runs/`) and journal `EXPERIMENTS.md` |
 | `__main__.py` | CLI |
-| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path): sets the backend `ExtractionResult` row to PROCESSING with the production model version, runs the pipeline and saves the whole result in `result` (with the OCR text, for the frontend), `generated_report` (the `EkstrakcjaBadania` JSON, for the review form), `warnings`, `provenance` and `uncertainty` (the column the review queue sorts by; 1.0 when the task itself fails) with status COMPLETED, or the reason with FAILED. Rows a doctor already reviewed are never overwritten |
+| `tasks.py` | Celery task `extraction.run` (worker entry point, needs `backend/` on the path): sets the backend report row (`reports`) to PROCESSING and pins the `ocr` and `ext` versions in use, runs the pipeline set up the way those versions say, and saves the result in the columns of its step: OCR (`ocr_text`, `ocr_confidence`, `ocr_seconds`, `ocr_engine_version`, `page_rotations`), then LLM (`generated_report` – the `EkstrakcjaBadania` JSON for the review form, `warnings`, `llm_seconds`, `attempts`, `schema_version`) and `uncertainty` (the column the review queue sorts by; 1.0 when the task itself fails) with status COMPLETED, or the reason and `failed_step` with FAILED. Rows a doctor already reviewed are never overwritten |
 
 Changing `structuring/prompts/` or `structuring/prompting.py`: bump `PROMPT_VERSION`. Changing `schema.py`: bump
 `SCHEMA_VERSION` and update `structuring/prompts/few_shot/` (examples are validated against the schema at

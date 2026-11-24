@@ -30,6 +30,12 @@ def is_closed(study) -> bool:
     return report is not None and report.status in VERIFIED
 
 
+def has_verified_report(study) -> bool:
+    """The active report form of the study is verified: a new report would replace it."""
+    report = ExtractionResult.objects.filter(study=study).active()
+    return report is not None and report.status in VERIFIED
+
+
 def may_process(role: str | None, report: ExtractionResult) -> bool:
     """Whether the role may order this report to be processed (first time or again)."""
     if report.status == StatusChoices.UPLOADED:
@@ -50,6 +56,8 @@ def start_processing(report: ExtractionResult, user) -> None:
 
     report.status = StatusChoices.PENDING
     report.requested_by = user
+    # the worker pins the versions in use when it starts the run
+    report.model = None
     report.error = ""
     report.failed_step = ""
     report.ocr_model = None

@@ -6,7 +6,7 @@ import dataclasses
 import json
 import logging
 import tempfile
-from functools import cache
+from functools import lru_cache
 from pathlib import Path
 
 from common.storage import BUCKET_REPORTS, download_file
@@ -67,9 +67,11 @@ def _extractor(ocr: ModelVersion | None, ext: ModelVersion | None = None) -> Ext
     return _cached_extractor(*ocr_key, ext_key)
 
 
-@cache
+# Only the configuration in use: loading the OCR models takes a while, so the extractor is kept
+# between tasks, but a new version in use frees the previous one and its models (they would
+# pile up in the memory of a long-running worker otherwise).
+@lru_cache(maxsize=1)
 def _cached_extractor(engine: str, settings_json: str, ext_json: str = "") -> Extractor:
-    # One per configuration and worker process: loading the OCR models takes a while.
     settings = Settings.from_env()
     ocr_settings = json.loads(settings_json)
     if engine:

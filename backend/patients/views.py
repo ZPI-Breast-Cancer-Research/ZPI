@@ -17,7 +17,14 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from extraction.models import ExtractionResult, SourceChoices
 from extraction.models import StatusChoices as ExtractionStatus
-from extraction.processing import BUSY, VERIFIED, is_closed, may_process, start_processing
+from extraction.processing import (
+    BUSY,
+    VERIFIED,
+    has_verified_report,
+    is_closed,
+    may_process,
+    start_processing,
+)
 from pydicom.errors import InvalidDicomError
 from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
@@ -229,6 +236,21 @@ def _store_report(report_file, study, user) -> ExtractionResult:
     return extraction
 
 
+def _new_report_refused(study) -> Response | None:
+    """409 when the study takes no new report: it is closed, or its active form is verified."""
+    if is_closed(study):
+        return _closed_response()
+    if has_verified_report(study):
+        return Response(
+            {
+                "code": "verified",
+                "detail": "Opis badania jest zweryfikowany; najpierw cofnij weryfikację.",
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return None
+
+
 def _closed_response() -> Response:
     return Response(
         {
@@ -383,8 +405,8 @@ def attach_report_to_study(request, orthanc_id):
         return Response({"detail": "No report file provided."}, status=status.HTTP_400_BAD_REQUEST)
     if error := _check_report_file(report_file):
         return error
-    if is_closed(study):
-        return _closed_response()
+    if refused := _new_report_refused(study):
+        return refused
 
     with transaction.atomic():
         _store_report(report_file, study, request.user)
@@ -409,8 +431,8 @@ def attach_existing_report(request, orthanc_id):
     if not report_id:
         return Response({"detail": "No report_id provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if is_closed(study):
-        return _closed_response()
+    if refused := _new_report_refused(study):
+        return refused
 
     with transaction.atomic():
         report = (

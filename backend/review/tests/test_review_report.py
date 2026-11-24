@@ -167,3 +167,25 @@ def test_approved_form_reaches_the_overview(authenticated_client, study):
     assert report["accepted"] == form["report"]
     # the model's answer stays next to the accepted form
     assert report["source"]["result"]["data"] == DATA
+
+
+@pytest.mark.django_db
+def test_case_detail_names_the_llm_and_prompt_of_the_extraction_version(
+    authenticated_client, study
+):
+    # Arrange
+    version = ModelVersion.objects.create(
+        module="ext",
+        name="extraction",
+        version="42",
+        llm_model="bielik-4.5b",
+        prompt_version="v6",
+    )
+    _read_scan(study, status=StatusChoices.COMPLETED, model=version)
+
+    # Act
+    response = _get(authenticated_client, study, "review-case-detail")
+
+    # Assert
+    provenance = response.data["report"]["result"]["provenance"]
+    assert (provenance["llm_model"], provenance["prompt_version"]) == ("bielik-4.5b", "v6")

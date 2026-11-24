@@ -10,6 +10,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 from extraction.models import ExtractionResult, SourceChoices, StatusChoices
+from mlops.models import ModelVersion
 from patients.models import Study
 from segmentation.models import SegmentationResult
 
@@ -263,3 +264,42 @@ def test_the_study_list_says_which_study_is_closed(orthanc_studies, authenticate
 
     closed = {row["orthanc_id"]: row["closed"] for row in response.data}
     assert closed == {study.orthanc_path: True, open_study.orthanc_path: False}
+
+
+@pytest.mark.django_db
+def test_a_verified_report_is_not_replaced_by_a_new_one(authenticated_client, study, send_task):
+    # Arrange: the form is verified, the mask is not: the study is open but its report is done
+    verified = _uploaded(study=study, status=StatusChoices.APPROVED, assigned_at=timezone.now())
+    waiting = _uploaded()
+
+    # Act
+    uploaded = authenticated_client.post(
+        f"/api/studies/{study.orthanc_path}/attach-report/",
+        {"report": SimpleUploadedFile("opis.txt", b"opis")},
+        format="multipart",
+    )
+    assigned = authenticated_client.post(
+        f"/api/studies/{study.orthanc_path}/attach-existing-report/",
+        {"report_id": waiting.id},
+        format="json",
+    )
+
+    # Assert
+    assert (uploaded.status_code, uploaded.data["code"]) == (409, "verified")
+    assert (assigned.status_code, assigned.data["code"]) == (409, "verified")
+    assert ExtractionResult.objects.filter(study=study).active() == verified
+    send_task.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_processing_again_unpins_the_previous_extraction_version(admin_client, send_task):
+    # Arrange
+    version = ModelVersion.objects.create(module="ext", name="extraction", version="77")
+    report = _uploaded(status=StatusChoices.COMPLETED, model=version)
+
+    # Act
+    _process(admin_client, report)
+
+    # Assert: the worker pins the version in use when it starts
+    report.refresh_from_db()
+    assert report.model is None
