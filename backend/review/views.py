@@ -16,6 +16,8 @@ from patients.orthanc_client import OrthancClient
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from segmentation.approval import approve_mask as approve_segmentation_mask
+from segmentation.approval import approve_mask_in_case, reopen_mask
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
 
@@ -402,20 +404,6 @@ def _mask_detail(mask_choice) -> str:
     return "corrected" if mask_choice == "corrected" else "no changes"
 
 
-def _approve_mask(segmentation, new_status, user) -> bool:
-    """Approve the model mask if it waits for review; True when it changed."""
-    if not segmentation or segmentation.status not in [
-        StatusChoices.COMPLETED,
-        StatusChoices.REJECTED,
-    ]:
-        return False
-    segmentation.status = new_status
-    segmentation.accepted_by = user
-    segmentation.accepted_at = timezone.now().date()
-    segmentation.save()
-    return True
-
-
 def _reopen(result) -> bool:
     """Take back the approval of a mask or a form; True when it changed."""
     if not result or result.status not in VERIFIED:
@@ -575,7 +563,6 @@ def approve_case(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
     payload = request.data
     mask_choice = payload.get("mask", "confirmed")
-    new_status = StatusChoices.APPROVED if mask_choice == "confirmed" else StatusChoices.CORRECTED
 
     with transaction.atomic():
         segmentation = (
@@ -587,7 +574,9 @@ def approve_case(request, study_id):
         Study.objects.select_for_update().get(pk=study.pk)  # one manual form at a time
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
 
-        approved_mask = _approve_mask(segmentation, new_status, request.user)
+        approved_mask = approve_mask_in_case(
+            segmentation, request.user, corrected=mask_choice == "corrected"
+        )
         approved_form = bool(extraction) and extraction.status in [
             StatusChoices.COMPLETED,
             StatusChoices.REJECTED,
@@ -597,20 +586,20 @@ def approve_case(request, study_id):
         elif extraction is None:
             approved_form = _manual_report(study, payload, request.user) is not None
 
-    if approved_mask:
-        record_audit(
-            request,
-            kind="mask_approved",
-            object=_audit_object(study),
-            detail=_mask_detail(mask_choice),
-        )
-    if approved_form:
-        record_audit(
-            request,
-            kind="form_approved",
-            object=_audit_object(study),
-            detail="zatwierdzono komplet",
-        )
+        if approved_mask:
+            record_audit(
+                request,
+                kind="mask_approved",
+                object=_audit_object(study),
+                detail=_mask_detail(mask_choice),
+            )
+        if approved_form:
+            record_audit(
+                request,
+                kind="form_approved",
+                object=_audit_object(study),
+                detail="zatwierdzono komplet",
+            )
     return Response(status=status.HTTP_200_OK)
 
 
@@ -620,7 +609,6 @@ def approve_mask(request, study_id):
     study = get_object_or_404(Study, orthanc_path=study_id)
     payload = request.data
     mask_choice = payload.get("mask", "confirmed")
-    new_status = StatusChoices.APPROVED if mask_choice == "confirmed" else StatusChoices.CORRECTED
 
     with transaction.atomic():
         segmentation = (
@@ -629,9 +617,8 @@ def approve_mask(request, study_id):
             .order_by("-id")
             .first()
         )
-        approved_mask = _approve_mask(segmentation, new_status, request.user)
+        approve_segmentation_mask(segmentation, request.user, corrected=mask_choice == "corrected")
 
-    if approved_mask:
         record_audit(
             request,
             kind="mask_approved",
@@ -653,18 +640,18 @@ def reopen_case(request, study_id):
             .order_by("-id")
             .first()
         )
-        reopened_mask = _reopen(segmentation)
+        reopened_mask = reopen_mask(segmentation)
         extraction = ExtractionResult.objects.select_for_update().filter(study=study).active()
         reopened_form = _reopen(extraction)
 
-    if reopened_mask:
-        record_audit(
-            request, kind="mask_unapproved", object=_audit_object(study), detail="reopened case"
-        )
-    if reopened_form:
-        record_audit(
-            request, kind="form_unapproved", object=_audit_object(study), detail="reopened case"
-        )
+        if reopened_mask:
+            record_audit(
+                request, kind="mask_unapproved", object=_audit_object(study), detail="reopened case"
+            )
+        if reopened_form:
+            record_audit(
+                request, kind="form_unapproved", object=_audit_object(study), detail="reopened case"
+            )
     return Response(status=status.HTTP_200_OK)
 
 
@@ -680,10 +667,10 @@ def unapprove_mask(request, study_id):
             .order_by("-id")
             .first()
         )
-        unapproved = _reopen(segmentation)
+        unapproved = reopen_mask(segmentation)
 
-    if unapproved:
-        record_audit(request, kind="mask_unapproved", object=_audit_object(study))
+        if unapproved:
+            record_audit(request, kind="mask_unapproved", object=_audit_object(study))
     return Response(status=status.HTTP_200_OK)
 
 

@@ -1,4 +1,5 @@
 import pytest
+from audit.models import AuditLog
 from django.urls import reverse
 from django.utils import timezone
 from extraction.models import ExtractionResult, StatusChoices
@@ -83,6 +84,7 @@ def test_approve_case_marks_extraction_as_corrected_when_field_changed(
     authenticated_client,
     study,
 ):
+    SegmentationResult.objects.create(study=study, status=StatusChoices.COMPLETED)
     extraction = ExtractionResult.objects.create(
         study=study,
         status=StatusChoices.COMPLETED,
@@ -107,7 +109,7 @@ def test_approve_case_marks_extraction_as_corrected_when_field_changed(
 
 
 @pytest.mark.django_db
-def test_approve_case_does_not_change_pending_results(
+def test_approve_case_refuses_a_case_whose_mask_is_not_ready_and_saves_nothing(
     authenticated_client,
     study,
 ):
@@ -115,9 +117,10 @@ def test_approve_case_does_not_change_pending_results(
         study=study,
         status=StatusChoices.PENDING,
     )
+    # the form alone could be approved; the whole case is refused, so it stays as it was
     extraction = ExtractionResult.objects.create(
         study=study,
-        status=StatusChoices.PROCESSING,
+        status=StatusChoices.COMPLETED,
     )
 
     response = authenticated_client.post(
@@ -131,9 +134,52 @@ def test_approve_case_does_not_change_pending_results(
 
     segmentation.refresh_from_db()
     extraction.refresh_from_db()
-    assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert response.json()["code"] == "not_approvable"
     assert segmentation.status == StatusChoices.PENDING
-    assert extraction.status == StatusChoices.PROCESSING
+    assert extraction.status == StatusChoices.COMPLETED
+    assert not AuditLog.objects.exists()
+
+
+@pytest.mark.django_db
+def test_approve_case_refuses_a_case_without_a_mask(authenticated_client, study):
+    ExtractionResult.objects.create(study=study, status=StatusChoices.COMPLETED)
+
+    response = authenticated_client.post(
+        reverse("approve-case", kwargs={"study_id": study.orthanc_path}), {}, format="json"
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+
+@pytest.mark.django_db
+def test_approve_case_keeps_a_mask_approved_before_and_approves_the_form(
+    authenticated_client,
+    reviewer,
+    study,
+):
+    # the usual order: the mask is approved on its own, the case follows with the form
+    approved_at = timezone.now().date()
+    segmentation = SegmentationResult.objects.create(
+        study=study,
+        status=StatusChoices.CORRECTED,
+        accepted_by=reviewer,
+        accepted_at=approved_at,
+    )
+    extraction = ExtractionResult.objects.create(study=study, status=StatusChoices.COMPLETED)
+
+    response = authenticated_client.post(
+        reverse("approve-case", kwargs={"study_id": study.orthanc_path}),
+        {"mask": "confirmed"},
+        format="json",
+    )
+
+    segmentation.refresh_from_db()
+    extraction.refresh_from_db()
+    assert response.status_code == status.HTTP_200_OK
+    assert segmentation.status == StatusChoices.CORRECTED
+    assert extraction.status == StatusChoices.APPROVED
+    assert list(AuditLog.objects.values_list("kind", flat=True)) == ["form_approved"]
 
 
 @pytest.mark.django_db
@@ -208,7 +254,7 @@ def test_approve_mask_marks_segmentation_as_corrected(
 
 
 @pytest.mark.django_db
-def test_approve_mask_does_not_change_pending_segmentation(
+def test_approve_mask_refuses_a_pending_segmentation(
     authenticated_client,
     study,
 ):
@@ -227,7 +273,7 @@ def test_approve_mask_does_not_change_pending_segmentation(
     )
 
     segmentation.refresh_from_db()
-    assert response.status_code == status.HTTP_200_OK
+    assert response.status_code == status.HTTP_409_CONFLICT
     assert segmentation.status == StatusChoices.PENDING
 
 
