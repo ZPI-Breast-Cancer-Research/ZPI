@@ -28,6 +28,8 @@ function errorTitle(error: Error): string {
   return t("studies.error.title");
 }
 
+const READING_POLL_MS = 5_000;
+
 export default function StudiesPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -43,7 +45,12 @@ export default function StudiesPage() {
   }, [notice, toast]);
 
   const studies = useQuery({ queryKey: queryKeys.studies, queryFn: listStudies, retry: false });
-  const unassigned = useQuery({ queryKey: queryKeys.unassignedReports, queryFn: listUnassignedReports });
+  // while a report is being read, its card follows it until it is read or fails
+  const unassigned = useQuery({
+    queryKey: queryKeys.unassignedReports,
+    queryFn: listUnassignedReports,
+    refetchInterval: (query) => (query.state.data?.some((report) => report.reading === "reading") ? READING_POLL_MS : false),
+  });
 
   const selectedId = params.get("badanie");
   const selected = studies.data?.find((row) => row.id === selectedId) ?? null;

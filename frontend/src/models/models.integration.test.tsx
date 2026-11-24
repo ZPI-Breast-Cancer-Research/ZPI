@@ -46,7 +46,7 @@ describe("ModelsPage", () => {
 
   it("reads the extraction model the backend sends today", async () => {
     renderModels(researcher, { route: "/modele/ekstrakcja" });
-    expect(await screen.findByText(t("models.inUse.title", { v: extraction.version }))).toBeInTheDocument();
+    expect(await screen.findByText(t("models.ext.inUse", { v: extraction.version, model: extraction.llmModel }))).toBeInTheDocument();
   });
 
   it("says when the models can't be loaded", async () => {
@@ -108,5 +108,53 @@ describe("an endpoint the backend doesn't have yet", () => {
     await userEvent.click(restore);
     expect(await screen.findByText(t("models.gate.loadFailed", { why: t("api.notAvailable") }))).toBeInTheDocument();
     expect(screen.queryByText(t("models.gate.pending"))).not.toBeInTheDocument();
+  });
+});
+
+describe("an extraction version", () => {
+  const draft = extraction.models.find((v) => v.status === "new")!;
+  const candidate = {
+    ...draft,
+    status: "candidate",
+    editable: false,
+    proposedBy: { login: researcher.login, name: researcher.name },
+    proposedAt: "2026-11-20",
+    reason: "Więcej przykładów z BI-RADS we wniosku.",
+  };
+  const withProposal = () =>
+    server.use(http.get("/api/models/extraction/", () => HttpResponse.json({ ...extraction, models: extraction.models.map((v) => (v.version === draft.version ? candidate : v)) })));
+
+  it("is proposed by a researcher with a reason", async () => {
+    const sent = capturePosts(`/api/models/extraction/versions/${draft.version}/propose/`);
+    const user = userEvent.setup();
+    renderModels(researcher, { route: "/modele/ekstrakcja" });
+    await user.click(await screen.findByRole("button", { name: t("models.propose") }));
+    await user.type(screen.getByLabelText(t("models.dialog.reason")), "Lepszy BI-RADS.");
+    await user.click(screen.getByRole("button", { name: t("models.dialog.send") }));
+    await waitFor(() => expect(sent[0]?.body).toEqual({ reason: "Lepszy BI-RADS." }));
+  });
+
+  it("starts as a new draft", async () => {
+    const sent = capturePosts("/api/models/extraction/versions/");
+    renderModels(researcher, { route: "/modele/ekstrakcja" });
+    await userEvent.click(await screen.findByRole("button", { name: t("models.ext.new") }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+  });
+
+  it("is put in use by the admin", async () => {
+    const sent = capturePosts(`/api/models/extraction/versions/${draft.version}/promote/`);
+    renderModels(admin, { route: "/modele/ekstrakcja" });
+    withProposal();
+    await userEvent.click(await screen.findByRole("button", { name: t("models.ext.approve", { v: draft.version }) }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+  });
+
+  it("waits for the admin, and its author can withdraw it", async () => {
+    const sent = capturePosts(`/api/models/extraction/versions/${draft.version}/withdraw/`);
+    renderModels(researcher, { route: "/modele/ekstrakcja" });
+    withProposal();
+    expect(await screen.findByText(t("models.proposal.waiting"))).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: t("models.proposal.withdraw") }));
+    await waitFor(() => expect(sent).toHaveLength(1));
   });
 });

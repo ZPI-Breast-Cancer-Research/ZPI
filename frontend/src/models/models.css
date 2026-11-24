@@ -318,3 +318,26 @@
   font-size: 12.5px;
   white-space: pre-wrap;
 }
+
+/* draft of an extraction version */
+.models__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  margin-top: var(--space-3, 12px);
+}
+
+.draft__examples {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.draft__examples li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border, #ddd);
+}

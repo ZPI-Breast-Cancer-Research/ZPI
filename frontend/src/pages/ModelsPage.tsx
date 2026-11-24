@@ -32,7 +32,7 @@ export default function ModelsPage({ module }: { module: "segmentation" | "extra
   ) : null;
   const extState = ext?.proposal ? (
     <span className="tabs__state tabs__state--waiting">{t("models.tab.waiting")}</span>
-  ) : [...(ext?.models ?? []), ...(ext?.fewShots ?? [])].some((v) => v.status === "new") ? (
+  ) : ext?.versions.some((v) => v.status === "new") ? (
     <span className="tabs__state">{t("models.tab.new")}</span>
   ) : null;
 

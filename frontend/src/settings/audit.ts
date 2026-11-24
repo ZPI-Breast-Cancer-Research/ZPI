@@ -21,7 +21,11 @@ export type AuditKind =
   | "login_failed"
   | "study_imported"
   | "study_deleted"
-  | "attach_report";
+  | "attach_report"
+  | "report_deleted"
+  | "report_processed"
+  | "version_created"
+  | "version_changed";
 
 export type AuditGroup = "review" | "models" | "accounts" | "logins";
 
@@ -46,6 +50,10 @@ export const GROUP_OF: Record<AuditKind, AuditGroup> = {
   study_imported: "review",
   study_deleted: "review",
   attach_report: "review",
+  report_deleted: "review",
+  report_processed: "review",
+  version_created: "models",
+  version_changed: "models",
 };
 
 export const TARGET_OF: Record<AuditGroup, "study" | "model" | "account"> = {
