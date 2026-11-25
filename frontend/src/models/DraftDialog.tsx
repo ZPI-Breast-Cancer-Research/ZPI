@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { errorText } from "../api";
+import Select from "../components/Select";
 import { t } from "../i18n";
 import { queryKeys } from "../queryKeys";
 import { fetchLlmModels, fetchVersion, type VersionConfig } from "./extraction";
@@ -63,14 +64,7 @@ function DraftForm({ config, onClose }: { config: VersionConfig; onClose: () => 
           {t("models.ext.llm")}
         </label>
         {choices ? (
-          <select id="draft-llm" className="input" value={llmModel} onChange={(event) => setLlmModel(event.target.value)}>
-            {!llmModel && <option value="">{t("models.draft.pickModel")}</option>}
-            {choices.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
+          <Select id="draft-llm" className="field-select--form" value={llmModel} options={choices} placeholder={t("models.draft.pickModel")} onChange={setLlmModel} />
         ) : (
           <input id="draft-llm" className="input" value={llmModel} onChange={(event) => setLlmModel(event.target.value)} />
         )}
