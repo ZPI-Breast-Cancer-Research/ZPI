@@ -16,8 +16,8 @@ from patients.orthanc_client import OrthancClient
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from segmentation.approval import approve_corrected_seg, approve_mask_in_case, reopen_mask
 from segmentation.approval import approve_mask as approve_segmentation_mask
-from segmentation.approval import approve_mask_in_case, reopen_mask
 from segmentation.models import SegmentationResult
 from users.permissions import require_permission
 
@@ -606,18 +606,25 @@ def approve_case(request, study_id):
 @api_view(["POST"])
 @require_permission(["review"])
 def approve_mask(request, study_id):
+    """Approve the mask: JSON {mask}, or multipart with the corrected mask as DICOM SEG ("seg")."""
     study = get_object_or_404(Study, orthanc_path=study_id)
     payload = request.data
-    mask_choice = payload.get("mask", "confirmed")
+    seg_file = request.FILES.get("seg")
+    mask_choice = "corrected" if seg_file else payload.get("mask", "confirmed")
 
     with transaction.atomic():
-        segmentation = (
-            SegmentationResult.objects.select_for_update()
-            .filter(study=study)
-            .order_by("-id")
-            .first()
-        )
-        approve_segmentation_mask(segmentation, request.user, corrected=mask_choice == "corrected")
+        if seg_file:
+            approve_corrected_seg(study, request.user, seg_file.read())
+        else:
+            segmentation = (
+                SegmentationResult.objects.select_for_update()
+                .filter(study=study)
+                .order_by("-id")
+                .first()
+            )
+            approve_segmentation_mask(
+                segmentation, request.user, corrected=mask_choice == "corrected"
+            )
 
         record_audit(
             request,

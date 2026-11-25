@@ -191,6 +191,18 @@ class OrthancClient:
         """Store one DICOM file (e.g. a DICOM SEG) in Orthanc."""
         return self._post_instances(Path(path).read_bytes(), "application/dicom")
 
+    def upload_dicom_bytes(self, data: bytes) -> dict:
+        """Store one DICOM instance sent as bytes (e.g. the SEG exported by the viewer)."""
+        return self._post_instances(data, "application/dicom")
+
+    def study_instance_uid(self, orthanc_id: str) -> str:
+        """The StudyInstanceUID of a study stored in Orthanc under ``orthanc_id``."""
+        study = self._get(f"/studies/{orthanc_id}")
+        try:
+            return study["MainDicomTags"]["StudyInstanceUID"]
+        except (KeyError, TypeError) as exc:
+            raise OrthancUnavailable(f"Orthanc study {orthanc_id} has no StudyInstanceUID") from exc
+
     def _post_instances(self, data: bytes, content_type: str):
         url = f"{self.base_url}/instances"
         try:

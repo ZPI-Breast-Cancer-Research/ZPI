@@ -9,3 +9,19 @@ class NotApprovable(AppError):
     code = "not_approvable"
     status_code = 409
     detail = "Tej maski nie można teraz zatwierdzić. Odśwież przypadek."
+
+
+class InvalidSeg(AppError):
+    """The corrected mask sent by the viewer is not a DICOM SEG."""
+
+    code = "invalid_seg"
+    status_code = 400
+    detail = "Przesłany plik nie jest maską DICOM SEG."
+
+
+class SegFromOtherStudy(AppError):
+    """The corrected mask belongs to another study than the one being approved."""
+
+    code = "seg_wrong_study"
+    status_code = 400
+    detail = "Przesłana maska należy do innego badania."
