@@ -30,7 +30,7 @@ import { ENGINE_ID, getEngine, historyMemo } from "./cornerstone";
 import { paintSeg } from "./dicomSeg";
 import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
-import { applyPatch, interpolateMask, maskBoxes, maskExtent, maskPatch, restoreSlice, type Box, type Extent, type MaskPatch } from "./maskTools";
+import { applyPatch, interpolateMask, maskExtent, maskLesions, maskPatch, restoreSlice, type Box, type Extent, type Lesion, type MaskPatch } from "./maskTools";
 import SliceStrip from "./SliceStrip";
 import type { BrushShape, MaskState, Plane, Series, SegRef, Tool } from "./types";
 import "./viewer.css";
@@ -264,8 +264,9 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const original = useRef<Uint8Array | null>(null);
   // where the planes open: the middle of the mask, once it is known
   const maskCenter = useRef<Types.Point3 | null>(null);
-  // corners of every lesion's box
-  const lesions = useRef<Types.Point3[][]>([]);
+  // the mask split into lesions at its last recount, and the corners of every lesion's box for its frame
+  const lesions = useRef<Lesion[]>([]);
+  const frameCorners = useRef<Types.Point3[][]>([]);
   // the frames move straight in the DOM after every render of the image, so they never trail behind it
   const frameEls = useRef<Record<string, SVGGElement | null>>({});
   const frameRects = useRef<Partial<Record<Plane, (Frame | null)[]>>>({});
@@ -608,12 +609,13 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       const labelmap = cache.getVolume(ids.mask);
       if (!labelmap) return;
       const next: Partial<Record<Plane, Extent>> = {};
+      lesions.current = maskLesions(labelmap);
       for (const plane of PLANES) {
         const viewport = engine.current?.getViewport(ids[plane]) as Types.IVolumeViewport | undefined;
         if (!viewport) continue;
         // only the main plane shows edits, the others need no comparison
         const compare = plane === main ? original.current : null;
-        next[plane] = maskExtent(labelmap, viewport.getCamera().viewPlaneNormal!, (world) => sliceOf(viewport, world).index, compare);
+        next[plane] = maskExtent(labelmap, viewport.getCamera().viewPlaneNormal!, (world) => sliceOf(viewport, world).index, compare, lesions.current);
       }
       setExtents(next);
     };
@@ -633,7 +635,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   // the frames follow the mask after every change to it
   useEffect(() => {
     const labelmap = cache.getVolume(ids.mask);
-    lesions.current = maskFrame && labelmap ? maskBoxes(labelmap).map((box) => boxCorners(labelmap, box)) : [];
+    frameCorners.current = maskFrame && labelmap ? lesions.current.map(({ box }) => boxCorners(labelmap, box)) : [];
     nextLesion.current = 0;
     placeFrames();
     // placeFrames only reads refs
@@ -691,8 +693,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         zoomBy(event.key === "-" ? 0.8 : 1.25);
       } else if (event.key === "0") {
         fit();
-      } else if (event.key === "z" && lesions.current.length) {
-        zoomToMask(mainRef.current, nextLesion.current++ % lesions.current.length);
+      } else if (event.key === "z" && frameCorners.current.length) {
+        zoomToMask(mainRef.current, nextLesion.current++ % frameCorners.current.length);
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -835,7 +837,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     let changed = false;
     for (const plane of planes) {
       const viewport = engine.current?.getViewport(ids[plane]);
-      const next = viewport ? lesions.current.map((corners) => frameOn(viewport, corners)) : [];
+      const next = viewport ? frameCorners.current.map((corners) => frameOn(viewport, corners)) : [];
       const before = frameRects.current[plane] ?? [];
       if (next.length !== before.length || next.some((frame, n) => !frame !== !before[n])) changed = true;
       frameRects.current[plane] = next;
@@ -850,7 +852,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   // centred on the lesion without leaving the slice on screen
   function zoomToMask(plane: Plane, lesion: number) {
     const viewport = engine.current?.getViewport(ids[plane]);
-    const corners = lesions.current[lesion];
+    const corners = frameCorners.current[lesion];
     if (!viewport || !corners) return;
     startZoom(plane);
     const camera = viewport.getCamera();

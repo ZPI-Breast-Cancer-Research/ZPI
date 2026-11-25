@@ -1,7 +1,7 @@
 import type { Types } from "@cornerstonejs/core";
 import { describe, expect, it } from "vitest";
 
-import { applyPatch, interpolateMask, maskBoxes, maskExtent, maskPatch, restoreSlice } from "./maskTools";
+import { applyPatch, interpolateMask, maskExtent, maskLesions, maskPatch, restoreSlice } from "./maskTools";
 
 type Point = [number, number, number];
 
@@ -50,10 +50,10 @@ describe("maskExtent", () => {
   });
 });
 
-describe("maskBoxes", () => {
+describe("maskLesions", () => {
   it("gives every lesion its own box", () => {
     const { volume } = labelmap([30, 30, 4], [...square(1, 2, 4), ...square(2, 20, 24)]);
-    expect(maskBoxes(volume)).toEqual([
+    expect(maskLesions(volume).map((lesion) => lesion.box)).toEqual([
       [
         [2, 2, 1],
         [4, 4, 1],
@@ -67,7 +67,7 @@ describe("maskBoxes", () => {
 
   it("keeps a lesion whole across an undrawn slice", () => {
     const { volume } = labelmap([10, 10, 6], [...square(1, 2, 4), ...square(3, 2, 4)], [1, 1, 3]);
-    expect(maskBoxes(volume)).toEqual([
+    expect(maskLesions(volume).map((lesion) => lesion.box)).toEqual([
       [
         [2, 2, 1],
         [4, 4, 3],
@@ -76,7 +76,7 @@ describe("maskBoxes", () => {
   });
 
   it("has no boxes for an empty mask", () => {
-    expect(maskBoxes(labelmap([4, 4, 4]).volume)).toEqual([]);
+    expect(maskLesions(labelmap([4, 4, 4]).volume)).toEqual([]);
   });
 });
 
@@ -119,6 +119,67 @@ describe("restoreSlice", () => {
   it("does nothing on a slice that matches the model's", () => {
     const model = labelmap([4, 4, 4], square(1, 1, 2), [1, 1, 2]);
     expect(restoreSlice(model.volume, model.data().slice(), axialSlice, 1)).toBeNull();
+  });
+});
+
+// a square of voxels anywhere on one axial slice
+const patch = (k: number, x: number, y: number, r = 2): Point[] => {
+  const out: Point[] = [];
+  for (let i = x - r; i <= x + r; i++) for (let j = y - r; j <= y + r; j++) out.push([i, j, k]);
+  return out;
+};
+
+// axial slices with mask on the left (x < 20) and on the right half of a 40-wide grid
+function sides(dims: Point, data: ArrayLike<number>) {
+  const [nx, ny, nz] = dims;
+  const left: number[] = [];
+  const right: number[] = [];
+  for (let k = 0; k < nz; k++) {
+    let [l, r] = [false, false];
+    for (let j = 0; j < ny; j++)
+      for (let i = 0; i < nx; i++) {
+        if (!data[i + j * nx + k * nx * ny]) continue;
+        if (i < 20) l = true;
+        else r = true;
+      }
+    if (l) left.push(k);
+    if (r) right.push(k);
+  }
+  return { left, right };
+}
+
+const grid: Point = [40, 20, 30];
+const bySlice = (w: Types.Point3) => w[2];
+
+describe("gaps and filling with more than one lesion", () => {
+  it("sees no gap between two separate lesions and fills nothing between them", () => {
+    const { volume } = labelmap(grid, [...patch(3, 8, 10), ...patch(25, 30, 10)]);
+    expect(maskExtent(volume, axial, bySlice).gaps).toEqual([]);
+    expect(interpolateMask(volume, axial)).toBeNull();
+  });
+
+  it("finds a lesion's gaps where another lesion fills the same slices", () => {
+    const { volume } = labelmap(grid, [...[10, 11, 12, 13, 14].flatMap((k) => patch(k, 8, 10)), ...patch(10, 30, 10), ...patch(14, 30, 10)]);
+    expect(maskExtent(volume, axial, bySlice).gaps).toEqual([11, 12, 13]);
+    expect(sides(grid, interpolateMask(volume, axial)!)).toEqual({ left: [10, 11, 12, 13, 14], right: [10, 11, 12, 13, 14] });
+  });
+
+  it("does not stretch a lesion into another lesion's gap", () => {
+    const { volume } = labelmap(grid, [...patch(10, 8, 10), ...patch(14, 8, 10), ...patch(10, 30, 10)]);
+    expect(sides(grid, interpolateMask(volume, axial)!)).toEqual({ left: [10, 11, 12, 13, 14], right: [10] });
+  });
+
+  it("fills a lesion that drifts between the drawn slices", () => {
+    const { volume } = labelmap(grid, [...patch(10, 5, 10, 1), ...patch(14, 14, 10, 1)]);
+    const filled = labelmap(grid);
+    filled.volume.voxelManager!.setCompleteScalarDataArray!(interpolateMask(volume, axial) as Uint8Array);
+    expect(maskExtent(filled.volume, axial, bySlice)).toMatchObject({ slices: [10, 11, 12, 13, 14], gaps: [] });
+  });
+
+  it("joins a piece drawn a few slices away to the same lesion", () => {
+    const { volume } = labelmap(grid, [...patch(10, 8, 10), ...patch(15, 8, 10)]);
+    expect(maskExtent(volume, axial, bySlice).gaps).toEqual([11, 12, 13, 14]);
+    expect(sides(grid, interpolateMask(volume, axial)!).left).toEqual([10, 11, 12, 13, 14, 15]);
   });
 });
 
