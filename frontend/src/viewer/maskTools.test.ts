@@ -110,7 +110,7 @@ describe("restoreSlice", () => {
     const edited = labelmap([4, 4, 4], [[0, 0, 1], [3, 3, 3]], [1, 1, 2]);
     const before = edited.data().slice();
 
-    const redo = restoreSlice(edited.volume, model.data(), axialSlice, 1)!;
+    const redo = restoreSlice(edited.volume, model.data(), axial, axialSlice, 1)!;
     expect(maskExtent(edited.volume, axial, axialSlice, model.data()).edited).toEqual([3]);
     redo(true);
     expect(edited.data()).toEqual(before);
@@ -118,7 +118,7 @@ describe("restoreSlice", () => {
 
   it("does nothing on a slice that matches the model's", () => {
     const model = labelmap([4, 4, 4], square(1, 1, 2), [1, 1, 2]);
-    expect(restoreSlice(model.volume, model.data().slice(), axialSlice, 1)).toBeNull();
+    expect(restoreSlice(model.volume, model.data().slice(), axial, axialSlice, 1)).toBeNull();
   });
 });
 

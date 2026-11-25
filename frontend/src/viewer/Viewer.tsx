@@ -748,7 +748,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         const viewport = engine.current?.getViewport(ids[mainRef.current]) as Types.IVolumeViewport | undefined;
         if (!labelmap || !viewport || !original.current) return false;
         const current = csUtils.getImageSliceDataForVolumeViewport(viewport)!.imageIndex;
-        const redo = restoreSlice(labelmap, original.current, (world) => sliceOf(viewport, world).index, current);
+        const redo = restoreSlice(labelmap, original.current, viewport.getCamera().viewPlaneNormal!, (world) => sliceOf(viewport, world).index, current);
         if (!redo) return false;
         segmentation.triggerSegmentationEvents.triggerSegmentationDataModified(ids.mask);
         historyMemo.push({

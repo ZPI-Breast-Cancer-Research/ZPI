@@ -22,7 +22,27 @@ function axisAlong(volume: Types.IImageVolume, normal: Types.Point3) {
   return axis;
 }
 
-// gaps and edits are found in voxel space, then every voxel layer is turned into the viewport's slice number
+// the view's slice number of every voxel layer along the axis, asked once per layer;
+// the views are snapped to the study's grid, so a whole layer is one slice
+function layerSlices(labelmap: Types.IImageVolume, axis: number, sliceOfWorld: (world: Types.Point3) => number) {
+  const known = new Int32Array(labelmap.dimensions[axis]).fill(-1);
+  const center = labelmap.dimensions.map((n) => (n - 1) / 2) as Types.Point3;
+  return (layer: number) => {
+    if (known[layer] < 0) {
+      const ijk = [...center] as Types.Point3;
+      ijk[axis] = layer;
+      known[layer] = sliceOfWorld(csUtils.transformIndexToWorld(labelmap.imageData!, ijk));
+    }
+    return known[layer];
+  };
+}
+
+// the voxel's index along one axis
+function coordOf(index: number, axis: number, nx: number, ny: number) {
+  return axis === 0 ? index % nx : axis === 1 ? Math.floor(index / nx) % ny : Math.floor(index / (nx * ny));
+}
+
+// read from the lesions' own voxels, so only the comparison with the model's mask goes over the whole volume
 export function maskExtent(
   labelmap: Types.IImageVolume,
   normal: Types.Point3,
@@ -30,49 +50,43 @@ export function maskExtent(
   original?: ArrayLike<number> | null,
   lesions: Lesion[] = maskLesions(labelmap),
 ): Extent {
-  const data = labelmap.voxelManager!.getCompleteScalarDataArray!();
   const [nx, ny, nz] = labelmap.dimensions;
   const axis = axisAlong(labelmap, normal);
-  const filled = new Uint8Array(labelmap.dimensions[axis]);
+  const toSlice = layerSlices(labelmap, axis, sliceOfWorld);
+  const depth = labelmap.dimensions[axis];
+  const filled = new Uint8Array(depth);
   const min = [nx, ny, nz];
   const max = [-1, -1, -1];
-  const layer = nx * ny;
-  const changed: number[] = [];
-  for (let index = 0; index < data.length; index++) {
-    if (original && data[index] !== original[index]) changed.push(index);
-    if (!data[index]) continue;
-    const ijk = [index % nx, Math.floor(index / nx) % ny, Math.floor(index / layer)];
-    filled[ijk[axis]] = 1;
-    for (let a = 0; a < 3; a++) {
-      if (ijk[a] < min[a]) min[a] = ijk[a];
-      if (ijk[a] > max[a]) max[a] = ijk[a];
-    }
-  }
-
-  const center = [(nx - 1) / 2, (ny - 1) / 2, (nz - 1) / 2];
-  const toSlice = (a: number) => {
-    const ijk = [...center] as Types.Point3;
-    ijk[axis] = a;
-    return sliceOfWorld(csUtils.transformIndexToWorld(labelmap.imageData!, ijk));
-  };
-  const sorted = (layers: number[]) => [...new Set(layers.map(toSlice))].sort((a, b) => a - b);
-  const layers = Array.from(filled.keys()).filter((a) => filled[a]);
   // the space between two lesions is not a gap, and one lesion's gap stays a gap where another lesion lies
   const gaps = new Set<number>();
   for (const { voxels } of lesions) {
-    const own = new Uint8Array(labelmap.dimensions[axis]);
-    for (const index of voxels) own[ijkOf(index, nx, ny)[axis]] = 1;
-    const first = own.indexOf(1);
-    const last = own.lastIndexOf(1);
-    for (let a = first; a <= last; a++) if (!own[a]) gaps.add(a);
+    const own = new Uint8Array(depth);
+    for (const index of voxels) {
+      const ijk = ijkOf(index, nx, ny);
+      own[ijk[axis]] = 1;
+      filled[ijk[axis]] = 1;
+      for (let a = 0; a < 3; a++) {
+        if (ijk[a] < min[a]) min[a] = ijk[a];
+        if (ijk[a] > max[a]) max[a] = ijk[a];
+      }
+    }
+    for (let a = own.indexOf(1); a <= own.lastIndexOf(1); a++) if (!own[a]) gaps.add(a);
   }
-  const inPlane = [0, 1, 2].filter((a) => a !== axis);
 
+  const changed = new Uint8Array(depth);
+  if (original) {
+    const data = labelmap.voxelManager!.getCompleteScalarDataArray!();
+    for (let index = 0; index < data.length; index++) if (data[index] !== original[index]) changed[coordOf(index, axis, nx, ny)] = 1;
+  }
+
+  const sorted = (layers: Iterable<number>) => [...new Set([...layers].map(toSlice))].sort((a, b) => a - b);
+  const marked = (flags: Uint8Array) => Array.from(flags.keys()).filter((a) => flags[a]);
+  const inPlane = [0, 1, 2].filter((a) => a !== axis);
+  const layers = marked(filled);
   return {
     slices: sorted(layers),
-    gaps: sorted([...gaps]),
-    // the view can be tilted against the voxel grid, so each changed voxel is placed on its own
-    edited: [...new Set(changed.map((index) => sliceOfWorld(worldOf(labelmap, index))))].sort((a, b) => a - b),
+    gaps: sorted(gaps),
+    edited: sorted(marked(changed)),
     sizeMm: layers.length ? Math.max(...inPlane.map((a) => (max[a] - min[a] + 1) * labelmap.spacing[a])) : null,
   };
 }
@@ -144,18 +158,22 @@ export function maskLesions(labelmap: Types.IImageVolume, mergeMm = 10): Lesion[
   return lesions;
 }
 
-function worldOf(labelmap: Types.IImageVolume, index: number) {
-  const [nx, ny] = labelmap.dimensions;
-  return csUtils.transformIndexToWorld(labelmap.imageData!, [index % nx, Math.floor(index / nx) % ny, Math.floor(index / (nx * ny))]);
-}
-
 // puts the model's mask back on one slice of the view; returns a redo/undo, or null when that slice was untouched
-export function restoreSlice(labelmap: Types.IImageVolume, original: ArrayLike<number>, sliceOfWorld: (world: Types.Point3) => number, slice: number) {
+export function restoreSlice(
+  labelmap: Types.IImageVolume,
+  original: ArrayLike<number>,
+  normal: Types.Point3,
+  sliceOfWorld: (world: Types.Point3) => number,
+  slice: number,
+) {
   const voxels = labelmap.voxelManager!;
   const data = voxels.getCompleteScalarDataArray!() as Uint8Array;
+  const [nx, ny] = labelmap.dimensions;
+  const axis = axisAlong(labelmap, normal);
+  const toSlice = layerSlices(labelmap, axis, sliceOfWorld);
   const indices: number[] = [];
   for (let index = 0; index < data.length; index++) {
-    if (data[index] !== original[index] && sliceOfWorld(worldOf(labelmap, index)) === slice) indices.push(index);
+    if (data[index] !== original[index] && toSlice(coordOf(index, axis, nx, ny)) === slice) indices.push(index);
   }
   if (!indices.length) return null;
   const before = Uint8Array.from(indices, (i) => data[i]);
