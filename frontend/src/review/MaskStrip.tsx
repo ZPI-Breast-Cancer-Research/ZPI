@@ -21,15 +21,39 @@ interface Props {
   onUnapprove: () => void;
   showMask: boolean;
   onToggleMask: () => void;
+  showFrame: boolean;
+  onToggleFrame: () => void;
 }
 
 // only what is about the mask itself: its state, a gap to fill, the way back to the model's, approving it
 export default function MaskStrip(props: Props) {
-  const { corrected, approved, empty, edited, gaps, version, pending, onGoTo, onFill, onRestore, onApprove, onUnapprove, showMask, onToggleMask } = props;
+  const {
+    corrected,
+    approved,
+    empty,
+    edited,
+    gaps,
+    version,
+    pending,
+    onGoTo,
+    onFill,
+    onRestore,
+    onApprove,
+    onUnapprove,
+    showMask,
+    onToggleMask,
+    showFrame,
+    onToggleFrame,
+  } = props;
   const state = approved ? "review.mask.approved" : corrected ? "review.mask.corrected" : empty ? "review.mask.empty" : "review.mask.proposed";
   return (
     <div className="mask-strip" aria-label={t("review.mask")}>
       <MaskToggle shown={showMask} onToggle={onToggleMask} />
+      <button type="button" className="mask-strip__eye" aria-pressed={showFrame} title={t("viewer.frameShown")} onClick={onToggleFrame}>
+        <Icon name="frame" />
+        {!showFrame && t("viewer.maskHidden")}
+        <kbd>O</kbd>
+      </button>
       <span className={corrected && !approved ? "mask-strip__state mask-strip__state--corrected" : "mask-strip__state"} title={version && t("review.maskVersion", { v: version })}>
         {t(state)}
         {corrected && edited > 0 && <small> {t(edited === 1 ? "review.mask.onSlice" : "review.mask.onSlices", { n: edited })}</small>}

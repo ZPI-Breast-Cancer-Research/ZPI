@@ -174,6 +174,15 @@ export function WorkSection() {
           onChange={(maskShown) => set({ maskShown })}
         />
         <Choice<boolean>
+          label="settings.frameOnOpen"
+          value={preferences.frameShown}
+          options={[
+            [true, "settings.mask.shown"],
+            [false, "settings.mask.hidden"],
+          ]}
+          onChange={(frameShown) => set({ frameShown })}
+        />
+        <Choice<boolean>
           label="settings.hints"
           value={preferences.hints}
           options={[
@@ -212,6 +221,7 @@ const KEYS: [MessageKey, [MessageKey, string[]][]][] = [
       ["viewer.fit", ["0"]],
       ["settings.key.toMask", ["Z"]],
       ["settings.key.mask", ["M"]],
+      ["settings.key.frame", ["O"]],
     ],
   ],
   [

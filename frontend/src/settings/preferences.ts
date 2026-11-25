@@ -11,10 +11,11 @@ export interface Preferences {
   main: Plane;
   single: boolean;
   maskShown: boolean;
+  frameShown: boolean;
   hints: boolean;
 }
 
-const DEFAULTS: Preferences = { theme: "dark", series: "post", main: "axial", single: false, maskShown: true, hints: true };
+const DEFAULTS: Preferences = { theme: "dark", series: "post", main: "axial", single: false, maskShown: true, frameShown: true, hints: true };
 
 // TODO: kept in the browser per login until the backend stores them with the profile;
 // workstations in a hospital are shared, so they follow the person, not the machine
