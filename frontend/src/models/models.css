@@ -14,17 +14,8 @@
 }
 
 /* the last island runs to the bottom of the screen */
-.models > .panel:last-child,
-.models > .models__registries {
+.models > .panel:last-child {
   flex: 1 0 auto;
-}
-
-.models__registries {
-  gap: var(--island-gap);
-}
-
-.models__two.models__registries > * + * {
-  border-left: 0;
 }
 
 .models__two {
@@ -98,12 +89,6 @@
 
 .progress--running i {
   background: var(--color-primary);
-}
-
-.models__sub {
-  margin-top: 8px;
-  color: var(--color-ink-faint);
-  font-size: 13.5px;
 }
 
 .reason {
