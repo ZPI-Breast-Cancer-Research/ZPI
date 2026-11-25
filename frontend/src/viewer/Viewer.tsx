@@ -10,7 +10,19 @@ import {
   WindowLevelTool,
   ZoomTool,
 } from "@cornerstonejs/tools";
-import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type PointerEvent,
+  type SetStateAction,
+} from "react";
 
 import { formatOneDecimal } from "../format";
 import { t } from "../i18n";
@@ -18,7 +30,7 @@ import { ENGINE_ID, getEngine, historyMemo } from "./cornerstone";
 import { paintSeg } from "./dicomSeg";
 import { DicomWebError, findSeries, seriesImageIds } from "./dicomweb";
 import type { Layout } from "./layout";
-import { applyPatch, interpolateMask, maskExtent, maskPatch, restoreSlice, type Extent, type MaskPatch } from "./maskTools";
+import { applyPatch, interpolateMask, maskBoxes, maskExtent, maskPatch, restoreSlice, type Box, type Extent, type MaskPatch } from "./maskTools";
 import SliceStrip from "./SliceStrip";
 import type { BrushShape, MaskState, Plane, Series, SegRef, Tool } from "./types";
 import "./viewer.css";
@@ -48,6 +60,28 @@ const ALIGNED: Record<Plane, Enums.OrientationAxis> = {
 const WHEEL_STEP = 60;
 // main view and side column as 1.6 : 1
 const DEFAULT_SPLIT = 1.6 / 2.6;
+// room between the mask and its frame, never less than a few pixels on screen
+const FRAME_MARGIN_MM = 5;
+const FRAME_MARGIN_PX = 9;
+// the smallest frame on screen, and the share of the view past which it hides
+const FRAME_MIN_PX = 24;
+const FRAME_HIDE_SHARE = 0.4;
+// only a band just outside the frame takes clicks, so the brush keeps the inside
+const FRAME_HIT_PX = 10;
+// after zooming to it the mask fills about this share of the view
+const MASK_SHARE = 0.4;
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// a frame on screen; off when the slice on screen misses its lesion
+interface Frame extends Rect {
+  on: boolean;
+}
 
 type Problem = DicomWebError["kind"] | "no-study";
 
@@ -65,6 +99,8 @@ interface Props {
   tool?: Tool;
   editable?: boolean;
   modelOutline?: boolean;
+  // a frame around every lesion of the mask that zooms to it on click
+  maskFrame?: boolean;
   brushShape?: BrushShape;
   // radius in mm, so the brush covers the same tissue at any zoom
   brushRadius?: number;
@@ -131,6 +167,41 @@ function removeMask(segmentationId: string) {
   if (cache.getVolume(segmentationId)) cache.removeVolumeLoadObject(segmentationId);
 }
 
+// the eight corners of a lesion's box in world space, at the outer edges of its voxels
+function boxCorners(labelmap: Types.IImageVolume, [min, max]: Box) {
+  return Array.from({ length: 8 }, (_, n) =>
+    csUtils.transformIndexToWorld(labelmap.imageData!, [0, 1, 2].map((a) => ((n >> a) & 1 ? max[a] + 0.5 : min[a] - 0.5)) as Types.Point3),
+  );
+}
+
+// where the corners land on the canvas, in CSS pixels
+function project(viewport: Types.IViewport, corners: Types.Point3[]): Rect {
+  const points = corners.map((corner) => viewport.worldToCanvas(corner));
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+function drawFrame(group: SVGGElement, frame: Frame) {
+  group.querySelectorAll("rect").forEach((el) => drawRect(el, frame));
+  group.querySelector(".viewer__frame")?.classList.toggle("viewer__frame--off", !frame.on);
+}
+
+function drawRect(el: SVGRectElement, rect: Rect) {
+  // the hit band sits on a box grown by half its width, so it covers only the outside
+  const grow = el.classList.contains("viewer__frame-hit") ? FRAME_HIT_PX / 2 : 0;
+  const x = rect.x - grow;
+  const y = rect.y - grow;
+  const w = rect.w + 2 * grow;
+  const h = rect.h + 2 * grow;
+  el.setAttribute("x", String(x));
+  el.setAttribute("y", String(y));
+  el.setAttribute("width", String(w));
+  el.setAttribute("height", String(h));
+}
+
 // slice index of a world point in this viewport, plus the slice spacing
 function sliceOf(viewport: Types.IVolumeViewport, world: Types.Point3) {
   const camera = viewport.getCamera();
@@ -153,6 +224,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     tool = "window",
     editable = false,
     modelOutline = false,
+    maskFrame = false,
     brushShape = "circle",
     brushRadius = 5,
     onEdit,
@@ -192,6 +264,18 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const original = useRef<Uint8Array | null>(null);
   // where the planes open: the middle of the mask, once it is known
   const maskCenter = useRef<Types.Point3 | null>(null);
+  // corners of every lesion's box
+  const lesions = useRef<Types.Point3[][]>([]);
+  // the frames move straight in the DOM after every render of the image, so they never trail behind it
+  const frameEls = useRef<Record<string, SVGGElement | null>>({});
+  const frameRects = useRef<Partial<Record<Plane, (Frame | null)[]>>>({});
+  const frameAnimation = useRef(0);
+  // Z goes from one lesion to the next
+  const nextLesion = useRef(0);
+  // a click on a frame in a side view makes it the main one first, then zooms once it has grown
+  const zoomAfterLayout = useRef<number | null>(null);
+  // the double click that follows a click on a frame must not switch the layout too
+  const frameClickedAt = useRef(0);
 
   const [problem, setProblem] = useState<Problem | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -206,6 +290,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const [windowChanged, setWindowChanged] = useState(false);
   const [zoom, setZoom] = useState<number | null>(null);
   const [extents, setExtents] = useState<Partial<Record<Plane, Extent>>>({});
+  const [frames, setFrames] = useState<Partial<Record<Plane, boolean[]>>>({});
   const [grab, setGrab] = useState(false);
 
   const { main, single, split } = layout;
@@ -217,6 +302,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   const shownRef = useRef(shown);
   shownRef.current = shown;
   const painting = editable && (tool === "brush" || tool === "threshold" || tool === "eraser") && !grab;
+  const paintingRef = useRef(painting);
+  paintingRef.current = painting;
   panning.current = tool === "pan" || grab;
   const windowing = useRef(false);
   windowing.current = !grab && (tool === "window" || (!editable && tool !== "pan"));
@@ -264,6 +351,13 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     };
     for (const plane of PLANES) elements[plane].addEventListener(Enums.Events.CAMERA_MODIFIED, onCamera);
 
+    const onRendered = (event: Event) => {
+      const { viewportId } = (event as CustomEvent<{ viewportId: string }>).detail;
+      const plane = PLANES.find((p) => ids[p] === viewportId);
+      if (plane) placeFrames([plane]);
+    };
+    for (const plane of PLANES) elements[plane].addEventListener(Enums.Events.IMAGE_RENDERED, onRendered);
+
     const onVoi = (event: Event) => {
       const { viewportId, range } = (event as CustomEvent<{ viewportId: string; range: Types.VOIRange }>).detail;
       if (viewportId !== ids[mainRef.current] || !range) return;
@@ -285,10 +379,24 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
 
     const planeOf = (target: EventTarget | null) => PLANES.find((plane) => elements[plane].contains(target as Node));
 
+    // a click without a drag inside a frame zooms to its lesion, unless the tool paints
+    let pressed: { plane: Plane; x: number; y: number } | null = null;
+    const onMouseUp = (event: MouseEvent) => {
+      const start = pressed;
+      pressed = null;
+      if (!start || paintingRef.current || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) return;
+      const lesion = frameAt(start.plane, event.clientX, event.clientY);
+      if (lesion === null) return;
+      frameClickedAt.current = performance.now();
+      openFrame(start.plane, lesion);
+    };
+    window.addEventListener("mouseup", onMouseUp, true);
+
     // Shift + click points all planes at the same spot; it must not reach the brush
     const onMouseDown = (event: MouseEvent) => {
       const plane = planeOf(event.target);
       if (!plane) return;
+      pressed = event.button === 0 && !event.shiftKey ? { plane, x: event.clientX, y: event.clientY } : null;
       if (event.button === 1 || event.button === 2 || (event.button === 0 && panning.current && !event.shiftKey)) startZoom(plane);
       if (event.button === 0 && windowing.current && !event.shiftKey) setWindowChanged(true);
       if (!event.shiftKey || event.button !== 0) return;
@@ -340,9 +448,11 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
 
     return () => {
       for (const plane of PLANES) elements[plane].removeEventListener(Enums.Events.CAMERA_MODIFIED, onCamera);
+      for (const plane of PLANES) elements[plane].removeEventListener(Enums.Events.IMAGE_RENDERED, onRendered);
       for (const plane of PLANES) elements[plane].removeEventListener(Enums.Events.VOI_MODIFIED, onVoi);
       eventTarget.removeEventListener(ToolEnums.Events.SEGMENTATION_DATA_MODIFIED, onModified);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("mouseup", onMouseUp, true);
       root.removeEventListener("mousedown", onMouseDown, true);
       root.removeEventListener("wheel", onWheel, true);
       resize.disconnect();
@@ -350,7 +460,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       for (const id of viewports) rendering.disableElement(id);
       engine.current = null;
     };
-    // startZoom and zoomOf only read refs
+    // startZoom, zoomOf, placeFrames, frameAt and openFrame only read refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids, viewports]);
 
@@ -520,6 +630,16 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     };
   }, [ids, main, shown]);
 
+  // the frames follow the mask after every change to it
+  useEffect(() => {
+    const labelmap = cache.getVolume(ids.mask);
+    lesions.current = maskFrame && labelmap ? maskBoxes(labelmap).map((box) => boxCorners(labelmap, box)) : [];
+    nextLesion.current = 0;
+    placeFrames();
+    // placeFrames only reads refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids, extents, main, maskFrame]);
+
   // reference lines show where the main plane cuts the others
   useEffect(() => {
     const group = ToolGroupManager.getToolGroup(ids.tools);
@@ -535,8 +655,15 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
 
   // the grid changes size when the layout does, so the canvases follow on the next frame
   useEffect(() => {
-    const frame = requestAnimationFrame(() => engine.current?.resize(true, true));
+    const frame = requestAnimationFrame(() => {
+      engine.current?.resize(true, true);
+      placeFrames();
+      if (zoomAfterLayout.current !== null) zoomToMask(main, zoomAfterLayout.current);
+      zoomAfterLayout.current = null;
+    });
     return () => cancelAnimationFrame(frame);
+    // placeFrames and zoomToMask only read refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [main, single, split]);
 
   useEffect(() => {
@@ -564,6 +691,8 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
         zoomBy(event.key === "-" ? 0.8 : 1.25);
       } else if (event.key === "0") {
         fit();
+      } else if (event.key === "z" && lesions.current.length) {
+        zoomToMask(mainRef.current, nextLesion.current++ % lesions.current.length);
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -575,7 +704,7 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
     };
-    // fit only reads refs
+    // fit and zoomToMask only read refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids]);
 
@@ -686,6 +815,69 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
     setZoom(null);
   }
 
+  function frameOn(viewport: Types.IViewport, corners: Types.Point3[]): Frame | null {
+    const { clientWidth: width, clientHeight: height } = viewport.element;
+    if (!width) return null;
+    const camera = viewport.getCamera();
+    const box = project(viewport, corners);
+    const pxPerMm = height / (2 * camera.parallelScale!);
+    const margin = Math.max(FRAME_MARGIN_MM * pxPerMm, FRAME_MARGIN_PX);
+    const w = Math.max(box.w + 2 * margin, FRAME_MIN_PX);
+    const h = Math.max(box.h + 2 * margin, FRAME_MIN_PX);
+    if (Math.max(w / width, h / height) > FRAME_HIDE_SHARE) return null;
+    // the slice on screen cuts the lesion's box
+    const depths = corners.map((corner) => [0, 1, 2].reduce((sum, a) => sum + (corner[a] - camera.focalPoint![a]) * camera.viewPlaneNormal![a], 0));
+    const on = Math.min(...depths) <= 0 && Math.max(...depths) >= 0;
+    return { x: box.x - (w - box.w) / 2, y: box.y - (h - box.h) / 2, w, h, on };
+  }
+
+  function placeFrames(planes = PLANES) {
+    let changed = false;
+    for (const plane of planes) {
+      const viewport = engine.current?.getViewport(ids[plane]);
+      const next = viewport ? lesions.current.map((corners) => frameOn(viewport, corners)) : [];
+      const before = frameRects.current[plane] ?? [];
+      if (next.length !== before.length || next.some((frame, n) => !frame !== !before[n])) changed = true;
+      frameRects.current[plane] = next;
+      next.forEach((frame, n) => {
+        const group = frameEls.current[`${plane}:${n}`];
+        if (frame && group) drawFrame(group, frame);
+      });
+    }
+    if (changed) setFrames(Object.fromEntries(PLANES.map((plane) => [plane, (frameRects.current[plane] ?? []).map(Boolean)])));
+  }
+
+  // centred on the lesion without leaving the slice on screen
+  function zoomToMask(plane: Plane, lesion: number) {
+    const viewport = engine.current?.getViewport(ids[plane]);
+    const corners = lesions.current[lesion];
+    if (!viewport || !corners) return;
+    startZoom(plane);
+    const camera = viewport.getCamera();
+    const focal = camera.focalPoint!;
+    const normal = camera.viewPlaneNormal!;
+    const offset = [0, 1, 2].map((a) => corners.reduce((sum, corner) => sum + corner[a], 0) / corners.length - focal[a]);
+    const along = offset.reduce((sum, v, a) => sum + v * normal[a], 0);
+    const shift = offset.map((v, a) => v - along * normal[a]);
+    const box = project(viewport, corners);
+    const { clientWidth: width, clientHeight: height } = viewport.element;
+    const base = fitScale.current[plane]!;
+    const from = { focal, position: camera.position!, scale: camera.parallelScale! };
+    const scale = Math.min(base, Math.max(base / 8, (from.scale * Math.max(box.w / width, box.h / height)) / MASK_SHARE));
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const start = performance.now();
+    cancelAnimationFrame(frameAnimation.current);
+    const step = (now: number) => {
+      const p = still ? 1 : Math.min(1, (now - start) / 250);
+      const eased = 1 - (1 - p) ** 3;
+      const moved = (point: Types.Point3) => point.map((v, a) => v + shift[a] * eased) as Types.Point3;
+      viewport.setCamera({ focalPoint: moved(from.focal), position: moved(from.position), parallelScale: from.scale + (scale - from.scale) * eased });
+      viewport.render();
+      if (p < 1) frameAnimation.current = requestAnimationFrame(step);
+    };
+    frameAnimation.current = requestAnimationFrame(step);
+  }
+
   const mainExtent = extents[main];
   const currentEdited = !!mainExtent?.edited.includes(slices[main].index);
   useEffect(() => {
@@ -705,6 +897,30 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
   };
   const jump = (imageIndex: number) => jumpIn(main, imageIndex);
   const makeMain = (plane: Plane) => setLayout((l) => ({ ...l, main: plane }));
+  const openFrame = (plane: Plane, lesion: number) => {
+    if (plane === mainRef.current) return zoomToMask(plane, lesion);
+    zoomAfterLayout.current = lesion;
+    makeMain(plane);
+  };
+  // the smallest frame under the pointer, as the lesion's number
+  const frameAt = (plane: Plane, clientX: number, clientY: number) => {
+    const box = els.current[plane]?.getBoundingClientRect();
+    if (!box) return null;
+    const [x, y] = [clientX - box.left, clientY - box.top];
+    let found: number | null = null;
+    (frameRects.current[plane] ?? []).forEach((frame, n) => {
+      if (!frame || x < frame.x || y < frame.y || x > frame.x + frame.w || y > frame.y + frame.h) return;
+      const best = found === null ? null : frameRects.current[plane]![found]!;
+      if (!best || frame.w * frame.h < best.w * best.h) found = n;
+    });
+    return found;
+  };
+  // the frame under the pointer lights up and the cursor turns to a magnifier, except while painting
+  const hoverFrame = (plane: Plane, event?: PointerEvent<HTMLDivElement>) => {
+    const lesion = event && !painting && !event.buttons ? frameAt(plane, event.clientX, event.clientY) : null;
+    els.current[plane]?.classList.toggle("viewer__canvas--frame", lesion !== null);
+    (frameRects.current[plane] ?? []).forEach((_, n) => frameEls.current[`${plane}:${n}`]?.classList.toggle("viewer__frame-group--hover", n === lesion));
+  };
   // fixed order in the side column: axial, sagittal, coronal without the main one
   const area = (plane: Plane) => (plane === main ? "main" : PLANES.filter((p) => p !== main).indexOf(plane) === 0 ? "first" : "second");
   const sets = useMemo(
@@ -812,10 +1028,12 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
             </header>
             <div
               className="viewer__image"
+              onPointerMove={(event) => hoverFrame(plane, event)}
+              onPointerLeave={() => hoverFrame(plane)}
               // double click swaps planes, or brings the study's contrast back while adjusting it;
               // skipped while painting, where it would also lay two brush dots
               onDoubleClick={() => {
-                if (painting) return;
+                if (painting || performance.now() - frameClickedAt.current < 500) return;
                 if (windowing.current) return resetWindow();
                 if (isMain) setLayout((l) => ({ ...l, single: !l.single }));
                 else makeMain(plane);
@@ -838,6 +1056,32 @@ const Viewer = forwardRef<ViewerHandle, Props>(function Viewer(
                 role="img"
                 aria-label={t(`viewer.planeLabel.${plane}`)}
               />
+              {frames[plane]?.some(Boolean) && (
+                <div className="viewer__frames">
+                  <svg aria-hidden="true">
+                    {frames[plane].map(
+                      (shown, n) =>
+                        shown && (
+                          <g
+                            key={n}
+                            ref={(el) => {
+                              frameEls.current[`${plane}:${n}`] = el;
+                              const frame = frameRects.current[plane]?.[n];
+                              if (el && frame) drawFrame(el, frame);
+                            }}
+                            onClick={() => openFrame(plane, n)}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                          >
+                            <rect className="viewer__frame" rx={2} />
+                            <rect className="viewer__frame-hit" strokeWidth={FRAME_HIT_PX}>
+                              <title>{t("viewer.toMask")}</title>
+                            </rect>
+                          </g>
+                        ),
+                    )}
+                  </svg>
+                </div>
+              )}
               <span className="viewer__edge viewer__edge--start">{t(`viewer.edge.${plane}.start`)}</span>
               <span className="viewer__edge viewer__edge--end">{t(`viewer.edge.${plane}.end`)}</span>
             </div>

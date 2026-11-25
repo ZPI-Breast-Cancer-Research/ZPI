@@ -481,6 +481,7 @@ export default function CaseReview({ data, queue }: Props) {
               showMask={showMask}
               tool={tool === "threshold" && !gridMatch ? "brush" : tool}
               editable={!locked}
+              maskFrame
               brushShape={brushShape}
               brushRadius={brushRadius}
               onEdit={() => (touch(), mask.addEdit())}

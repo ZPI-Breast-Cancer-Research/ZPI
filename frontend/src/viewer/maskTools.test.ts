@@ -1,7 +1,7 @@
 import type { Types } from "@cornerstonejs/core";
 import { describe, expect, it } from "vitest";
 
-import { applyPatch, interpolateMask, maskExtent, maskPatch, restoreSlice } from "./maskTools";
+import { applyPatch, interpolateMask, maskBoxes, maskExtent, maskPatch, restoreSlice } from "./maskTools";
 
 type Point = [number, number, number];
 
@@ -47,6 +47,36 @@ describe("maskExtent", () => {
   it("has no size for an empty mask", () => {
     const { volume } = labelmap([4, 4, 4]);
     expect(maskExtent(volume, axial, axialSlice)).toMatchObject({ slices: [], gaps: [], sizeMm: null });
+  });
+});
+
+describe("maskBoxes", () => {
+  it("gives every lesion its own box", () => {
+    const { volume } = labelmap([30, 30, 4], [...square(1, 2, 4), ...square(2, 20, 24)]);
+    expect(maskBoxes(volume)).toEqual([
+      [
+        [2, 2, 1],
+        [4, 4, 1],
+      ],
+      [
+        [20, 20, 2],
+        [24, 24, 2],
+      ],
+    ]);
+  });
+
+  it("keeps a lesion whole across an undrawn slice", () => {
+    const { volume } = labelmap([10, 10, 6], [...square(1, 2, 4), ...square(3, 2, 4)], [1, 1, 3]);
+    expect(maskBoxes(volume)).toEqual([
+      [
+        [2, 2, 1],
+        [4, 4, 3],
+      ],
+    ]);
+  });
+
+  it("has no boxes for an empty mask", () => {
+    expect(maskBoxes(labelmap([4, 4, 4]).volume)).toEqual([]);
   });
 });
 

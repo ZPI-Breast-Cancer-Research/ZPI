@@ -120,6 +120,8 @@
   --color-image-label: #8d97a8;
   --color-image-text: #9aa4b5;
   --color-image-text-strong: #cdd3dc;
+  --color-image-frame: rgba(241, 244, 248, 0.6);
+  --color-image-frame-fill: rgba(241, 244, 248, 0.1);
 
   /* type */
   --font-sans: "Public Sans", -apple-system, "Segoe UI", sans-serif;

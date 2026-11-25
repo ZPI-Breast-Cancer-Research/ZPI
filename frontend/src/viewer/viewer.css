@@ -163,13 +163,52 @@
   min-height: 0;
 }
 
-.viewer__canvas {
+.viewer__canvas,
+.viewer__frames {
   position: absolute;
   inset: 0 0 0 20px;
 }
 
-.viewer__well--main .viewer__canvas {
+.viewer__well--main :is(.viewer__canvas, .viewer__frames) {
   left: 66px;
+}
+
+/* the frame over the image lets clicks through to the tools; a band around it always zooms to the mask */
+.viewer__frames {
+  pointer-events: none;
+}
+
+.viewer__frames svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewer__frame {
+  fill: var(--color-image-frame-fill);
+  stroke: var(--color-image-frame);
+  stroke-width: 1.2;
+}
+
+.viewer__frame--off {
+  opacity: 0.45;
+}
+
+.viewer__frames g:is(:hover, .viewer__frame-group--hover) .viewer__frame {
+  stroke: var(--color-image-text-strong);
+}
+
+/* Cornerstone sets the tool's cursor on the image itself */
+.viewer__canvas--frame,
+.viewer__canvas--frame * {
+  cursor: zoom-in !important;
+}
+
+.viewer__frame-hit {
+  fill: none;
+  stroke: transparent;
+  pointer-events: stroke;
+  cursor: zoom-in;
 }
 
 /* Cornerstone makes the image focusable (tabIndex -1) only to take keys; it never needs a focus ring */

@@ -210,6 +210,7 @@ const KEYS: [MessageKey, [MessageKey, string[]][]][] = [
       ["settings.key.grab", ["Spacja"]],
       ["settings.key.zoom", ["+", "−"]],
       ["viewer.fit", ["0"]],
+      ["settings.key.toMask", ["Z"]],
       ["settings.key.mask", ["M"]],
     ],
   ],

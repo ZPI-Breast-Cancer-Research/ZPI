@@ -69,6 +69,57 @@ export function maskExtent(
   };
 }
 
+// first and last voxel index on each axis
+export type Box = [Types.Point3, Types.Point3];
+
+// one box per lesion: pieces of the mask that touch, or lie closer than mergeMm (a gap between drawn slices), are one lesion
+export function maskBoxes(labelmap: Types.IImageVolume, mergeMm = 10): Box[] {
+  const data = labelmap.voxelManager!.getCompleteScalarDataArray!();
+  const [nx, ny, nz] = labelmap.dimensions;
+  const layer = nx * ny;
+  const left = new Set<number>();
+  for (let index = 0; index < data.length; index++) if (data[index]) left.add(index);
+
+  const boxes: Box[] = [];
+  for (const start of left) {
+    left.delete(start);
+    const min: Types.Point3 = [nx, ny, nz];
+    const max: Types.Point3 = [-1, -1, -1];
+    const stack = [start];
+    while (stack.length) {
+      const index = stack.pop()!;
+      const ijk = [index % nx, Math.floor(index / nx) % ny, Math.floor(index / layer)];
+      for (let a = 0; a < 3; a++) {
+        min[a] = Math.min(min[a], ijk[a]);
+        max[a] = Math.max(max[a], ijk[a]);
+      }
+      for (let dk = -1; dk <= 1; dk++)
+        for (let dj = -1; dj <= 1; dj++)
+          for (let di = -1; di <= 1; di++) {
+            const [i, j, k] = [ijk[0] + di, ijk[1] + dj, ijk[2] + dk];
+            if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) continue;
+            const next = i + j * nx + k * layer;
+            if (left.delete(next)) stack.push(next);
+          }
+    }
+    boxes.push([min, max]);
+  }
+
+  const gapMm = ([aMin, aMax]: Box, [bMin, bMax]: Box) =>
+    Math.hypot(...[0, 1, 2].map((a) => Math.max(0, Math.max(aMin[a], bMin[a]) - Math.min(aMax[a], bMax[a]) - 1) * labelmap.spacing[a]));
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (let a = 0; a < boxes.length && !merged; a++)
+      for (let b = a + 1; b < boxes.length && !merged; b++) {
+        if (gapMm(boxes[a], boxes[b]) > mergeMm) continue;
+        const [bMin, bMax] = boxes.splice(b, 1)[0];
+        boxes[a] = [boxes[a][0].map((v, i) => Math.min(v, bMin[i])) as Types.Point3, boxes[a][1].map((v, i) => Math.max(v, bMax[i])) as Types.Point3];
+        merged = true;
+      }
+  }
+  return boxes;
+}
+
 function worldOf(labelmap: Types.IImageVolume, index: number) {
   const [nx, ny] = labelmap.dimensions;
   return csUtils.transformIndexToWorld(labelmap.imageData!, [index % nx, Math.floor(index / nx) % ny, Math.floor(index / (nx * ny))]);
