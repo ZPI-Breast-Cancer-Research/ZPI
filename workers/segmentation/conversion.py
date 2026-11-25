@@ -16,6 +16,7 @@ from highdicom.seg import (
     Segmentation,
     SegmentationTypeValues,
     SegmentDescription,
+    segread,
 )
 from highdicom.sr.coding import CodedConcept
 from pydicom.errors import InvalidDicomError
@@ -460,6 +461,54 @@ def convert_nifti_to_dicom_seg(
     output_seg_path.parent.mkdir(parents=True, exist_ok=True)
     seg.save_as(str(output_seg_path))
     return DicomSeg(output_seg_path, series_uid, sop_uid)
+
+
+def convert_dicom_seg_to_nifti(seg_path: Path, study_dir: Path, output_nifti_path: Path) -> Path:
+    """Write a DICOM SEG referencing the `pre` phase as a mask in the model input layout.
+
+    The reverse of convert_nifti_to_dicom_seg: the NIfTI has the grid and the array layout of the
+    model's own mask (convert_study), so the two can be compared voxel by voxel and the mask can be
+    measured or used for training.
+    """
+    phase = reference_phase(study_dir)
+    slices = [pydicom.dcmread(path) for path in phase.files]
+    affine = _native_affine(phase.series_uid, slices)
+    seg = segread(seg_path)
+
+    # 1. The SEG belongs to this study and was drawn on `pre`. The phases share one frame of
+    #    reference, so a SEG drawn on `post` passes the first check and only the second stops it.
+    if seg.FrameOfReferenceUID != slices[0].FrameOfReferenceUID:
+        raise GeometryError(
+            f"SEG frame of reference {seg.FrameOfReferenceUID} is not the study's "
+            f"{slices[0].FrameOfReferenceUID}"
+        )
+    referenced = {item.SeriesInstanceUID for item in seg.ReferencedSeriesSequence}
+    if referenced != {phase.series_uid}:
+        raise GeometryError(
+            f"SEG references series {sorted(referenced)}, expected the `pre` phase "
+            f"{phase.series_uid}"
+        )
+
+    # 2. Frames in the order of the `pre` slices; a slice without a frame is empty.
+    pixels = seg.get_pixels_by_source_instance(
+        source_sop_instance_uids=[s.SOPInstanceUID for s in slices],
+        combine_segments=True,
+        assert_missing_frames_are_empty=True,
+    )  # [slice, row, column]
+
+    # 3. The steps of convert_nifti_to_dicom_seg in reverse order.
+    # [column, row, slice], like the arrays of load_volume before the training-layout flips
+    mask = np.ascontiguousarray(pixels.transpose(2, 1, 0) > 0, dtype=np.uint8)
+    expected = (int(slices[0].Columns), int(slices[0].Rows), len(slices))
+    if mask.shape != expected:
+        raise GeometryError(
+            f"SEG shape {mask.shape} does not match the reference phase {expected} "
+            f"(series {phase.series_uid})"
+        )
+    mask, affine = _to_training_layout(mask, affine)
+
+    write_nifti(np.ascontiguousarray(mask), affine, output_nifti_path)
+    return output_nifti_path
 
 
 def _phase_entry(
