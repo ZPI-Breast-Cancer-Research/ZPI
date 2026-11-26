@@ -9,12 +9,15 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
-import { AuthProvider } from "./auth/AuthProvider";
+import { AuthProvider, readUser } from "./auth/AuthProvider";
 import { createQueryClient } from "./queryClient";
+import { savedTheme } from "./settings/preferences";
+import { applyTheme } from "./settings/theme";
 import "./styles/tokens.css";
 import "./styles/base.css";
 
 const queryClient = createQueryClient();
+applyTheme(savedTheme(readUser()?.login ?? ""));
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

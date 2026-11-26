@@ -1,8 +1,10 @@
 .overview {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 460px;
+  gap: var(--island-gap);
   height: 100%;
   min-height: 0;
+  padding: var(--island-gap);
 }
 
 .overview__view {
@@ -10,12 +12,17 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--color-image);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-well);
 }
 
 .overview__info {
   overflow: auto;
-  border-left: 1px solid var(--color-rule);
+  background: var(--color-island);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
 }
 
 .overview__info .panel {

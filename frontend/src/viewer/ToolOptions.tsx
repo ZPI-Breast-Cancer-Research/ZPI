@@ -39,12 +39,12 @@ export default function ToolOptions({ tool, shape, onShape, radius, onRadius, wi
         ))}
       </div>
       <span>{t("viewer.radius")}</span>
-      <span className="tool-options__size" title={t("viewer.radiusTitle")}>
-        <button type="button" aria-label={t("viewer.smaller")} disabled={radius <= RADIUS_MIN} onClick={() => onRadius(radius - 1)}>
+      <span className="viewer__group" title={t("viewer.radiusTitle")}>
+        <button type="button" className="viewer__step" aria-label={t("viewer.smaller")} disabled={radius <= RADIUS_MIN} onClick={() => onRadius(radius - 1)}>
           −
         </button>
-        <b>{t("viewer.radiusValue", { n: radius })}</b>
-        <button type="button" aria-label={t("viewer.bigger")} disabled={radius >= RADIUS_MAX} onClick={() => onRadius(radius + 1)}>
+        <b className="tool-options__radius">{t("viewer.radiusValue", { n: radius })}</b>
+        <button type="button" className="viewer__step" aria-label={t("viewer.bigger")} disabled={radius >= RADIUS_MAX} onClick={() => onRadius(radius + 1)}>
           +
         </button>
       </span>

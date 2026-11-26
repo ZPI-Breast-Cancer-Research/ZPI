@@ -1,8 +1,10 @@
 .review {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 440px;
+  gap: var(--island-gap);
   height: 100%;
   min-height: 0;
+  padding: var(--island-gap);
 }
 
 /* form folded away: the images take the width, a narrow bar brings the form back */
@@ -16,9 +18,10 @@
   align-items: center;
   gap: 12px;
   padding: 12px 0 0;
-  background: var(--color-ground);
+  background: var(--color-island);
   border: 0;
-  border-left: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
   color: var(--color-ink-muted);
   font: inherit;
   font-size: 13.5px;
@@ -76,7 +79,7 @@
   display: grid;
   place-items: center;
   width: 34px;
-  border-left: 1px solid #b8506f;
+  border-left: 1px solid var(--color-primary-split);
   border-radius: 0 var(--radius) var(--radius) 0;
 }
 
@@ -110,7 +113,8 @@
 }
 
 .approve-state .link {
-  color: var(--color-ink);
+  color: var(--color-accent-text);
+  text-decoration-color: var(--color-primary);
 }
 
 .approve-state--done {
@@ -129,18 +133,18 @@
 /* while something waits, Dalej only moves on and stays quiet */
 .approve--quiet .approve__main,
 .approve--quiet .approve__more {
-  background: #16243d;
+  background: var(--color-banner-button);
   color: var(--color-ink);
-  box-shadow: inset 0 0 0 1px var(--color-rule-strong);
+  box-shadow: inset 0 1px 0 var(--edge-light);
 }
 
 .approve--quiet .approve__more {
-  border-left-color: var(--color-rule-strong);
+  border-left-color: var(--color-rule);
 }
 
 .approve--quiet .approve__main:hover,
 .approve--quiet .approve__more:hover {
-  background: #1c2c49;
+  background: var(--color-button-hover);
 }
 
 .approve__menu {
@@ -149,10 +153,10 @@
   right: 0;
   z-index: 10;
   width: 330px;
-  background: var(--color-side);
-  border: 1px solid var(--color-rule-strong);
+  background: var(--color-island);
+  border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-float);
 }
 
 .approve__menu-head {
@@ -215,11 +219,12 @@
   padding: 9px 14px;
 }
 
+/* the tool rail and the form are raised islands, the image sits sunk between them */
 .review__view {
   display: flex;
+  gap: var(--island-gap);
   min-width: 0;
   min-height: 0;
-  background: var(--color-image);
 }
 
 .review__viewer {
@@ -228,14 +233,20 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  background: var(--color-image);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-well);
 }
 
 .review__form {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--color-ground);
-  border-left: 1px solid var(--color-rule);
+  overflow: hidden;
+  background: var(--color-island);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
 }
 
 .review__form-body {
@@ -257,15 +268,16 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  background: #13203a;
-  border-top: 1px solid var(--color-rule-strong);
+  background: var(--color-island);
+  border-top: 1px solid var(--color-rule);
 }
 
 .report-text {
   padding: 10px 12px;
   background: var(--color-field);
   border: 1px solid var(--color-rule-strong);
-  border-radius: 2px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sunken);
   color: var(--color-ink-muted);
   font-size: 14.5px;
   line-height: 1.6;
@@ -274,7 +286,7 @@
 .report-text__mark {
   background: none;
   color: var(--color-ink);
-  text-decoration: underline dashed var(--color-ink-muted) 1px;
+  text-decoration: underline dashed var(--color-primary) 1.5px;
   text-underline-offset: 4px;
 }
 
@@ -290,7 +302,7 @@
 .empty-box {
   padding: 16px 14px;
   border: 1px dashed var(--color-rule-strong);
-  border-radius: 2px;
+  border-radius: var(--radius);
   color: var(--color-ink-faint);
   font-size: 13.5px;
 }
@@ -321,8 +333,8 @@
   gap: 18px;
   min-height: 50px;
   padding: 0 14px;
-  background: #13203a;
-  border-top: 1px solid var(--color-rule-strong);
+  background: var(--color-field);
+  border-top: 1px solid var(--color-rule);
   color: var(--color-ink-muted);
   white-space: nowrap;
 }
@@ -355,11 +367,11 @@
 }
 
 .mask-strip__gap .link {
-  text-decoration-color: rgba(240, 144, 127, 0.5);
+  text-decoration-color: color-mix(in srgb, var(--color-warning) 50%, transparent);
 }
 
 .mask-strip__eye kbd {
-  font-size: 10.5px;
+  font-size: 11.5px;
 }
 
 .mask-strip__eye {
@@ -367,21 +379,26 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 32px;
-  height: 28px;
-  padding: 0 8px;
-  background: none;
-  border: 1px solid var(--color-rule-strong);
+  min-width: 40px;
+  height: 32px;
+  padding: 0 9px;
+  background: var(--color-button);
+  border: 0;
   border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--edge-light);
   color: var(--color-ink);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
 
+.mask-strip__eye:hover {
+  background: var(--color-button-hover);
+}
+
 .mask-strip__eye .icon {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .mask-strip__eye[aria-pressed="false"] {
@@ -424,16 +441,17 @@
 
 /* the two decisions of a case: pink outline on a light pink tint, quieter than the pink Dalej */
 .btn.btn--confirm {
-  background: rgba(236, 111, 152, 0.16);
+  background: var(--color-primary-tint);
   border: 1.5px solid var(--color-primary);
-  color: var(--color-corrected);
+  box-shadow: none;
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 
 .btn.btn--confirm:hover:not(:disabled) {
-  background: rgba(236, 111, 152, 0.26);
+  background: var(--color-primary-tint-strong);
   border-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-ink);
 }
 
 /* report scan */
@@ -446,7 +464,7 @@
   overflow: hidden;
   background: #ebe9e3;
   border: 1px solid var(--color-rule-strong);
-  border-radius: 2px;
+  border-radius: var(--radius);
   cursor: zoom-in;
 }
 
@@ -478,7 +496,7 @@
   padding: 2px 8px;
   background: var(--color-ground);
   border: 1px solid var(--color-rule-strong);
-  border-radius: 2px;
+  border-radius: var(--radius);
   color: var(--color-ink);
   font-size: 12px;
 }
@@ -497,7 +515,7 @@
   gap: 10px;
   align-items: center;
   padding: 9px 14px;
-  border-bottom: 1px solid var(--color-rule);
+  border-bottom: 1px solid var(--color-line);
 }
 
 .lesion-switch--single {
@@ -521,17 +539,17 @@
 
 .lesion-switch__arrow {
   height: 30px;
-  background: #16243d;
-  border: 1px solid var(--color-rule-strong);
+  background: var(--color-button);
+  border: 0;
   border-radius: var(--radius);
-  color: var(--color-ink-muted);
+  box-shadow: inset 0 1px 0 var(--edge-light);
+  color: var(--color-accent-text);
   font-size: 17px;
   cursor: pointer;
 }
 
 .lesion-switch__arrow:hover:not(:disabled) {
-  border-color: var(--color-ink-muted);
-  color: var(--color-ink);
+  background: var(--color-button-hover);
 }
 
 .lesion-switch__arrow:disabled {
@@ -553,9 +571,10 @@
   max-height: calc(100vh - 48px);
   padding: 0;
   overflow: hidden;
-  background: var(--color-side);
-  border: 1px solid var(--color-rule-strong);
-  border-radius: 3px;
+  background: var(--color-island);
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
   color: var(--color-ink);
 }
 
@@ -566,7 +585,7 @@
 }
 
 .original::backdrop {
-  background: rgba(4, 8, 16, 0.78);
+  background: var(--backdrop);
 }
 
 .original__head {
@@ -595,11 +614,11 @@
 }
 
 .original__tabs {
-  background: var(--color-banner);
+  background: var(--color-strip);
 }
 
 .original__tabs a.active {
-  background: var(--color-side);
+  background: var(--color-island);
 }
 
 .original__body {
@@ -634,7 +653,7 @@
 }
 
 .report-text__quote {
-  background: rgba(236, 111, 152, 0.18);
+  background: var(--color-primary-tint);
   color: var(--color-ink);
   border-bottom: 2px solid var(--color-primary);
 }
@@ -656,7 +675,7 @@
   gap: 8px;
   margin: 0 -14px 2px;
   padding: 8px 14px;
-  background: var(--color-banner);
+  background: var(--color-hover);
   font-size: 14px;
   font-weight: 600;
 }
@@ -739,19 +758,35 @@
   font-size: 13px;
 }
 
+.rows__act {
+  position: relative;
+}
+
 .rows__change {
-  visibility: hidden;
   padding: 0;
   background: none;
   border: 0;
-  color: var(--color-ink-faint);
+  color: var(--color-ink-muted);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
 }
 
-.rows__row:hover .rows__change {
-  visibility: visible;
+/* a decided row shows its state; hovering or tabbing in swaps it for the action */
+.rows__swap {
+  position: absolute;
+  right: 0;
+  opacity: 0;
+}
+
+.rows__row:hover .rows__swap,
+.rows__swap:focus-visible {
+  opacity: 1;
+}
+
+.rows__row:hover .rows__state,
+.rows__act:has(.rows__swap:focus-visible) .rows__state {
+  opacity: 0;
 }
 
 .rows__controls {

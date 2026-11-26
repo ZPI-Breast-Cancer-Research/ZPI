@@ -1,52 +1,142 @@
-/* from docs/design/mockups */
-:root {
+/* dark is the default; the bar, the banner and the frame around the image stay dark in the light theme too */
+:root,
+:root[data-theme="dark"],
+[data-theme="light"] :is(.topbar, .banner, .statusbar, .viewer-bar, .viewer, .mask-strip, .original__head) {
   /* surfaces */
-  --color-bar: #1a2740;
-  --color-banner: #152036;
-  --color-ground: #0f1a2d;
-  --color-side: #0a1222;
-  --color-field: #0b1424;
-  --color-strip: #2c384b;
-  --color-strip-border: #222c3c;
-  --color-hover: #15223a;
-  --color-selected: #1c2c49;
+  --color-base: #0d152b;
+  --color-island: #15203f;
+  --color-field: #0d152b;
+  --color-strip: #2d3d69;
+  --color-hover: #1e2b50;
+  --color-selected: #374875;
+  --color-button: #374875;
+  --color-button-hover: #3f517e;
+  --color-bar: #1e2d5a;
+  --color-banner: #1d2a52;
+  --color-banner-button: #3a4b78;
   --color-image: #000;
 
   /* lines */
-  --color-line: #18243a;
-  --color-rule: #22314b;
-  --color-rule-strong: #34465f;
+  --color-line: #384a7c;
+  --color-rule: #415489;
+  --color-rule-strong: #7b8cb4;
 
   /* text */
-  --color-ink: #e8ecf1;
-  --color-ink-muted: #b0bac8;
-  --color-ink-faint: #808b9e;
-  --color-bar-ink: #c9d2df;
-  --color-strip-aux: #d3d9e2;
+  --color-ink: #f1f4f8;
+  --color-ink-muted: #dadeea;
+  --color-ink-faint: #b0b8cd;
+  --color-bar-ink: #dadeea;
+  --color-strip-aux: #dadeea;
 
   /* accents and states */
   --color-primary: #ec6f98;
   --color-primary-hover: #f283a8;
   --color-primary-ink: #2a0e1a;
-  --color-corrected: #f390b2;
-  --color-confirmed: #a9cdb9;
+  --color-primary-split: #b8506f;
+  --color-primary-tint: rgba(236, 111, 152, 0.16);
+  --color-primary-tint-strong: rgba(236, 111, 152, 0.26);
+  --color-accent-text: #f6a3c0;
+  --color-corrected: #f76fa2;
+  --color-confirmed: #7fd0b4;
   --color-running: #afc0da;
-  --color-warning: #f0907f;
+  --color-warning: #ff7a5e;
+  --color-warning-tint: rgba(255, 122, 94, 0.12);
+  --color-proposal: #a9b5cb;
+
+  /* depth: raised islands, sunken fields and image */
+  --edge-light: rgba(255, 255, 255, 0.08);
+  --shadow-raised: inset 0 1px 0 var(--edge-light), 0 4px 16px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-well: inset 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.35);
+  --shadow-sunken: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-strip: 0 1px 0 rgba(0, 0, 0, 0.25), inset 0 1px 0 var(--edge-light);
+  --shadow-banner: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --backdrop: rgba(4, 8, 16, 0.78);
+
+  /* older names */
+  --color-ground: var(--color-island);
+  --color-side: var(--color-base);
+  --color-strip-border: transparent;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --color-base: #dce2eb;
+  --color-island: #ffffff;
+  --color-field: #ffffff;
+  --color-strip: #e7ecf4;
+  --color-hover: #eef2f7;
+  --color-selected: #d6dde9;
+  --color-button: #e4e9f1;
+  --color-button-hover: #d6dde9;
+  --color-bar: #1e2d5a;
+  --color-banner: #1d2a52;
+  --color-banner-button: #3a4b78;
+  --color-image: #000;
+
+  --color-line: #e1e6ee;
+  --color-rule: #cad2df;
+  --color-rule-strong: #7286a7;
+
+  --color-ink: #16233f;
+  --color-ink-muted: #3e4b66;
+  --color-ink-faint: #5c6a83;
+  --color-bar-ink: #dadeea;
+  --color-strip-aux: #3e4b66;
+
+  --color-primary: #ec6f98;
+  --color-primary-hover: #f283a8;
+  --color-primary-ink: #2a0e1a;
+  --color-primary-split: #b8506f;
+  --color-primary-tint: rgba(236, 111, 152, 0.12);
+  --color-primary-tint-strong: rgba(236, 111, 152, 0.22);
+  --color-accent-text: #a8325f;
+  --color-corrected: #a8215a;
+  --color-confirmed: #155e4b;
+  --color-running: #3d5a86;
+  --color-warning: #a8321b;
+  --color-warning-tint: rgba(168, 50, 27, 0.08);
+  --color-proposal: #4a5874;
+
+  --edge-light: #ffffff;
+  --shadow-raised: 0 2px 4px rgba(20, 35, 66, 0.1), 0 6px 18px rgba(20, 35, 66, 0.12);
+  --shadow-well: 0 2px 4px rgba(20, 35, 66, 0.12), 0 0 0 1px rgba(20, 35, 66, 0.25);
+  --shadow-sunken: inset 0 1px 2px rgba(20, 35, 66, 0.1);
+  --shadow-strip: 0 1px 0 rgba(20, 35, 66, 0.08);
+  --shadow-banner: 0 2px 8px rgba(20, 35, 66, 0.25);
+  --shadow-float: 0 8px 24px rgba(20, 35, 66, 0.18);
+  --backdrop: rgba(20, 35, 66, 0.45);
+
+  --color-ground: var(--color-island);
+  --color-side: var(--color-base);
+  --color-strip-border: transparent;
+
+  color-scheme: light;
+}
+
+:root {
+  /* labels on the black image, the same in both themes */
+  --color-image-label: #8d97a8;
+  --color-image-text: #9aa4b5;
+  --color-image-text-strong: #cdd3dc;
+  --color-image-frame: rgba(241, 244, 248, 0.6);
+  --color-image-frame-fill: rgba(241, 244, 248, 0.1);
 
   /* type */
   --font-sans: "Public Sans", -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Source Code Pro", ui-monospace, Menlo, monospace;
+  --text-label: 12.5px;
   --text-sm: 13px;
   --text-base: 14px;
-  --text-strip: 15.5px;
+  --text-strip: 16px;
   --text-title: 17px;
 
   /* layout */
   --bar-height: 48px;
   --banner-height: 52px;
   --strip-height: 42px;
-  --radius: 3px;
+  --radius: 4px;
+  --island-gap: 6px;
   --app-min-width: 1280px;
-
-  color-scheme: dark;
 }

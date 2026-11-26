@@ -28,6 +28,12 @@ const PATHS: Record<string, JSX.Element> = {
       <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" stroke="none" />
     </>
   ),
+  frame: (
+    <>
+      <path d="M2.5 3.5h11v9h-11z" />
+      <circle cx="8" cy="8" r="1.8" />
+    </>
+  ),
   eye: (
     <>
       <path d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />

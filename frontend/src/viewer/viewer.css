@@ -8,7 +8,7 @@
   gap: 2px;
   flex: 1;
   min-height: 0;
-  background: #121a28;
+  background: var(--color-field);
 }
 
 .viewer--single {
@@ -24,6 +24,7 @@
 .viewer__divider {
   grid-area: divider;
   position: relative;
+  z-index: 2;
   background: var(--color-field);
   cursor: col-resize;
   touch-action: none;
@@ -39,6 +40,13 @@
   margin: -22px 0 0 -1.5px;
   border-radius: 2px;
   background: var(--color-rule-strong);
+}
+
+/* a wider grip than the 8px it shows */
+.viewer__divider::before {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
 }
 
 .viewer__divider:hover::after {
@@ -86,8 +94,8 @@
   align-items: center;
   gap: 10px;
   flex: none;
-  height: 30px;
-  padding: 0 10px;
+  height: 38px;
+  padding: 0 6px 0 10px;
   background: var(--color-field);
   border-bottom: 1px solid var(--color-rule);
   color: var(--color-ink-muted);
@@ -121,26 +129,27 @@
 .viewer__head-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 8px;
-  background: none;
-  border: 1px solid var(--color-rule-strong);
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--color-button);
+  border: 0;
   border-radius: var(--radius);
-  color: var(--color-ink-muted);
+  box-shadow: inset 0 1px 0 var(--edge-light);
+  color: var(--color-ink);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.viewer__head-btn:hover {
-  color: var(--color-ink);
-  border-color: var(--color-ink-muted);
+.viewer__head-btn:hover:not(:disabled) {
+  background: var(--color-button-hover);
 }
 
 .viewer__head-btn svg {
-  width: 13px;
-  height: 13px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
@@ -154,13 +163,52 @@
   min-height: 0;
 }
 
-.viewer__canvas {
+.viewer__canvas,
+.viewer__frames {
   position: absolute;
   inset: 0 0 0 20px;
 }
 
-.viewer__well--main .viewer__canvas {
+.viewer__well--main :is(.viewer__canvas, .viewer__frames) {
   left: 66px;
+}
+
+/* the frame over the image lets clicks through to the tools; a band around it always zooms to the mask */
+.viewer__frames {
+  pointer-events: none;
+}
+
+.viewer__frames svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.viewer__frame {
+  fill: var(--color-image-frame-fill);
+  stroke: var(--color-image-frame);
+  stroke-width: 1.2;
+}
+
+.viewer__frame--off {
+  opacity: 0.45;
+}
+
+.viewer__frames g:is(:hover, .viewer__frame-group--hover) .viewer__frame {
+  stroke: var(--color-image-text-strong);
+}
+
+/* Cornerstone sets the tool's cursor on the image itself */
+.viewer__canvas--frame,
+.viewer__canvas--frame * {
+  cursor: zoom-in !important;
+}
+
+.viewer__frame-hit {
+  fill: none;
+  stroke: transparent;
+  pointer-events: stroke;
+  cursor: zoom-in;
 }
 
 /* Cornerstone makes the image focusable (tabIndex -1) only to take keys; it never needs a focus ring */
@@ -179,7 +227,7 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  color: #8d97a8;
+  color: var(--color-image-label);
   font-size: 13px;
   font-weight: 600;
   pointer-events: none;
@@ -207,12 +255,12 @@
   justify-content: center;
   gap: 12px;
   background: var(--color-image);
-  color: #9aa4b5;
+  color: var(--color-image-text);
   font-size: 14px;
 }
 
 .viewer__status b {
-  color: #cdd3dc;
+  color: var(--color-image-text-strong);
   font-weight: 600;
 }
 
@@ -227,15 +275,19 @@
   flex: none;
 }
 
-/* tool rail: square buttons, icon above the name */
+/* tool rail: an island of square buttons, icon above the name */
 .tool-rail {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   flex: none;
   width: 76px;
   min-height: 0;
-  background: var(--color-field);
-  border-right: 1px solid var(--color-rule);
+  padding: 4px;
+  overflow: auto;
+  background: var(--color-island);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
 }
 
 .tool-rail__btn {
@@ -245,14 +297,14 @@
   justify-content: center;
   gap: 4px;
   width: 100%;
-  height: 58px;
+  height: 56px;
   padding: 0;
   background: none;
   border: 0;
-  border-bottom: 1px solid var(--color-rule);
+  border-radius: var(--radius);
   color: var(--color-ink-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-label);
   cursor: pointer;
 }
 
@@ -262,13 +314,14 @@
 }
 
 .tool-rail__btn:hover:not([aria-disabled="true"]) {
-  background: #111a2b;
+  background: var(--color-hover);
   color: var(--color-ink);
 }
 
 .tool-rail__btn[aria-pressed="true"] {
-  background: var(--color-ink);
-  color: var(--color-side);
+  background: var(--color-selected);
+  box-shadow: inset 0 1px 0 var(--edge-light);
+  color: var(--color-ink);
   font-weight: 600;
 }
 
@@ -283,8 +336,8 @@
 
 /* two-word names break onto a second line */
 .tool-rail__label {
-  max-width: 70px;
-  font-size: 11.5px;
+  max-width: 66px;
+  font-size: var(--text-label);
   line-height: 1.15;
   text-align: center;
 }
@@ -292,9 +345,9 @@
 /* looking, painting and mask operations are three groups */
 .tool-rail__gap {
   flex: none;
-  height: 10px;
-  background: #060c18;
-  border-bottom: 1px solid var(--color-rule-strong);
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--color-rule);
 }
 
 /* bar above the images: the active tool's options on the left, the series on the right */
@@ -338,7 +391,7 @@
 }
 
 .viewer-bar__corner button:hover {
-  background: #111a2b;
+  background: var(--color-hover);
   color: var(--color-ink);
 }
 
@@ -378,36 +431,55 @@
   background: radial-gradient(circle at 35% 35%, transparent 35%, currentColor 140%);
 }
 
-.tool-options__size {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.tool-options__size button {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  background: none;
+/* steppers and their value in one bordered group: brush radius, zoom */
+.viewer__group {
+  display: inline-flex;
+  align-items: stretch;
+  height: 32px;
+  overflow: hidden;
   border: 1px solid var(--color-rule-strong);
   border-radius: var(--radius);
   color: var(--color-ink);
+}
+
+.viewer__group > * + * {
+  border-left: 1px solid var(--color-rule-strong);
+}
+
+.viewer__step {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: 0;
+  background: none;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  color: var(--color-ink);
   font: inherit;
+  font-size: 17px;
+  line-height: 1;
   cursor: pointer;
 }
 
-.tool-options__size button:disabled {
-  opacity: 0.4;
+.viewer__step:first-child {
+  border-left: 0;
+}
+
+.viewer__step:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.viewer__step:disabled {
+  color: var(--color-ink-faint);
   cursor: default;
 }
 
-.tool-options__size b {
-  min-width: 46px;
-  color: var(--color-ink);
+.tool-options__radius {
+  display: grid;
+  place-items: center;
+  min-width: 56px;
   font-weight: 600;
-  text-align: center;
 }
 
 
@@ -421,10 +493,10 @@
   z-index: 30;
   max-width: 220px;
   padding: 6px 9px 7px;
-  background: var(--color-side);
-  border: 1px solid var(--color-rule-strong);
+  background: var(--color-island);
+  border: 1px solid var(--color-rule);
   border-radius: var(--radius);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-float);
   color: var(--color-ink-muted);
   font-size: 12.5px;
   font-weight: 400;
@@ -450,7 +522,7 @@
 
 .hint__head kbd {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: 11.5px;
 }
 
 /* zoom bar in the main view's header */
@@ -460,29 +532,29 @@
   gap: 6px;
 }
 
-.viewer__zoom .viewer__head-btn {
-  justify-content: center;
-  min-width: 22px;
-  padding: 0 6px;
-}
-
 .viewer__zoom .viewer__head-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
 .viewer__zoom-value {
-  min-width: 34px;
+  display: grid;
+  place-items: center;
+  min-width: 52px;
+  color: var(--color-ink);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 
 .viewer__zoom-range {
-  width: 80px;
-  height: 14px;
+  width: 76px;
+  height: 100%;
+  padding: 0 8px;
   background: none;
+  border-left: 1px solid var(--color-rule-strong);
   cursor: pointer;
   appearance: none;
+  box-sizing: content-box;
 }
 
 .viewer__zoom-range::-webkit-slider-runnable-track {
@@ -492,9 +564,9 @@
 }
 
 .viewer__zoom-range::-webkit-slider-thumb {
-  width: 12px;
-  height: 12px;
-  margin-top: -4px;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
   background: var(--color-ink);
   border: 0;
   border-radius: 50%;
@@ -514,8 +586,8 @@
 }
 
 .viewer__zoom-range::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   background: var(--color-ink);
   border: 0;
   border-radius: 50%;
@@ -526,5 +598,5 @@
 }
 
 .viewer__zoom-range:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px rgba(236, 111, 152, 0.35);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 35%, transparent);
 }

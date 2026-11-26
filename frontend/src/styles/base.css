@@ -12,7 +12,7 @@ body,
 
 body {
   min-width: var(--app-min-width);
-  background: var(--color-ground);
+  background: var(--color-base);
   color: var(--color-ink);
   font: 400 var(--text-base) / 1.45 var(--font-sans);
   font-variant-numeric: tabular-nums;
@@ -49,18 +49,20 @@ textarea {
   gap: 6px;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--color-rule-strong);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: #16243d;
+  background: var(--color-button);
+  box-shadow: inset 0 1px 0 var(--edge-light);
   color: var(--color-ink);
   font-size: var(--text-base);
+  font-weight: 500;
   white-space: nowrap;
   text-decoration: none;
   cursor: pointer;
 }
 
 .btn:hover {
-  border-color: var(--color-ink-muted);
+  background: var(--color-button-hover);
 }
 
 .btn:disabled,
@@ -82,8 +84,8 @@ textarea {
 }
 
 .btn--small {
-  height: 26px;
-  padding: 0 9px;
+  height: 28px;
+  padding: 0 10px;
   font-size: 12.5px;
 }
 
@@ -255,7 +257,8 @@ textarea {
   padding: 0 10px;
   background: var(--color-field);
   border: 1px solid var(--color-rule-strong);
-  border-radius: 2px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sunken);
   color: var(--color-ink);
   font-size: var(--text-base);
 }
@@ -328,8 +331,8 @@ textarea {
 
 .segmented > [aria-pressed="true"],
 .segmented > .active {
-  background: var(--color-ink);
-  color: var(--color-side);
+  background: var(--color-selected);
+  color: var(--color-ink);
   font-weight: 600;
 }
 
@@ -445,7 +448,7 @@ textarea {
 .skeleton span {
   height: 10px;
   border-radius: 2px;
-  background: linear-gradient(90deg, #16233a 0%, #1e2d48 50%, #16233a 100%);
+  background: linear-gradient(90deg, var(--color-hover) 0%, var(--color-strip) 50%, var(--color-hover) 100%);
   background-size: 200% 100%;
   animation: skeleton 1.4s ease-in-out infinite;
 }
@@ -470,9 +473,9 @@ textarea {
   max-width: 640px;
   margin: 14px;
   padding: 10px 12px;
-  border: 1px solid rgba(240, 144, 127, 0.45);
-  border-radius: 4px;
-  background: #24161a;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius);
+  background: var(--color-warning-tint);
 }
 
 .state-alert b {

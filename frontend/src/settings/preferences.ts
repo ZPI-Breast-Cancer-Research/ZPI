@@ -3,15 +3,19 @@ import { useCallback, useSyncExternalStore } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import type { Plane, Series } from "../viewer/types";
 
+export type Theme = "dark" | "light" | "system";
+
 export interface Preferences {
+  theme: Theme;
   series: Series;
   main: Plane;
   single: boolean;
   maskShown: boolean;
+  frameShown: boolean;
   hints: boolean;
 }
 
-const DEFAULTS: Preferences = { series: "post", main: "axial", single: false, maskShown: true, hints: true };
+const DEFAULTS: Preferences = { theme: "dark", series: "post", main: "axial", single: false, maskShown: true, frameShown: true, hints: true };
 
 // TODO: kept in the browser per login until the backend stores them with the profile;
 // workstations in a hospital are shared, so they follow the person, not the machine
@@ -32,6 +36,11 @@ const listeners = new Set<() => void>();
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+// read before the first render, so the page does not flash in the other theme
+export function savedTheme(login: string): Theme {
+  return store[login]?.theme ?? DEFAULTS.theme;
 }
 
 export function usePreferences() {

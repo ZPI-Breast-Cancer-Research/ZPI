@@ -60,6 +60,7 @@ export default function CaseReview({ data, queue }: Props) {
   const [layout, setLayout] = useViewerLayout();
   const [series, setSeries] = useState<Series>(preferred.series);
   const [showMask, setShowMask] = useState(preferred.maskShown);
+  const [showFrame, setShowFrame] = useState(preferred.frameShown);
   const [available, setAvailable] = useState<Series[]>(["post"]);
   const [brushShape, setBrushShape] = useState<BrushShape>("circle");
   const [brushRadius, setBrushRadius] = useState(5);
@@ -313,6 +314,7 @@ export default function CaseReview({ data, queue }: Props) {
       if (painting && lockedRef.current) return;
       if (tools[event.key]) setTool(tools[event.key]);
       else if (event.key === "m") setShowMask((s) => !s);
+      else if (event.key === "o") setShowFrame((s) => !s);
       else if (event.key === "s") setBrushShape((s) => (s === "circle" ? "sphere" : "circle"));
       else if (event.key === "[" || event.key === "]") setBrushRadius((r) => Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, r + (event.key === "]" ? 1 : -1))));
       else if (event.key === "f") setFullView(true);
@@ -481,6 +483,7 @@ export default function CaseReview({ data, queue }: Props) {
               showMask={showMask}
               tool={tool === "threshold" && !gridMatch ? "brush" : tool}
               editable={!locked}
+              maskFrame={showFrame}
               brushShape={brushShape}
               brushRadius={brushRadius}
               onEdit={() => (touch(), mask.addEdit())}
@@ -510,6 +513,8 @@ export default function CaseReview({ data, queue }: Props) {
               onRestore={() => (touch(), mask.restoreModel())}
               showMask={showMask}
               onToggleMask={() => setShowMask((s) => !s)}
+              showFrame={showFrame}
+              onToggleFrame={() => setShowFrame((s) => !s)}
             />
           </div>
         </section>

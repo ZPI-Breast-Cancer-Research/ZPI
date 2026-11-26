@@ -81,7 +81,8 @@ export default function Select({ id, value, options, mark, placeholder = "—", 
             event.preventDefault();
             pick(options[active]);
           } else if (event.key === "Escape" && open) {
-            // the review screen's Esc (show the form) should not fire too
+            // closes only the list: not the dialog around it, nor the review screen's Esc (show the form)
+            event.preventDefault();
             event.stopPropagation();
             setOpen(false);
           }
