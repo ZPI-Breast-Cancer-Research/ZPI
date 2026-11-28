@@ -121,14 +121,14 @@ flowchart TB
 
     api -- "Czyta i zapisuje [SQL]" --> pg
     api -- "Zleca zadania" --> redis
-    api -- "Zatwierdzone maski, skany opisów [S3]" --> s3
-    api -- "Upload DICOM, sprawdza serie [REST, QIDO-RS]" --> orthanc
+    api -- "Skany opisów [S3]" --> s3
+    api -- "Upload DICOM i poprawionej maski (SEG),<br/>sprawdza serie [REST, QIDO-RS]" --> orthanc
     api -- "Promuje wersję, czyta metryki [REST]" --> mlflow
     orthanc -. "Powiadamia o nowym badaniu [HTTP]" .-> api
 
     tlo -- "Pobierają zadania" --> redis
     tlo -- "Statusy, wyniki, heartbeat [SQL]" --> pg
-    wseg -- "Pobiera serie, zapisuje SEG [DICOMweb]" --> orthanc
+    wseg -- "Pobiera serie i SEG poprawki,<br/>zapisuje SEG modelu [DICOMweb]" --> orthanc
     wseg -- "Pliki i maski [S3]" --> s3
     wseg -- "Pobiera model @production [REST]" --> mlflow
     wext -- "Ekstrakcja [HTTP, API OpenAI]" --> llm
@@ -176,6 +176,7 @@ flowchart LR
         conversion["Konwersja<br/>DICOM → NIfTI"]
         model["Model<br/>(wagi ładowane raz)"]
         seg["Konwersja<br/>maska → DICOM SEG"]
+        back["Konwersja poprawki<br/>DICOM SEG → NIfTI<br/>(kolejka CPU)"]
     end
 
     ui["Aplikacja webowa"]
@@ -199,9 +200,11 @@ flowchart LR
     orthanc -- "serie, DICOM SEG" --> ui
     pg -- "statusy, wyniki" --> api
     api -- "statusy, wyniki" --> ui
-    ui -- "poprawiona maska" --> api
-    api -- "zatwierdzona maska" --> s3
-    s3 -- "zatwierdzona maska<br/>(kolejka CPU)" --> seg
+    ui -- "poprawiona maska [DICOM SEG]" --> api
+    api -- "DICOM SEG poprawki" --> orthanc
+    orthanc -- "badanie z SEG poprawki" --> back
+    back -- "maska na siatce modelu (NIfTI)" --> s3
+    back -- "accepted_path, pomiary" --> pg
 ```
 
 ### Trening
@@ -332,20 +335,19 @@ participant PACS as PACS szpitala
     R->>UI: Otwiera badanie z kolejki weryfikacji
     UI->>API: GET /studies/{id} (pomiary, formularz)
     UI->>OR: Pobiera serie i DICOM SEG [WADO-RS]
-    R->>UI: Poprawia maskę i formularz, zatwierdza
-    UI->>API: POST /studies/{id}/approve (maska, formularz)
-    Note over API: Walidacja geometrii maski
-    API->>S3: Zapisuje zatwierdzoną maskę (nowa wersja)
-    API->>PG: Wynik zatwierdzony, kto i kiedy, etap zapisu „do zrobienia”
-    API->>RD: Zleca przetworzenie (po commicie)
-    API-->>UI: 200, status „Zapisywanie”
+    R->>UI: Poprawia maskę (labelmapa nad fazą pre) i formularz, zatwierdza
+    UI->>API: POST approve-mask/ (poprawiona maska jako DICOM SEG, ADR 0004)
+    Note over API: Czy plik to SEG, z tego badania,<br/>a maska czeka na weryfikację (inaczej 400 / 409)
+    API->>OR: Zapisuje SEG poprawki [REST]
+    API->>PG: Maska CORRECTED, UID SEG, kto i kiedy, wpis audytu
+    API->>RD: Zleca konwersję poprawki (po commicie)
+    API-->>UI: 200, przegląd ze statusem „Zapisywanie”
 
-    WS->>RD: Pobiera zadanie (kolejka postprocess, CPU)
-    WS->>S3: Pobiera zatwierdzoną maskę
-    Note over WS: Przeliczenie pomiarów,<br/>porównanie z opisem
-    WS->>S3: Zapisuje próbkę treningową (NIfTI + maska)
-    WS->>OR: Zapisuje wersję zatwierdzoną jako DICOM SEG [STOW-RS]
-    WS->>PG: Pomiary, porównanie, status „Zweryfikowane”
+    WS->>RD: Pobiera zadanie (kolejka segmentation-convert, CPU)
+    WS->>OR: Pobiera badanie z SEG poprawki
+    Note over WS: Sprawdzenie geometrii (Frame of Reference, faza pre),<br/>SEG → NIfTI na siatce modelu, pomiary
+    WS->>S3: Zapisuje poprawioną maskę (NIfTI, etykieta treningowa)
+    WS->>PG: accepted_path i pomiary poprawionej maski
 ```
 
 ### P2

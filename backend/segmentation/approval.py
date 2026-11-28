@@ -6,10 +6,19 @@ same transaction. A NotApprovable raised here leaves the view, common/exception_
 409 and rolls the transaction back, so a case is never half approved.
 """
 
-from django.utils import timezone
+from io import BytesIO
 
-from .errors import NotApprovable
+import pydicom
+from celery import current_app
+from django.db import transaction
+from django.utils import timezone
+from patients.orthanc_client import OrthancClient
+from pydicom.errors import InvalidDicomError
+
+from .errors import InvalidSeg, NotApprovable, SegFromOtherStudy
 from .models import SegmentationResult, StatusChoices
+
+CONVERT_TASK = "segmentation.correction_from_dicom_seg"
 
 VERIFIED = (StatusChoices.APPROVED, StatusChoices.CORRECTED)
 
@@ -37,6 +46,64 @@ def approve_mask(result: SegmentationResult | None, user, *, corrected: bool) ->
     result.accepted_path = None if corrected else result.generated_path
     result.save(update_fields=_APPROVAL_FIELDS)
     return result
+
+
+def approve_corrected_seg(study, user, seg_bytes: bytes) -> SegmentationResult:
+    """Approve the mask corrected in the viewer, sent as a DICOM SEG (ADR 0004).
+
+    1. The file must be a DICOM SEG of this study; the worker checks the geometry later
+       (Frame of Reference, the pre phase as the referenced series).
+    2. The mask must wait for review, checked before the upload so a refused approval does not
+       leave a SEG in Orthanc.
+    3. The SEG goes to Orthanc before the database changes: if Orthanc is down nothing is saved
+       and the radiologist can try again. If another approval wins the race in step 4, the SEG
+       stays in Orthanc unreferenced, which is harmless.
+    4. Under the row lock: approve as CORRECTED, keep the SEG UIDs, queue the conversion after
+       the commit (segmentation.correction_from_dicom_seg fills accepted_path and measurements).
+
+    The caller may wrap this in its own transaction.atomic() to add the audit entry; the task is
+    then queued when that outer transaction commits.
+    """
+    seg = _read_seg(seg_bytes)
+
+    current = SegmentationResult.objects.filter(study=study).first()
+    if current is None or current.status != StatusChoices.COMPLETED:
+        # approve_mask raises the same error with the reason for the log
+        approve_mask(current, user, corrected=True)
+    if not study.orthanc_path:
+        raise NotApprovable(f"study {study.pk} is not in Orthanc")
+
+    orthanc = OrthancClient()
+    if seg.StudyInstanceUID != orthanc.study_instance_uid(study.orthanc_path):
+        raise SegFromOtherStudy(f"SEG {seg.SeriesInstanceUID} is not from study {study.pk}")
+    orthanc.upload_dicom_bytes(seg_bytes)
+
+    with transaction.atomic():
+        result = SegmentationResult.objects.select_for_update().filter(study=study).first()
+        approve_mask(result, user, corrected=True)
+        result.approved_seg_series_uid = seg.SeriesInstanceUID
+        result.approved_seg_sop_uid = seg.SOPInstanceUID
+        result.error = ""
+        result.save(update_fields=["approved_seg_series_uid", "approved_seg_sop_uid", "error"])
+        result_id = result.pk
+        transaction.on_commit(
+            lambda: current_app.send_task(CONVERT_TASK, kwargs={"result_id": result_id})
+        )
+    return result
+
+
+def _read_seg(seg_bytes: bytes):
+    """The SEG's header (pixels are read by the worker); InvalidSeg when it is not one."""
+    try:
+        seg = pydicom.dcmread(BytesIO(seg_bytes), stop_before_pixels=True)
+    except (InvalidDicomError, EOFError, ValueError) as exc:
+        raise InvalidSeg(f"not a DICOM file: {exc}") from exc
+    if seg.get("Modality") != "SEG":
+        raise InvalidSeg(f"modality {seg.get('Modality')!r}, not SEG")
+    for keyword in ("StudyInstanceUID", "SeriesInstanceUID", "SOPInstanceUID"):
+        if not seg.get(keyword):
+            raise InvalidSeg(f"no {keyword}")
+    return seg
 
 
 def approve_mask_in_case(result: SegmentationResult | None, user, *, corrected: bool) -> bool:

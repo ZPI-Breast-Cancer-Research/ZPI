@@ -1,7 +1,7 @@
 # 0003. Odczyt maski z DICOM SEG w przeglądarce
 
 Data: 2026-11-12
-Status: Proponowana
+Status: Zaakceptowana
 
 ## Kontekst
 
