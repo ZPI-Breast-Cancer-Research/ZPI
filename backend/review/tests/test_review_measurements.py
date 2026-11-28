@@ -1,4 +1,4 @@
-"""The review screens show the measurements the worker stored for the model mask."""
+"""The review screens show the measurements the worker stored for the mask on screen."""
 
 from unittest import mock
 
@@ -72,10 +72,10 @@ def test_overview_shows_the_measurements_of_an_approved_mask(authenticated_clien
 
 
 @pytest.mark.django_db
-def test_overview_of_a_corrected_mask_shows_the_models_numbers_and_says_so(
+def test_overview_of_a_correction_being_saved_shows_the_models_numbers_and_says_so(
     authenticated_client, study
 ):
-    # Arrange: the stored measurements belong to the model mask, not to the correction (#25)
+    # Arrange: the worker has not converted the SEG yet, the numbers are the model mask's
     SegmentationResult.objects.create(
         study=study, status=StatusChoices.CORRECTED, measurements=MEASURED
     )
@@ -84,8 +84,59 @@ def test_overview_of_a_corrected_mask_shows_the_models_numbers_and_says_so(
     response = _get(authenticated_client, study, "review-overview")
 
     # Assert
+    assert response.data["status"] == "saving"
     assert response.data["measurements"]["source"] == "model"
     assert response.data["measurements"]["totalMl"] == 3.25
+
+
+@pytest.mark.django_db
+def test_overview_of_a_saved_correction_shows_its_own_numbers(authenticated_client, study):
+    # Arrange: the worker stored the corrected mask and measured it (ADR 0004)
+    SegmentationResult.objects.create(
+        study=study,
+        status=StatusChoices.CORRECTED,
+        accepted_path="1/study_1_corrected.nii.gz",
+        measurements=MEASURED,
+    )
+
+    # Act
+    response = _get(authenticated_client, study, "review-overview")
+
+    # Assert
+    assert response.data["status"] == "verified"
+    assert response.data["measurements"]["source"] == "approved"
+    assert response.data["measurements"]["totalMl"] == 3.25
+    largest = next(r for r in response.data["comparison"] if r["feature"] == "largestSize")
+    assert largest["fromMask"] == 24.0
+
+
+@pytest.mark.django_db
+def test_case_detail_of_a_correction_being_saved_shows_no_mask_measurements(
+    authenticated_client, study
+):
+    SegmentationResult.objects.create(
+        study=study, status=StatusChoices.CORRECTED, measurements=MEASURED
+    )
+
+    response = _get(authenticated_client, study, "review-case-detail")
+
+    assert response.data["measurements"]["volume"] is None
+    assert response.data["measurements"]["size"] is None
+
+
+@pytest.mark.django_db
+def test_case_detail_of_a_saved_correction_shows_its_measurements(authenticated_client, study):
+    SegmentationResult.objects.create(
+        study=study,
+        status=StatusChoices.CORRECTED,
+        accepted_path="1/study_1_corrected.nii.gz",
+        measurements=MEASURED,
+    )
+
+    response = _get(authenticated_client, study, "review-case-detail")
+
+    assert response.data["measurements"]["volume"] == 3.25
+    assert response.data["measurements"]["size"] == 24.0
 
 
 @pytest.mark.django_db

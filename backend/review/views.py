@@ -152,9 +152,18 @@ def _main_lesion(report: dict):
     return max(lesions, key=rank)
 
 
+def _correction_saving(segmentation) -> bool:
+    """A corrected mask the worker has not converted yet (ADR 0004).
+
+    Until then ``measurements`` still hold the numbers of the model's mask; the worker replaces
+    them with the corrected mask's when it sets ``accepted_path``.
+    """
+    return segmentation.status == StatusChoices.CORRECTED and not segmentation.accepted_path
+
+
 def _mask_measurements(segmentation) -> dict | None:
-    """Measurements the worker stored for the model mask. A corrected mask has none yet (#25)."""
-    if segmentation is None or segmentation.status == StatusChoices.CORRECTED:
+    """Measurements of the mask on screen; none while a correction is still being saved."""
+    if segmentation is None or _correction_saving(segmentation):
         return None
     return segmentation.measurements
 
@@ -162,8 +171,8 @@ def _mask_measurements(segmentation) -> dict | None:
 def _overview_measurements(segmentation) -> dict | None:
     """What the overview shows as "Pomiary z segmentacji" (frontend/src/lesion-overview/api.ts).
 
-    The worker measures the model's mask. For a mask approved without changes that is the approved
-    mask; a corrected one is not measured yet (#25), so the model's numbers stand in and say so.
+    The worker measures the model's mask, and a corrected one once it has converted it. While a
+    correction is being saved the model's numbers stand in and say so.
     """
     measured = (segmentation.measurements if segmentation else None) or {}
     size = _largest_mm(measured)
@@ -171,7 +180,7 @@ def _overview_measurements(segmentation) -> dict | None:
         return None
     total = measured["volume_ml"]
     return {
-        "source": "model" if segmentation.status == StatusChoices.CORRECTED else "approved",
+        "source": "model" if _correction_saving(segmentation) else "approved",
         # measurements stored before the largest part was measured have the one volume only
         "largest": {"sizeMm": size, "volumeMl": measured.get("largest_volume_ml", total)},
         "totalMl": total,
@@ -754,7 +763,7 @@ def review_overview(request, study_id):
         o_data = {}
 
     corrected = segmentation.status == StatusChoices.CORRECTED
-    saving = corrected and not segmentation.accepted_path
+    saving = _correction_saving(segmentation)
 
     measured = _mask_measurements(segmentation)
     by_field = {row["field"]: row["value"] for row in _report_rows(extraction) or []}
