@@ -266,7 +266,7 @@ def test_a_seg_of_another_study_is_refused(tmp_path):
         convert_dicom_seg_to_nifti(foreign, study_dir, tmp_path / "back.nii.gz")
 
 
-# --- segmentation.run and segmentation.correction_to_dicom_seg ----------------------------------
+# --- segmentation.run and segmentation.correction_from_dicom_seg --------------------------------
 
 AXIAL = [1, 0, 0, 0, 1, 0]
 
@@ -503,35 +503,6 @@ def test_a_study_deleted_during_the_run_gets_nothing_stored(pipeline, study, mon
     # Assert
     assert orthanc.uploaded == []
     assert stored == {}
-
-
-def test_approval_saves_the_uids_of_the_approved_seg(pipeline, study, monkeypatch):
-    # Arrange
-    from segmentation.models import SegmentationResult
-
-    tasks, orthanc, stored = pipeline
-    tasks.run(str(study.id))
-    result = _result(study)
-    model_seg = orthanc.uploaded.pop()
-    mask_bytes = stored[result.generated_path]
-    monkeypatch.setattr(
-        tasks, "download_file", lambda bucket, key, path: path.write_bytes(mask_bytes)
-    )
-
-    # Act
-    tasks.correction_to_dicom_seg(study.orthanc_path, result.generated_path, result_id=result.id)
-
-    # Assert
-    result = SegmentationResult.objects.get(pk=result.pk)
-    [seg] = orthanc.uploaded
-    assert seg.SeriesDescription == "MARIA approved segmentation"
-    assert seg.SegmentSequence[0].SegmentAlgorithmType == "MANUAL"
-    assert (result.approved_seg_series_uid, result.approved_seg_sop_uid) == (
-        seg.SeriesInstanceUID,
-        seg.SOPInstanceUID,
-    )
-    assert result.approved_seg_series_uid != model_seg.SeriesInstanceUID
-    assert result.model_seg_series_uid == model_seg.SeriesInstanceUID
 
 
 def _correct_in_viewer(pipeline, study, tmp_path, on_series=None):

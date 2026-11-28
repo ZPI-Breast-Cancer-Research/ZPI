@@ -7,11 +7,11 @@ import nibabel as nib
 import numpy as np
 import pydicom
 from common.errors import StorageError
-from common.storage import BUCKET_MASKS, delete_object, download_file, upload_file
+from common.storage import BUCKET_MASKS, delete_object, upload_file
 from config.celery import app
 from django.db import DatabaseError, transaction
 from mlops.models import ModelVersion
-from patients.errors import OrthancUnauthorized, OrthancUnavailable, StudyNotFound
+from patients.errors import OrthancUnavailable
 from patients.models import Study
 from patients.orthanc_client import OrthancClient
 from pydicom.errors import InvalidDicomError
@@ -242,57 +242,6 @@ def run(self, study_id: str) -> None:
     except Exception as exc:
         _fail(result, f"{type(exc).__name__}: {exc}")
         logger.exception("segmentation.run failed for study %s", study_id)
-        raise
-
-
-@app.task(name="segmentation.correction_to_dicom_seg", queue="segmentation-convert")
-def correction_to_dicom_seg(
-    orthanc_study_id: str, mask_key: str, result_id: int | None = None
-) -> None:
-    """Convert an approved mask to DICOM SEG and upload it to Orthanc (CPU queue).
-
-    ``orthanc_study_id`` is Orthanc's own study id (``Study.orthanc_path``). The UIDs of the SEG
-    are saved on the SegmentationResult ``result_id``.
-    """
-    try:
-        with tempfile.TemporaryDirectory() as work:
-            root = Path(work)
-            dicom_dir = root / "dicom"
-            mask_nifti_path = root / "corrected_mask.nii.gz"
-            output_seg_path = root / "corrected_seg.dcm"
-
-            orthanc = OrthancClient()
-            orthanc.download_study(orthanc_study_id, dicom_dir)
-            download_file(BUCKET_MASKS, mask_key, mask_nifti_path)
-
-            seg = convert_nifti_to_dicom_seg(
-                study_dir=dicom_dir,
-                mask_nifti_path=mask_nifti_path,
-                output_seg_path=output_seg_path,
-                segment_label="Corrected Breast Lesion",
-            )
-
-            orthanc.upload_dicom_file(seg.path)
-            if result_id is not None:
-                SegmentationResult.objects.filter(pk=result_id).update(
-                    approved_seg_series_uid=seg.series_instance_uid,
-                    approved_seg_sop_uid=seg.sop_instance_uid,
-                )
-
-            logger.info(
-                "Pomyślnie zamieniono maskę %s na DICOM SEG dla badania %s",
-                mask_key,
-                orthanc_study_id,
-            )
-
-    except StudyNotFound:
-        logger.error("Study not found: %s", orthanc_study_id)
-        raise
-    except (OrthancUnavailable, OrthancUnauthorized) as exc:
-        logger.error("Orthanc error: %s", exc)
-        raise
-    except Exception:
-        logger.exception("Unexpected error during DICOM SEG conversion of %s", mask_key)
         raise
 
 

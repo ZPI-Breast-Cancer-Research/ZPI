@@ -135,7 +135,6 @@ LLM_BASE_URL = env("LLM_BASE_URL").rstrip("/")
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
 CELERY_TASK_ROUTES = {
-    "segmentation.correction_to_dicom_seg": {"queue": "segmentation-convert"},
     "segmentation.correction_from_dicom_seg": {"queue": "segmentation-convert"},
     "segmentation.*": {"queue": "segmentation"},
     "extraction.*": {"queue": "extraction"},

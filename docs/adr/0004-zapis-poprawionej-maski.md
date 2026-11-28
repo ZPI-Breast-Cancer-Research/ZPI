@@ -1,7 +1,7 @@
 # 0004. Zapis poprawionej maski jako DICOM SEG z przeglądarki
 
 Data: 2026-11-19
-Status: Proponowana
+Status: Zaakceptowana
 
 ## Kontekst
 
